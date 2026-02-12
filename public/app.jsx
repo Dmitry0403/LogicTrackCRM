@@ -7,9 +7,37 @@ const DRIVE_CONFIG = {
   //   http://localhost:8000/oauth2callback/
   // Используйте именно тот вариант, который указан в DRIVE_CONFIG.REDIRECT_URI ниже.
   CLIENT_ID: "871304525132-qthes7joe12266gfuq0jf8dftmv2b5p6.apps.googleusercontent.com",
+  API_KEY: "AIzaSyCqQwSLCTpA-5JKxC6OPlZLtew1AD0Dems",
   // Для PKCE в SPA client secret не обязателен и не должен храниться в коде.
   REDIRECT_URI: "http://localhost:8000/",
   SCOPE: "https://www.googleapis.com/auth/drive.file",
+};
+
+let pickerApiLoadPromise = null;
+
+const loadGooglePickerApi = () => {
+  if (typeof window === 'undefined') {
+    return Promise.reject(new Error('window is not available'));
+  }
+
+  if (window.google && window.google.picker) {
+    return Promise.resolve();
+  }
+
+  if (!window.gapi || typeof window.gapi.load !== 'function') {
+    return Promise.reject(new Error('Google API script is not loaded'));
+  }
+
+  if (!pickerApiLoadPromise) {
+    pickerApiLoadPromise = new Promise((resolve, reject) => {
+      window.gapi.load('picker', {
+        callback: resolve,
+        onerror: () => reject(new Error('Failed to load Google Picker API')),
+      });
+    });
+  }
+
+  return pickerApiLoadPromise;
 };
 
 // --- PKCE helpers ---
@@ -120,6 +148,8 @@ const App = () => {
   const [editingOrderId, setEditingOrderId] = React.useState(null);
   const [editingFormData, setEditingFormData] = React.useState(null);
   const [showEditModal, setShowEditModal] = React.useState(false);
+  const [showSettingsModal, setShowSettingsModal] = React.useState(false);
+  const [showDriveSettingsModal, setShowDriveSettingsModal] = React.useState(false);
 
   // Выбранная папка Google Drive для сохранения заказов
   const [selectedDriveFolder, setSelectedDriveFolder] = React.useState(() => {
@@ -414,8 +444,14 @@ const App = () => {
 
     try {
       const accessToken = await ensureAccessToken();
+      await loadGooglePickerApi();
       
       // Проверить, загружена ли Google Picker API
+      if (!DRIVE_CONFIG.API_KEY) {
+        setDriveHint('Укажите API_KEY в DRIVE_CONFIG, чтобы открыть выбор папки.');
+        return;
+      }
+
       if (typeof google === 'undefined' || typeof google.picker === 'undefined') {
         setDriveHint('Google Picker API ещё не загружена. Попробуйте через секунду.');
         return;
@@ -424,11 +460,16 @@ const App = () => {
       setDriveHint('Открываю выбор папки Google Drive...');
       
       // Создать Picker для выбора папки
+      const folderView = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
+        .setIncludeFolders(true)
+        .setSelectFolderEnabled(true);
+
       const picker = new google.picker.PickerBuilder()
-        .addView(google.picker.ViewId.FOLDERS)
+        .addView(folderView)
+        .setDeveloperKey(DRIVE_CONFIG.API_KEY)
         .setOAuthToken(accessToken)
         .setCallback((data) => {
-          if (data.action === google.picker.Action.PICKED_INCLUDE_FOLDERS) {
+          if (data.action === google.picker.Action.PICKED) {
             const folderData = data.docs[0];
             const folderObj = {
               id: folderData.id,
@@ -449,6 +490,14 @@ const App = () => {
       console.error(err);
       setDriveHint('Ошибка открытия выбора папки: ' + (err.message || err));
     }
+  };
+
+  const handleDisconnectGoogleDrive = () => {
+    localStorage.removeItem('gdrive_tokens');
+    localStorage.removeItem('gdrive_selected_folder');
+    setDriveConnected(false);
+    setSelectedDriveFolder(null);
+    setDriveHint('Токены очищены. Нажмите "Подключить Google Drive" заново.');
   };
 
   // Delete order
@@ -509,6 +558,19 @@ const App = () => {
     setEditingFormData(null);
   };
 
+  const settingsSections = [
+    {
+      id: 'google-drive',
+      title: 'Google Drive',
+      status: driveConnected ? 'подключен' : 'не подключен',
+      actionLabel: 'Открыть',
+      onOpen: () => {
+        setShowSettingsModal(false);
+        setShowDriveSettingsModal(true);
+      },
+    },
+  ];
+
   return (
     <div className="app">
       <header className="app__header">
@@ -519,8 +581,13 @@ const App = () => {
             Первый этап: создание заказа, контроль данных, подготовка к синхронизации с Google Drive.
           </p>
         </div>
-        <div className={`app__status ${driveConnected ? "app__status--connected" : ""}`}>
-          Google Drive: {driveConnected ? "подключен" : "не подключен"}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-end' }}>
+          <div className={`app__status ${driveConnected ? "app__status--connected" : ""}`}>
+            Google Drive: {driveConnected ? "подключен" : "не подключен"}
+          </div>
+          <button type="button" onClick={() => setShowSettingsModal(true)}>
+            Настройки
+          </button>
         </div>
       </header>
 
@@ -613,36 +680,71 @@ const App = () => {
           </form>
         </section>
 
-        <section className="card">
-          <h2>Google Drive синхронизация</h2>
-          <p>
-            Выберите папку в Google Drive, где будут автоматически создаваться и управляться папки заказов.
-          </p>
-          <div className="drive-actions">
-            <button type="button" onClick={connectGoogleDrive}>
-              Подключить Google Drive
-            </button>
-            <button type="button" className="primary" disabled={!driveConnected} onClick={selectDriveFolder}>
-              Выбрать папку
-            </button>
-            <button type="button" onClick={() => {
-              localStorage.removeItem('gdrive_tokens');
-              localStorage.removeItem('gdrive_selected_folder');
-              setDriveConnected(false);
-              setSelectedDriveFolder(null);
-              setDriveHint('Токены очищены. Нажмите "Подключить Google Drive" заново.');
-            }} style={{ backgroundColor: '#999', color: '#fff', padding: '0.5rem 1rem', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>
-              Выйти
-            </button>
-          </div>
-          {selectedDriveFolder && (
-            <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#f0f8ff', borderRadius: '4px', borderLeft: '4px solid #0066cc' }}>
-              <strong>Выбранная папка:</strong> <a href={selectedDriveFolder.url} target="_blank" rel="noopener noreferrer">{selectedDriveFolder.name}</a>
-            </div>
-          )}
-          <div className="drive-hint">{driveHint}</div>
-        </section>
       </main>
+
+      {showSettingsModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '2rem', maxWidth: '700px', width: '92%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)' }}>
+            <h2>Настройки</h2>
+            <p>Выберите раздел настроек.</p>
+            {settingsSections.map((section) => (
+              <div key={section.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', border: '1px solid #d7deea', borderRadius: '8px' }}>
+                <div>
+                  <strong>{section.title}</strong>
+                  <div style={{ marginTop: '0.35rem', color: '#4f617e' }}>
+                    Статус: {section.status}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={section.onOpen}
+                >
+                  {section.actionLabel}
+                </button>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+              <button type="button" onClick={() => setShowSettingsModal(false)} style={{ backgroundColor: '#999', color: '#fff', padding: '0.5rem 1rem', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showDriveSettingsModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '2rem', maxWidth: '700px', width: '92%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)' }}>
+            <h2>Google Drive синхронизация</h2>
+            <p>
+              Выберите папку в Google Drive, где будут автоматически создаваться и управляться папки заказов.
+            </p>
+            <div className="drive-actions">
+              <button type="button" onClick={connectGoogleDrive}>
+                Подключить Google Drive
+              </button>
+              <button type="button" className="primary" disabled={!driveConnected} onClick={selectDriveFolder}>
+                Выбрать папку
+              </button>
+              <button type="button" onClick={handleDisconnectGoogleDrive} style={{ backgroundColor: '#999', color: '#fff', padding: '0.5rem 1rem', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>
+                Выйти
+              </button>
+            </div>
+            {selectedDriveFolder && (
+              <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#f0f8ff', borderRadius: '4px', borderLeft: '4px solid #0066cc' }}>
+                <strong>Выбранная папка:</strong> <a href={selectedDriveFolder.url} target="_blank" rel="noopener noreferrer">{selectedDriveFolder.name}</a>
+              </div>
+            )}
+            <div className="drive-hint">{driveHint}</div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
+              <button type="button" onClick={() => setShowDriveSettingsModal(false)} style={{ backgroundColor: '#999', color: '#fff', padding: '0.5rem 1rem', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>
+                Закрыть
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <section className="card">
         <h2>Реестр заказов</h2>
