@@ -1,15 +1,17 @@
+﻿import React from 'react';
+import {
+  AppHeader,
+  OrderFormCard,
+  SettingsModal,
+  DriveSettingsModal,
+  OrdersTable,
+  EditOrderModal,
+} from './components/ui';
+
 const DRIVE_CONFIG = {
-  // Заполните CLIENT_ID (OAuth 2.0 Client ID).
-  // В Google Cloud Console добавьте в Authorized redirect URIs точно один из следующих адресов,
-  // который вы используете в приложении (рекомендация — редирект на корень):
-  //   http://localhost:8000/
-  // или (альтернатива):
-  //   http://localhost:8000/oauth2callback/
-  // Используйте именно тот вариант, который указан в DRIVE_CONFIG.REDIRECT_URI ниже.
   CLIENT_ID: "871304525132-qthes7joe12266gfuq0jf8dftmv2b5p6.apps.googleusercontent.com",
   API_KEY: "AIzaSyCqQwSLCTpA-5JKxC6OPlZLtew1AD0Dems",
-  // Для PKCE в SPA client secret не обязателен и не должен храниться в коде.
-  REDIRECT_URI: "http://localhost:8000/",
+  REDIRECT_URI: "http://localhost:5173/",
   SCOPE: "https://www.googleapis.com/auth/drive.file",
 };
 
@@ -87,7 +89,7 @@ const customsCodeMap = {
   "06536": "ПТО Аэропорт Минск",
   "06533": "ПТО Минск-СЭЗ",
   "06529": "ПТО Колядичи-авто",
-  "06611": "ПТО Белкульторг",
+  "06611": "ПТО Белкультторг",
   "06650": "ПТО Минск-ТЛЦ-2",
   "06649": "ПТО Минск-ТЛЦ-1",
   "06544": "ПТО Белювелирторг",
@@ -135,6 +137,7 @@ const App = () => {
   );
 
   const [formData, setFormData] = React.useState({
+    shipmentAirport: "",
     recipient: "",
     orderName: "",
     awb: "",
@@ -151,7 +154,7 @@ const App = () => {
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [showDriveSettingsModal, setShowDriveSettingsModal] = React.useState(false);
 
-  // Выбранная папка Google Drive для сохранения заказов
+  
   const [selectedDriveFolder, setSelectedDriveFolder] = React.useState(() => {
     try {
       return JSON.parse(localStorage.getItem('gdrive_selected_folder') || 'null');
@@ -164,7 +167,7 @@ const App = () => {
     saveOrders(orders);
   }, [orders]);
 
-  // Сохранить выбранную папку в localStorage
+  
   React.useEffect(() => {
     if (selectedDriveFolder) {
       localStorage.setItem('gdrive_selected_folder', JSON.stringify(selectedDriveFolder));
@@ -179,10 +182,10 @@ const App = () => {
       if (toks && toks.access_token && toks.expires_at && Date.now() < toks.expires_at - 60000) {
         setDriveConnected(true);
         setDriveHint('Google Drive: подключено (токен в localStorage).');
-        return; // Выходим, если токен еще валидный
+        return; 
       }
 
-      // Если есть refresh_token, пытаемся обновить access_token
+      
       if (toks && toks.refresh_token) {
         try {
           setDriveHint('Обновляю токен доступа...');
@@ -209,7 +212,7 @@ const App = () => {
         }
       }
 
-      // Проверить, пришёл ли код авторизации после редиректа
+      // Проверить, пришел ли код авторизации после редиректа
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
       if (!code) return;
@@ -264,6 +267,7 @@ const App = () => {
     event.preventDefault();
     const order = {
       id: `order-${Date.now()}`,
+      shipmentAirport: formData.shipmentAirport.trim(),
       name: formData.orderName.trim(),
       recipient: formData.recipient.trim(),
       awb: formData.awb.trim(),
@@ -284,6 +288,7 @@ const App = () => {
     }
 
     setFormData({
+      shipmentAirport: "",
       recipient: "",
       orderName: "",
       awb: "",
@@ -373,7 +378,7 @@ const App = () => {
       const accessToken = await ensureAccessToken();
       const bodyObj = { name: orderName, mimeType: 'application/vnd.google-apps.folder' };
       
-      // Если выбрана папка, создать подпапку внутри неё
+      // Если выбрана папка, создать подпапку внутри нее
       if (selectedDriveFolder && selectedDriveFolder.id) {
         bodyObj.parents = [selectedDriveFolder.id];
       }
@@ -390,7 +395,7 @@ const App = () => {
       if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
       
       const folderUrl = `https://drive.google.com/drive/folders/${data.id}`;
-      // Обновить заказ с ссылкой на папку
+      // Обновить заказ ссылкой на папку
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, driveFolder: folderUrl, driveFolderId: data.id } : o))
       );
@@ -398,7 +403,7 @@ const App = () => {
       return { folderId: data.id, folderUrl };
     } catch (err) {
       console.error('Ошибка создания папки:', err);
-      // Не прерываем процесс создания заказа если Google Drive недоступен
+      // Не прерываем создание заказа если Google Drive недоступен
     }
   };
 
@@ -415,7 +420,7 @@ const App = () => {
         },
         body: JSON.stringify({ name: newName }),
       });
-      console.log('Папка переименована на:', newName);
+      console.log('Папка переименована в:', newName);
     } catch (err) {
       console.error('Ошибка переименования папки:', err);
     }
@@ -477,7 +482,7 @@ const App = () => {
               url: `https://drive.google.com/drive/folders/${folderData.id}`,
             };
             setSelectedDriveFolder(folderObj);
-            setDriveHint(`Папка выбрана: ${folderObj.name}`);
+            setDriveHint(`Выбрана папка: ${folderObj.name}`);
             console.log('Выбрана папка:', folderObj);
           } else if (data.action === google.picker.Action.CANCEL) {
             setDriveHint('Выбор папки отменён.');
@@ -536,7 +541,7 @@ const App = () => {
   const handleSaveEdit = () => {
     if (!editingFormData) return;
     
-    // Найти оригинальный заказ чтобы проверить изменилось ли имя
+    // Найти оригинальный заказ, чтобы проверить, изменилось ли имя
     const originalOrder = orders.find((o) => o.id === editingOrderId);
     if (originalOrder && editingFormData.name !== originalOrder.name && editingFormData.driveFolderId) {
       // Переименовать папку в Google Drive если имя изменилось
@@ -573,257 +578,53 @@ const App = () => {
 
   return (
     <div className="app">
-      <header className="app__header">
-        <div>
-          <p className="app__eyebrow">Transport Logistics CRM</p>
-          <h1>Контроль и сопровождение заказов</h1>
-          <p className="app__subtitle">
-            Первый этап: создание заказа, контроль данных, подготовка к синхронизации с Google Drive.
-          </p>
-        </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', alignItems: 'flex-end' }}>
-          <div className={`app__status ${driveConnected ? "app__status--connected" : ""}`}>
-            Google Drive: {driveConnected ? "подключен" : "не подключен"}
-          </div>
-          <button type="button" onClick={() => setShowSettingsModal(true)}>
-            Настройки
-          </button>
-        </div>
-      </header>
+      <AppHeader
+        driveConnected={driveConnected}
+        onOpenSettings={() => setShowSettingsModal(true)}
+      />
 
       <main className="grid">
-        <section className="card">
-          <h2>Новый заказ</h2>
-          <form onSubmit={handleSubmit}>
-            <div className="field">
-              <label htmlFor="recipient">Получатель груза *</label>
-              <input
-                id="recipient"
-                name="recipient"
-                type="text"
-                placeholder="ООО Логистик Про"
-                required
-                value={formData.recipient}
-                onChange={handleFieldChange("recipient")}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="orderName">Название заказа</label>
-              <input id="orderName" name="orderName" type="text" readOnly value={formData.orderName} />
-              <small>Автоматически формируется по получателю груза.</small>
-            </div>
-            <div className="field">
-              <label htmlFor="awb">Номер авианакладной *</label>
-              <input
-                id="awb"
-                name="awb"
-                type="text"
-                placeholder="123-45678901"
-                required
-                value={formData.awb}
-                onChange={handleFieldChange("awb")}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="quantity">Количество (шт) *</label>
-              <input
-                id="quantity"
-                name="quantity"
-                type="number"
-                min="1"
-                step="1"
-                required
-                value={formData.quantity}
-                onChange={handleFieldChange("quantity")}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="weight">Вес (кг) *</label>
-              <input
-                id="weight"
-                name="weight"
-                type="number"
-                min="0"
-                step="0.01"
-                required
-                value={formData.weight}
-                onChange={handleFieldChange("weight")}
-              />
-            </div>
-            <div className="field">
-              <label htmlFor="customsCode">Код таможни назначения *</label>
-              <input
-                id="customsCode"
-                name="customsCode"
-                type="text"
-                placeholder="06536"
-                required
-                value={formData.customsCode}
-                onChange={handleFieldChange("customsCode")}
-              />
-              <small className="hint">{customsName}</small>
-            </div>
-            <div className="field">
-              <label htmlFor="notes">Примечания</label>
-              <textarea
-                id="notes"
-                name="notes"
-                rows="4"
-                placeholder="Дополнительные инструкции..."
-                value={formData.notes}
-                onChange={handleFieldChange("notes")}
-              />
-            </div>
-            <button type="submit" className="primary">
-              Создать заказ
-            </button>
-          </form>
-        </section>
-
+        <OrderFormCard
+          formData={formData}
+          customsName={customsName}
+          onFieldChange={handleFieldChange}
+          onSubmit={handleSubmit}
+        />
       </main>
 
-      {showSettingsModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '2rem', maxWidth: '700px', width: '92%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)' }}>
-            <h2>Настройки</h2>
-            <p>Выберите раздел настроек.</p>
-            {settingsSections.map((section) => (
-              <div key={section.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '1rem', padding: '1rem', border: '1px solid #d7deea', borderRadius: '8px' }}>
-                <div>
-                  <strong>{section.title}</strong>
-                  <div style={{ marginTop: '0.35rem', color: '#4f617e' }}>
-                    Статус: {section.status}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="primary"
-                  onClick={section.onOpen}
-                >
-                  {section.actionLabel}
-                </button>
-              </div>
-            ))}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-              <button type="button" onClick={() => setShowSettingsModal(false)} style={{ backgroundColor: '#999', color: '#fff', padding: '0.5rem 1rem', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>
-                Закрыть
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <SettingsModal
+        isOpen={showSettingsModal}
+        settingsSections={settingsSections}
+        onClose={() => setShowSettingsModal(false)}
+      />
 
-      {showDriveSettingsModal && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '2rem', maxWidth: '700px', width: '92%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)' }}>
-            <h2>Google Drive синхронизация</h2>
-            <p>
-              Выберите папку в Google Drive, где будут автоматически создаваться и управляться папки заказов.
-            </p>
-            <div className="drive-actions">
-              <button type="button" onClick={connectGoogleDrive}>
-                Подключить Google Drive
-              </button>
-              <button type="button" className="primary" disabled={!driveConnected} onClick={selectDriveFolder}>
-                Выбрать папку
-              </button>
-              <button type="button" onClick={handleDisconnectGoogleDrive} style={{ backgroundColor: '#999', color: '#fff', padding: '0.5rem 1rem', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>
-                Выйти
-              </button>
-            </div>
-            {selectedDriveFolder && (
-              <div style={{ marginTop: '1rem', padding: '1rem', backgroundColor: '#f0f8ff', borderRadius: '4px', borderLeft: '4px solid #0066cc' }}>
-                <strong>Выбранная папка:</strong> <a href={selectedDriveFolder.url} target="_blank" rel="noopener noreferrer">{selectedDriveFolder.name}</a>
-              </div>
-            )}
-            <div className="drive-hint">{driveHint}</div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: '1.5rem' }}>
-              <button type="button" onClick={() => setShowDriveSettingsModal(false)} style={{ backgroundColor: '#999', color: '#fff', padding: '0.5rem 1rem', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>
-                Закрыть
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <DriveSettingsModal
+        isOpen={showDriveSettingsModal}
+        driveConnected={driveConnected}
+        selectedDriveFolder={selectedDriveFolder}
+        driveHint={driveHint}
+        onConnectGoogleDrive={connectGoogleDrive}
+        onSelectDriveFolder={selectDriveFolder}
+        onDisconnectGoogleDrive={handleDisconnectGoogleDrive}
+        onClose={() => setShowDriveSettingsModal(false)}
+      />
 
-      <section className="card">
-        <h2>Реестр заказов</h2>
-        <div className="table">
-          <div className="table__row table__head">
-            <span>Название</span>
-            <span>Получатель</span>
-            <span>Авианакладная</span>
-            <span>Кол-во</span>
-            <span>Вес</span>
-            <span>Таможня</span>
-            <span>Папка Drive</span>
-            <span>Действия</span>
-          </div>
-          <div className="table__body">
-            {orders.length === 0 ? (
-              <div className="table__empty">Пока нет созданных заказов.</div>
-            ) : (
-              orders.map((order) => (
-                <div className="table__row" key={order.id}>
-                  <span>{order.name}</span>
-                  <span>{order.recipient}</span>
-                  <span>{order.awb}</span>
-                  <span>{order.quantity}</span>
-                  <span>{order.weight}</span>
-                  <span>{order.customsName}</span>
-                  <span>{order.driveFolder || "—"}</span>
-                  <span style={{ display: 'flex', gap: '0.5rem' }}>
-                    <button type="button" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', cursor: 'pointer', backgroundColor: '#0066cc', color: '#fff', border: 'none', borderRadius: '3px' }} onClick={() => handleEditClick(order)}>Ред.</button>
-                    <button type="button" style={{ padding: '0.4rem 0.8rem', fontSize: '0.85rem', cursor: 'pointer', backgroundColor: '#cc0000', color: '#fff', border: 'none', borderRadius: '3px' }} onClick={() => handleDelete(order.id)}>Удалить</button>
-                  </span>
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      </section>
+      <OrdersTable
+        orders={orders}
+        onEditClick={handleEditClick}
+        onDelete={handleDelete}
+      />
 
-      {showEditModal && editingFormData && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: '#fff', borderRadius: '8px', padding: '2rem', maxWidth: '600px', width: '90%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 4px 16px rgba(0, 0, 0, 0.2)' }}>
-            <h2>Редактировать заказ</h2>
-            <form>
-              <div className="field">
-                <label htmlFor="edit-recipient">Получатель груза</label>
-                <input id="edit-recipient" type="text" value={editingFormData.recipient || ''} onChange={handleEditFieldChange('recipient')} />
-              </div>
-              <div className="field">
-                <label htmlFor="edit-awb">Номер авианакладной</label>
-                <input id="edit-awb" type="text" value={editingFormData.awb || ''} onChange={handleEditFieldChange('awb')} />
-              </div>
-              <div className="field">
-                <label htmlFor="edit-quantity">Количество (шт)</label>
-                <input id="edit-quantity" type="number" min="1" value={editingFormData.quantity || ''} onChange={handleEditFieldChange('quantity')} />
-              </div>
-              <div className="field">
-                <label htmlFor="edit-weight">Вес (кг)</label>
-                <input id="edit-weight" type="number" min="0" step="0.01" value={editingFormData.weight || ''} onChange={handleEditFieldChange('weight')} />
-              </div>
-              <div className="field">
-                <label htmlFor="edit-customsCode">Код таможни назначения</label>
-                <input id="edit-customsCode" type="text" value={editingFormData.customsCode || ''} onChange={handleEditFieldChange('customsCode')} />
-                <small className="hint">{editingFormData.customsCode ? getCustomsName(editingFormData.customsCode.trim()) : 'Введите код таможни'}</small>
-              </div>
-              <div className="field">
-                <label htmlFor="edit-notes">Примечания</label>
-                <textarea id="edit-notes" rows="4" value={editingFormData.notes || ''} onChange={handleEditFieldChange('notes')} />
-              </div>
-              <div style={{ display: 'flex', gap: '1rem', marginTop: '1.5rem' }}>
-                <button type="button" className="primary" onClick={handleSaveEdit}>Сохранить</button>
-                <button type="button" onClick={handleCancelEdit} style={{ backgroundColor: '#999', color: '#fff', padding: '0.5rem 1rem', border: 'none', borderRadius: '3px', cursor: 'pointer' }}>Отмена</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <EditOrderModal
+        isOpen={showEditModal}
+        editingFormData={editingFormData}
+        onFieldChange={handleEditFieldChange}
+        onSave={handleSaveEdit}
+        onCancel={handleCancelEdit}
+        getCustomsName={getCustomsName}
+      />
     </div>
   );
 };
+export default App;
 
-const root = ReactDOM.createRoot(document.getElementById("root"));
-root.render(<App />);

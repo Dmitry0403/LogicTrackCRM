@@ -4,7 +4,29 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 
 const app = express();
-app.use(cors({ origin: 'http://localhost:8000' }));
+const allowedOrigins = (process.env.CORS_ORIGIN || '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const defaultOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  'http://localhost:8000',
+  'http://127.0.0.1:8000',
+];
+
+const corsOrigins = allowedOrigins.length > 0 ? allowedOrigins : defaultOrigins;
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || corsOrigins.includes(origin)) {
+      callback(null, true);
+      return;
+    }
+    callback(new Error(`CORS blocked for origin: ${origin}`));
+  },
+}));
 app.use(express.json());
 
 // Exchange authorization code or refresh token with Google
@@ -16,7 +38,7 @@ app.post('/oauth/token', async (req, res) => {
     if (code) {
       params.set('code', code);
       params.set('grant_type', 'authorization_code');
-      params.set('redirect_uri', process.env.REDIRECT_URI || 'http://localhost:8000/');
+      params.set('redirect_uri', process.env.REDIRECT_URI || 'http://localhost:5173/');
     } else if (refresh_token) {
       params.set('grant_type', 'refresh_token');
       params.set('refresh_token', refresh_token);

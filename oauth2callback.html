@@ -6,7 +6,7 @@
 </head>
 <body>
   <script>
-    // Браузер сделает запрос вида /oauth2callback?code=... — этот файл перенаправит пользователя на /
+    // Браузер делает запрос вида /oauth2callback?code=..., этот файл перенаправит пользователя на /
     var qs = window.location.search || '';
     window.location.replace('/' + qs + window.location.hash);
   </script>
