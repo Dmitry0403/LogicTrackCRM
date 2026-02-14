@@ -86,7 +86,7 @@ label {
   font-weight: 600;
 }
 
-input,
+input:not([type="radio"]),
 textarea,
 select {
   border: 1px solid #d1d5db;
@@ -100,7 +100,7 @@ select {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-input:focus,
+input:not([type="radio"]):focus,
 textarea:focus,
 select:focus {
   outline: none;
@@ -126,6 +126,24 @@ input[readonly] {
   border-color: #d1d5db;
 }
 
+.radio-group {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.radio-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 500;
+}
+
+.radio-option input[type="radio"] {
+  width: auto;
+  margin: 0;
+}
+
 small {
   color: #6b7280;
 }
@@ -133,6 +151,32 @@ small {
 .hint {
   font-weight: 600;
   color: #2563eb;
+}
+
+.recipient-status--danger {
+  border-color: #dc2626 !important;
+  background: #fef2f2 !important;
+}
+
+.recipient-status--success {
+  border-color: #16a34a !important;
+  background: #f0fdf4 !important;
+}
+
+.recipient-status-text {
+  font-weight: 700;
+}
+
+.recipient-status-text--danger {
+  color: #b91c1c;
+}
+
+.recipient-status-text--success {
+  color: #15803d;
+}
+
+.registry-actions {
+  margin-top: 4px;
 }
 
 button {

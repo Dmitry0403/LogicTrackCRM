@@ -66,3 +66,45 @@ npm start
 - Output directory: `dist`
 
 Если сервер `server/` деплоится отдельно, не забудьте обновить URL прокси в `src/App.jsx` (с `localhost:3001` на ваш production endpoint).
+
+## Google Sheets Sync (Power Of Attorney)
+
+Server now exposes `GET /poa/registry` and loads registry data directly from Google Sheets tabs.
+
+Configure in `server/.env`:
+
+- `GOOGLE_SHEETS_API_KEY` - API key with access to Google Sheets API.
+- `GOOGLE_SHEETS_SPREADSHEET_ID` - spreadsheet id (optional, default is current shared file id).
+- `POA_SHEET_TABS_JSON` - optional tab mapping JSON.
+- `POA_SYNC_TTL_MS` - optional cache TTL in ms (default `300000`).
+
+Example:
+
+```env
+GOOGLE_SHEETS_API_KEY=xxxx
+GOOGLE_SHEETS_SPREADSHEET_ID=1uVXl8_W3-TqPNpaS_Az3lr4sfMx9VILm
+POA_SHEET_TABS_JSON={"Шереметьево":"Шереметьево","Внуково":"Внуково","Домодедово":"Домодедово","Жуковский":"Жуковский"}
+POA_SYNC_TTL_MS=300000
+```
+
+## XLSX Sync (Power Of Attorney)
+
+Current `GET /poa/registry` reads data from an `.xlsx` source on backend.
+
+Set one of these in `server/.env`:
+
+- `POA_XLSX_URL` - direct URL to `.xlsx` (or Google Drive/Sheets link; server normalizes known formats).
+- `POA_XLSX_PATH` - local filesystem path to `.xlsx`.
+
+Also set:
+
+- `POA_SHEET_TABS_JSON` - tab mapping JSON (airport -> sheet name).
+- `POA_SYNC_TTL_MS` - cache TTL in ms.
+
+Example:
+
+```env
+POA_XLSX_URL=https://example.com/power-of-attorney.xlsx
+POA_SHEET_TABS_JSON={"Шереметьево":"Шереметьево","Внуково":"Внуково","Домодедово":"Домодедово","Жуковский":"Жуковский"}
+POA_SYNC_TTL_MS=300000
+```

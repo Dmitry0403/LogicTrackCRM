@@ -20,7 +20,16 @@ export function AppHeader({ driveConnected, onOpenSettings }) {
   );
 }
 
-export function OrderFormCard({ formData, customsName, onFieldChange, onSubmit }) {
+export function OrderFormCard({
+  formData,
+  customsName,
+  powerOfAttorneyStatus,
+  recipientSuggestions,
+  isPowerOfAttorneySyncLoading,
+  onRefreshPowerOfAttorneyRegistry,
+  onFieldChange,
+  onSubmit,
+}) {
   return (
     <section className="card">
       <h2>Новый заказ</h2>
@@ -41,17 +50,71 @@ export function OrderFormCard({ formData, customsName, onFieldChange, onSubmit }
             <option value="Жуковский">Жуковский</option>
           </select>
         </div>
+        {formData.shipmentAirport === "Шереметьево" && (
+          <div className="field">
+            <span>Терминал в Шереметьево *</span>
+            <div className="radio-group" role="radiogroup" aria-label="Терминал в Шереметьево">
+              <label className="radio-option" htmlFor="svo-terminal-moscow-cargo">
+                <input
+                  id="svo-terminal-moscow-cargo"
+                  type="radio"
+                  name="shipmentTerminal"
+                  value="Москва-карго"
+                  checked={formData.shipmentTerminal === "Москва-карго"}
+                  onChange={onFieldChange("shipmentTerminal")}
+                />
+                Москва-карго
+              </label>
+              <label className="radio-option" htmlFor="svo-terminal-shercargo">
+                <input
+                  id="svo-terminal-shercargo"
+                  type="radio"
+                  name="shipmentTerminal"
+                  value="Шереметьево-карго"
+                  checked={formData.shipmentTerminal === "Шереметьево-карго"}
+                  onChange={onFieldChange("shipmentTerminal")}
+                />
+                Шереметьево-карго
+              </label>
+            </div>
+          </div>
+        )}
         <div className="field">
           <label htmlFor="recipient">Получатель груза *</label>
           <input
             id="recipient"
             name="recipient"
             type="text"
+            list="recipient-suggestions"
             placeholder="ООО Логистик Про"
             required
             value={formData.recipient}
+            className={
+              powerOfAttorneyStatus
+                ? `recipient-status recipient-status--${powerOfAttorneyStatus.type}`
+                : ""
+            }
             onChange={onFieldChange("recipient")}
           />
+          <datalist id="recipient-suggestions">
+            {(recipientSuggestions || []).map((item, index) => (
+              <option key={`${item.value}-${item.label}-${index}`} value={item.value} label={item.label} />
+            ))}
+          </datalist>
+          {powerOfAttorneyStatus && (
+            <small className={`recipient-status-text recipient-status-text--${powerOfAttorneyStatus.type}`}>
+              {powerOfAttorneyStatus.message}
+            </small>
+          )}
+          <div className="registry-actions">
+            <button
+              type="button"
+              onClick={onRefreshPowerOfAttorneyRegistry}
+              disabled={isPowerOfAttorneySyncLoading}
+            >
+              {isPowerOfAttorneySyncLoading ? "Обновляем..." : "Обновить реестр"}
+            </button>
+          </div>
         </div>
         <div className="field">
           <label htmlFor="orderName">Название заказа</label>

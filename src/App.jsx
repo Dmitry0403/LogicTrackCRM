@@ -9,8 +9,8 @@ import {
 } from './components/ui';
 
 const DRIVE_CONFIG = {
-  CLIENT_ID: "871304525132-qthes7joe12266gfuq0jf8dftmv2b5p6.apps.googleusercontent.com",
-  API_KEY: "AIzaSyCqQwSLCTpA-5JKxC6OPlZLtew1AD0Dems",
+  CLIENT_ID: "389372481906-pfjepgeg2odfqmfdopdbsn2t890uoahe.apps.googleusercontent.com",
+  API_KEY: "AIzaSyCU3YTk2rpt38Kyrz96Cz3Qh_xsMWOHMeA",
   REDIRECT_URI: "http://localhost:5173/",
   SCOPE: "https://www.googleapis.com/auth/drive.file",
 };
@@ -120,6 +120,170 @@ const customsCodeMap = {
 
 const getCustomsName = (code) => customsCodeMap[code] || "Введите правильный код";
 
+const POWER_OF_ATTORNEY_REGISTRY_URL = "http://localhost:3001/poa/registry";
+const POWER_OF_ATTORNEY_FALLBACK_URL = "/power-of-attorney-registry.json";
+
+const defaultPowerOfAttorneyRegistry = {
+  "Шереметьево": {
+    "Москва-карго": [
+      // { recipient: "ООО Пример", hasAttorney: "+", validUntil: "2026-12-31" },
+    ],
+    "Шереметьево-карго": [
+      // { recipient: "ООО Пример 2", hasAttorney: "+", validUntil: "2026-06-01" },
+    ],
+  },
+  "Внуково": [],
+  "Домодедово": [],
+  "Жуковский": [],
+};
+
+const AIRPORT_ALIASES = new Map([
+  ["Шереметьево", "Шереметьево"],
+  ["Внуково", "Внуково"],
+  ["Домодедово", "Домодедово"],
+  ["Жуковский", "Жуковский"],
+]);
+
+const TERMINAL_ALIASES = new Map([
+  ["Москва-карго", "Москва-карго"],
+  ["Шереметьево-карго", "Шереметьево-карго"],
+]);
+
+const normalizeText = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const normalizeAirport = (airport) => AIRPORT_ALIASES.get(airport) || airport;
+
+const normalizeTerminal = (terminal) => TERMINAL_ALIASES.get(terminal) || terminal;
+
+const hasPlusMark = (value) => {
+  if (typeof value === "boolean") return value;
+  if (value == null) return false;
+  return String(value).includes("+");
+};
+
+const parseDate = (rawDate) => {
+  if (!rawDate) return null;
+  const value = String(rawDate).trim();
+  if (!value) return null;
+
+  const dotMatch = value.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
+  if (dotMatch) {
+    const [, d, m, y] = dotMatch;
+    return new Date(Number(y), Number(m) - 1, Number(d));
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
+};
+
+const formatRuDate = (date) =>
+  `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}.${date.getFullYear()}`;
+
+const getPowerOfAttorneyStatus = ({ shipmentAirport, shipmentTerminal, recipient, registry }) => {
+  const normalizedRecipient = normalizeText(recipient);
+  if (!normalizedRecipient) return null;
+
+  const airportKey = normalizeAirport(shipmentAirport);
+  const airportRegistry = registry[airportKey];
+  if (!airportRegistry) {
+    return { type: "danger", message: "Доверенности нет." };
+  }
+
+  let records = [];
+  if (airportKey === "Шереметьево") {
+    const terminalKey = normalizeTerminal(shipmentTerminal) || "Москва-карго";
+    records = airportRegistry[terminalKey] || [];
+  } else if (Array.isArray(airportRegistry)) {
+    records = airportRegistry;
+  }
+
+  const matchedRecords = records.filter(
+    (record) =>
+      normalizeText(record.recipient) === normalizedRecipient &&
+      hasPlusMark(record.hasAttorney),
+  );
+  if (matchedRecords.length === 0) {
+    return { type: "danger", message: "Доверенности нет." };
+  }
+
+  const validUntilDates = matchedRecords
+    .map((record) => parseDate(record.validUntil))
+    .filter(Boolean);
+
+  if (validUntilDates.length > 0) {
+    const latestValidUntil = validUntilDates.reduce((latest, current) =>
+      current > latest ? current : latest,
+    );
+    const today = new Date();
+    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    if (latestValidUntil < todayStart) {
+      return {
+        type: "danger",
+        message: `Доверенность истекла ${formatRuDate(latestValidUntil)}.`,
+      };
+    }
+    return {
+      type: "success",
+      message: `Доверенность действительна до ${formatRuDate(latestValidUntil)}.`,
+    };
+  }
+
+  return { type: "success", message: "Доверенность действительна до: срок не указан." };
+};
+
+const getRecipientSuggestions = ({ shipmentAirport, shipmentTerminal, recipient, registry }) => {
+  const airportKey = normalizeAirport(shipmentAirport);
+  const airportRegistry = registry[airportKey];
+  if (!airportRegistry) return [];
+
+  let records = [];
+  if (airportKey === "Шереметьево") {
+    const terminalKey = normalizeTerminal(shipmentTerminal) || "Москва-карго";
+    records = airportRegistry[terminalKey] || [];
+  } else if (Array.isArray(airportRegistry)) {
+    records = airportRegistry;
+  }
+
+  const typed = normalizeText(recipient);
+  const uniq = new Set();
+  const nameCounts = new Map();
+  const suggestions = [];
+
+  records.forEach((record) => {
+    const name = String(record?.recipient || "").trim();
+    if (!name) return;
+    const normalizedName = normalizeText(name);
+    nameCounts.set(normalizedName, (nameCounts.get(normalizedName) || 0) + 1);
+  });
+
+  records.forEach((record) => {
+    const name = String(record?.recipient || "").trim();
+    if (!name) return;
+    const normalizedName = normalizeText(name);
+    if (typed && !normalizedName.includes(typed)) return;
+
+    const validUntilRaw = String(record?.validUntil || "").trim();
+    const dedupeKey = `${normalizedName}::${validUntilRaw}`;
+    if (uniq.has(dedupeKey)) return;
+    uniq.add(dedupeKey);
+
+    const hasMultipleByName = (nameCounts.get(normalizedName) || 0) > 1;
+    const label = hasMultipleByName
+      ? (validUntilRaw ? `${name} - до ${validUntilRaw}` : `${name} - срок не указан`)
+      : name;
+
+    suggestions.push({ value: name, label });
+  });
+
+  return suggestions;
+};
+
 const loadOrders = () => {
   const stored = localStorage.getItem("logictrack_orders");
   return stored ? JSON.parse(stored) : [];
@@ -130,14 +294,20 @@ const saveOrders = (orders) => {
 };
 
 const App = () => {
+  const SHEREMETYEVO_VALUES = new Set(["Шереметьево"]);
+  const DEFAULT_SHEREMETYEVO_TERMINAL = "Москва-карго";
+
   const [orders, setOrders] = React.useState(loadOrders);
   const [driveConnected, setDriveConnected] = React.useState(false);
+  const [powerOfAttorneyRegistry, setPowerOfAttorneyRegistry] = React.useState(defaultPowerOfAttorneyRegistry);
+  const [isPowerOfAttorneySyncLoading, setIsPowerOfAttorneySyncLoading] = React.useState(false);
   const [driveHint, setDriveHint] = React.useState(
     "Чтобы активировать синхронизацию, укажите CLIENT_ID и API_KEY в app.jsx."
   );
 
   const [formData, setFormData] = React.useState({
     shipmentAirport: "",
+    shipmentTerminal: "",
     recipient: "",
     orderName: "",
     awb: "",
@@ -166,6 +336,41 @@ const App = () => {
   React.useEffect(() => {
     saveOrders(orders);
   }, [orders]);
+
+  const loadPowerOfAttorneyRegistry = React.useCallback(async (forceRefresh = false) => {
+    setIsPowerOfAttorneySyncLoading(true);
+    try {
+      let loaded = false;
+      const url = forceRefresh
+        ? `${POWER_OF_ATTORNEY_REGISTRY_URL}?force=1`
+        : POWER_OF_ATTORNEY_REGISTRY_URL;
+      const primaryRes = await fetch(url, { cache: "no-store" });
+      if (primaryRes.ok) {
+        const primaryData = await primaryRes.json();
+        if (primaryData && typeof primaryData === "object") {
+          setPowerOfAttorneyRegistry(primaryData);
+          loaded = true;
+        }
+      }
+
+      if (!loaded) {
+        const fallbackRes = await fetch(POWER_OF_ATTORNEY_FALLBACK_URL, { cache: "no-store" });
+        if (!fallbackRes.ok) return;
+        const fallbackData = await fallbackRes.json();
+        if (fallbackData && typeof fallbackData === "object") {
+          setPowerOfAttorneyRegistry(fallbackData);
+        }
+      }
+    } catch (error) {
+      console.warn("Не удалось автозагрузить реестр доверенностей:", error);
+    } finally {
+      setIsPowerOfAttorneySyncLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadPowerOfAttorneyRegistry(false);
+  }, [loadPowerOfAttorneyRegistry]);
 
   
   React.useEffect(() => {
@@ -251,6 +456,14 @@ const App = () => {
   const customsName = formData.customsCode
     ? getCustomsName(formData.customsCode.trim())
     : "Введите код таможни";
+  const powerOfAttorneyStatus = getPowerOfAttorneyStatus({
+    ...formData,
+    registry: powerOfAttorneyRegistry,
+  });
+  const recipientSuggestions = getRecipientSuggestions({
+    ...formData,
+    registry: powerOfAttorneyRegistry,
+  });
 
   const handleFieldChange = (field) => (event) => {
     const value = event.target.value;
@@ -258,6 +471,9 @@ const App = () => {
       const next = { ...prev, [field]: value };
       if (field === "recipient") {
         next.orderName = value.trim();
+      }
+      if (field === "shipmentAirport") {
+        next.shipmentTerminal = SHEREMETYEVO_VALUES.has(value) ? DEFAULT_SHEREMETYEVO_TERMINAL : "";
       }
       return next;
     });
@@ -268,6 +484,7 @@ const App = () => {
     const order = {
       id: `order-${Date.now()}`,
       shipmentAirport: formData.shipmentAirport.trim(),
+      shipmentTerminal: formData.shipmentTerminal.trim(),
       name: formData.orderName.trim(),
       recipient: formData.recipient.trim(),
       awb: formData.awb.trim(),
@@ -289,6 +506,7 @@ const App = () => {
 
     setFormData({
       shipmentAirport: "",
+      shipmentTerminal: "",
       recipient: "",
       orderName: "",
       awb: "",
@@ -587,6 +805,10 @@ const App = () => {
         <OrderFormCard
           formData={formData}
           customsName={customsName}
+          powerOfAttorneyStatus={powerOfAttorneyStatus}
+          recipientSuggestions={recipientSuggestions}
+          isPowerOfAttorneySyncLoading={isPowerOfAttorneySyncLoading}
+          onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}
           onFieldChange={handleFieldChange}
           onSubmit={handleSubmit}
         />
