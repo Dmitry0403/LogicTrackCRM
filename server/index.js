@@ -40,6 +40,43 @@ const POA_XLSX_PATH = process.env.POA_XLSX_PATH || '';
 const CARGO_STATUS_TTL_MS = Number(process.env.CARGO_STATUS_TTL_MS || 300000);
 const CARGO_CHECK_TIMEOUT_MS = Number(process.env.CARGO_CHECK_TIMEOUT_MS || 45000);
 const MOSCOW_CARGO_URL = 'https://www.moscow-cargo.com/';
+const SHER_CARGO_URL = 'https://www.shercargo.ru/it/free/';
+const VNUKOVO_CARGO_URL = 'https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/';
+const DOMODEDOVO_CARGO_URL = 'https://business.dme.ru/cargo/';
+const ZHUKOVSKY_CARGO_URL = 'https://www.aero-grad.ru/aircargo/info/ac_07.pub_info.main?p_lang=R';
+
+const CARGO_TERMINAL_CONFIG = {
+  svo_moscow: {
+    key: 'svo_moscow',
+    label: 'Москва-карго',
+    url: MOSCOW_CARGO_URL,
+    mode: 'moscow',
+  },
+  svo_sher: {
+    key: 'svo_sher',
+    label: 'Шереметьево-карго',
+    url: SHER_CARGO_URL,
+    mode: 'generic',
+  },
+  vko: {
+    key: 'vko',
+    label: 'Внуково',
+    url: VNUKOVO_CARGO_URL,
+    mode: 'generic',
+  },
+  dme: {
+    key: 'dme',
+    label: 'Домодедово',
+    url: DOMODEDOVO_CARGO_URL,
+    mode: 'generic',
+  },
+  zia: {
+    key: 'zia',
+    label: 'Жуковский',
+    url: ZHUKOVSKY_CARGO_URL,
+    mode: 'generic',
+  },
+};
 
 const defaultSheetTabs = {
   'Шереметьево': 'Шереметьево',
@@ -97,10 +134,11 @@ const isDateHeader = (header) => {
   return h.includes('срок') || h.includes('действ') || h.includes('до') || h.includes('expir');
 };
 
-const makeCargoScreenshotMeta = ({ awb }) => {
+const makeCargoScreenshotMeta = ({ awb, terminalKey = 'cargo' }) => {
   const safeAwb = String(awb || '').replace(/[^0-9A-Za-z_-]/g, '_') || 'unknown';
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-  const id = `moscow-${safeAwb}-${stamp}`;
+  const safeTerminalKey = String(terminalKey || 'cargo').replace(/[^0-9A-Za-z_-]/g, '_');
+  const id = `${safeTerminalKey}-${safeAwb}-${stamp}`;
   const logsDir = path.resolve(__dirname, 'logs', 'cargo-status');
   const filePath = path.join(logsDir, `${id}.png`);
   return { id, logsDir, filePath };
@@ -111,14 +149,19 @@ const rememberCargoScreenshot = ({ id, filePath }) => {
 };
 
 const removeCargoScreenshot = async (id) => {
-  const filePath = cargoScreenshotStore.get(id);
-  if (!filePath) return false;
+  const fromStore = cargoScreenshotStore.get(id);
+  const fallbackPath = path.resolve(__dirname, 'logs', 'cargo-status', `${id}.png`);
+  const filePath = fromStore || fallbackPath;
 
   cargoScreenshotStore.delete(id);
+  let removed = false;
   try {
     await fs.unlink(filePath);
+    removed = true;
   } catch (error) {
-    if (error.code !== 'ENOENT') throw error;
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
   }
 
   for (const [cacheKey, entry] of cargoStatusCache.entries()) {
@@ -127,10 +170,16 @@ const removeCargoScreenshot = async (id) => {
     }
   }
 
-  return true;
+  return removed;
 };
 
 const buildCargoScreenshotUrl = (id) => `/cargo/screenshot/${id}`;
+
+const resolveCargoTerminalConfig = (terminalKeyRaw) => {
+  const terminalKey = String(terminalKeyRaw || '').trim().toLowerCase();
+  if (!terminalKey) return null;
+  return CARGO_TERMINAL_CONFIG[terminalKey] || null;
+};
 
 const cropPngTop = (png, topPx) => {
   const cropTop = Math.max(0, Math.min(topPx, png.height - 1));
@@ -166,8 +215,8 @@ const stitchPngSegments = (segments) => {
   return PNG.sync.write(merged);
 };
 
-const captureMoscowCargoResultScreenshot = async ({ page, awb }) => {
-  const meta = makeCargoScreenshotMeta({ awb });
+const captureMoscowCargoResultScreenshot = async ({ page, awb, terminalKey = 'cargo' }) => {
+  const meta = makeCargoScreenshotMeta({ awb, terminalKey });
   await fs.mkdir(meta.logsDir, { recursive: true });
 
   const targetInfo = await page.evaluate(() => {
@@ -282,6 +331,402 @@ const captureMoscowCargoResultScreenshot = async ({ page, awb }) => {
     screenshotId: meta.id,
     screenshotUrl: buildCargoScreenshotUrl(meta.id),
   };
+};
+
+const fillGenericAwbInputs = async ({ page, awb }) => {
+  const inputs = page.locator('input:not([type="hidden"])');
+  const count = await inputs.count();
+  const awbParts = splitAwbParts(awb);
+  let firstIndex = -1;
+  let secondIndex = -1;
+  let oneFieldIndex = -1;
+
+  for (let i = 0; i < count; i += 1) {
+    const input = inputs.nth(i);
+    try {
+      if (!(await input.isVisible())) continue;
+      if (!(await input.isEditable())) continue;
+      const type = ((await input.getAttribute('type')) || '').toLowerCase();
+      const name = ((await input.getAttribute('name')) || '').toLowerCase();
+      const id = ((await input.getAttribute('id')) || '').toLowerCase();
+      const placeholder = ((await input.getAttribute('placeholder')) || '').toLowerCase();
+      const hint = `${type} ${name} ${id} ${placeholder}`;
+
+      if (/(date|email|password|tel)/.test(type)) continue;
+      if (hint.includes('prefix') || hint.includes('преф') || hint.includes('code')) {
+        if (firstIndex === -1) firstIndex = i;
+      } else if (hint.includes('number') || hint.includes('номер') || hint.includes('awb') || hint.includes('наклад')) {
+        if (oneFieldIndex === -1) oneFieldIndex = i;
+        if (secondIndex === -1) secondIndex = i;
+      } else if (oneFieldIndex === -1 && (type === 'text' || type === 'search' || type === '')) {
+        oneFieldIndex = i;
+      }
+    } catch (error) {
+      // Ignore and continue.
+    }
+  }
+
+  if (awbParts && firstIndex >= 0 && secondIndex >= 0 && firstIndex !== secondIndex) {
+    await inputs.nth(firstIndex).fill('');
+    await inputs.nth(secondIndex).fill('');
+    await inputs.nth(firstIndex).fill(awbParts.prefix);
+    await inputs.nth(secondIndex).fill(awbParts.number);
+    return true;
+  }
+
+  if (oneFieldIndex >= 0) {
+    await inputs.nth(oneFieldIndex).fill('');
+    await inputs.nth(oneFieldIndex).fill(awb);
+    return true;
+  }
+
+  return false;
+};
+
+const clickGenericSearchButton = async (page) => {
+  const buttonTexts = ['провер', 'найти', 'поиск', 'статус', 'search', 'check'];
+  const buttons = page.locator('button, input[type="submit"], input[type="button"]');
+  const count = await buttons.count();
+  for (let i = 0; i < count; i += 1) {
+    const button = buttons.nth(i);
+    try {
+      if (!(await button.isVisible())) continue;
+      const text = (((await button.innerText()) || '') + ' ' + ((await button.getAttribute('value')) || '')).toLowerCase();
+      if (buttonTexts.some((token) => text.includes(token))) {
+        await button.click({ timeout: 5000 });
+        return true;
+      }
+    } catch (error) {
+      // Ignore.
+    }
+  }
+  return false;
+};
+
+const fillFirstVisibleBySelectors = async (page, selectors, value) => {
+  for (const selector of selectors) {
+    const locator = page.locator(selector).first();
+    try {
+      if (!(await locator.count())) continue;
+      if (!(await locator.isVisible())) continue;
+      if (!(await locator.isEditable())) continue;
+      await locator.fill('');
+      await locator.fill(value);
+      return true;
+    } catch (error) {
+      // Try next selector.
+    }
+  }
+  return false;
+};
+
+const clickFirstVisibleBySelectors = async (page, selectors) => {
+  for (const selector of selectors) {
+    const locator = page.locator(selector).first();
+    try {
+      if (!(await locator.count())) continue;
+      if (!(await locator.isVisible())) continue;
+      await locator.click({ timeout: 5000 });
+      return true;
+    } catch (error) {
+      // Try next selector.
+    }
+  }
+  return false;
+};
+
+const searchShercargoStatus = async ({ page, awb }) => {
+  const awbParts = splitAwbParts(awb);
+  const numberValue = awbParts ? awbParts.number : awb.replace(/\D/g, '').slice(3);
+  const prefixValue = awbParts ? awbParts.prefix : awb.replace(/\D/g, '').slice(0, 3);
+
+  const tryContext = async (ctx) => {
+    const inputs = ctx.locator('input[type="text"], input[type="search"], input[type="tel"], input:not([type])');
+    const count = await inputs.count();
+    const visible = [];
+
+    for (let i = 0; i < count; i += 1) {
+      const input = inputs.nth(i);
+      try {
+        if (!(await input.isVisible())) continue;
+        if (!(await input.isEditable())) continue;
+        const box = await input.boundingBox();
+        if (!box || box.width < 20 || box.height < 12) continue;
+        const maxLength = Number((await input.getAttribute('maxlength')) || '0');
+        visible.push({ input, box, maxLength });
+      } catch (error) {
+        // Ignore.
+      }
+    }
+
+    if (visible.length < 2) return false;
+
+    visible.sort((a, b) => (a.box.y - b.box.y) || (a.box.x - b.box.x));
+    const pair = (() => {
+      for (let i = 0; i < visible.length - 1; i += 1) {
+        for (let j = i + 1; j < visible.length; j += 1) {
+          const dy = Math.abs(visible[i].box.y - visible[j].box.y);
+          const dx = Math.abs(visible[i].box.x - visible[j].box.x);
+          if (dy <= 40 && dx <= 500) return [visible[i], visible[j]];
+        }
+      }
+      return [visible[0], visible[1]];
+    })();
+
+    let first = pair[0];
+    let second = pair[1];
+    if (first.box.x > second.box.x) {
+      [first, second] = [second, first];
+    }
+    if (first.maxLength >= 6 && second.maxLength > 0 && second.maxLength <= 4) {
+      [first, second] = [second, first];
+    }
+
+    const typeIn = async (locator, value) => {
+      await locator.click({ clickCount: 3 });
+      await locator.press('Backspace').catch(() => {});
+      await locator.type(String(value || ''), { delay: 60 });
+      await locator.blur();
+    };
+
+    await typeIn(first.input, prefixValue);
+    await typeIn(second.input, numberValue);
+
+    const firstVal = String((await first.input.inputValue()) || '').replace(/\D/g, '');
+    const secondVal = String((await second.input.inputValue()) || '').replace(/\D/g, '');
+    if (!firstVal || !secondVal) return false;
+
+    const searchButton = ctx.locator(
+      'button[aria-label*="search" i], button[title*="search" i], button:has(i), button:has(svg), button[class*="search" i], input[type="submit"], input[type="button"], button',
+    );
+    const bCount = await searchButton.count();
+    for (let i = 0; i < bCount; i += 1) {
+      const btn = searchButton.nth(i);
+      try {
+        if (!(await btn.isVisible())) continue;
+        const box = await btn.boundingBox();
+        if (!box) continue;
+        const nearY = Math.abs(box.y - second.box.y) <= 80;
+        const nearX = box.x >= second.box.x - 40 && box.x <= second.box.x + 260;
+        if (nearY && nearX) {
+          await btn.click({ timeout: 5000 });
+          return true;
+        }
+      } catch (error) {
+        // Try next.
+      }
+    }
+
+    await second.input.press('Enter').catch(() => {});
+    return true;
+  };
+
+  if (await tryContext(page)) return true;
+  for (const frame of page.frames()) {
+    if (frame === page.mainFrame()) continue;
+    if (await tryContext(frame)) return true;
+  }
+
+  const awbSelectors = [
+    'input[name*="awb" i]',
+    'input[id*="awb" i]',
+    'input[placeholder*="awb" i]',
+    'input[placeholder*="наклад" i]',
+    'input[name*="cargo" i]',
+    'input[type="text"]',
+    'input[type="search"]',
+  ];
+  const buttonSelectors = [
+    'button:has-text("Провер")',
+    'button:has-text("Найти")',
+    'button:has-text("Search")',
+    'input[type="submit"]',
+    'input[type="button"]',
+  ];
+
+  const filled = await fillFirstVisibleBySelectors(page, awbSelectors, awb);
+  if (!filled) return false;
+  const clicked = await clickFirstVisibleBySelectors(page, buttonSelectors);
+  if (!clicked) {
+    const firstInput = page.locator('input:not([type="hidden"])').first();
+    if (await firstInput.count()) {
+      await firstInput.press('Enter').catch(() => {});
+    }
+  }
+  return true;
+};
+
+const searchVnukovoStatus = async ({ page, awb }) => {
+  const awbSelectors = [
+    'input[name*="awb" i]',
+    'input[id*="awb" i]',
+    'input[placeholder*="наклад" i]',
+    'input[placeholder*="awb" i]',
+    'input[type="text"]',
+    'input[type="search"]',
+  ];
+  const buttonSelectors = [
+    'button:has-text("Провер")',
+    'button:has-text("Узнать")',
+    'button:has-text("Найти")',
+    'input[type="submit"]',
+    'input[type="button"]',
+  ];
+
+  const filled = await fillFirstVisibleBySelectors(page, awbSelectors, awb);
+  if (!filled) return false;
+  const clicked = await clickFirstVisibleBySelectors(page, buttonSelectors);
+  if (!clicked) {
+    const firstInput = page.locator('input:not([type="hidden"])').first();
+    if (await firstInput.count()) {
+      await firstInput.press('Enter').catch(() => {});
+    }
+  }
+  return true;
+};
+
+const searchDomodedovoStatus = async ({ page, awb }) => {
+  const awbSelectors = [
+    'input[name*="awb" i]',
+    'input[id*="awb" i]',
+    'input[placeholder*="наклад" i]',
+    'input[placeholder*="awb" i]',
+    'input[type="text"]',
+    'input[type="search"]',
+  ];
+  const buttonSelectors = [
+    'button:has-text("Провер")',
+    'button:has-text("Найти")',
+    'button:has-text("Search")',
+    'input[type="submit"]',
+    'input[type="button"]',
+  ];
+
+  const filled = await fillFirstVisibleBySelectors(page, awbSelectors, awb);
+  if (!filled) return false;
+  const clicked = await clickFirstVisibleBySelectors(page, buttonSelectors);
+  if (!clicked) {
+    const firstInput = page.locator('input:not([type="hidden"])').first();
+    if (await firstInput.count()) {
+      await firstInput.press('Enter').catch(() => {});
+    }
+  }
+  return true;
+};
+
+const searchZhukovskyStatus = async ({ page, awb }) => {
+  const awbSelectors = [
+    'input[name*="awb" i]',
+    'input[id*="awb" i]',
+    'input[name*="nn" i]',
+    'input[name*="num" i]',
+    'input[placeholder*="наклад" i]',
+    'input[type="text"]',
+    'input[type="search"]',
+  ];
+  const buttonSelectors = [
+    'button:has-text("Провер")',
+    'button:has-text("Найти")',
+    'button:has-text("Показ")',
+    'input[type="submit"]',
+    'input[type="button"]',
+  ];
+
+  const filled = await fillFirstVisibleBySelectors(page, awbSelectors, awb);
+  if (!filled) return false;
+  const clicked = await clickFirstVisibleBySelectors(page, buttonSelectors);
+  if (!clicked) {
+    const firstInput = page.locator('input:not([type="hidden"])').first();
+    if (await firstInput.count()) {
+      await firstInput.press('Enter').catch(() => {});
+    }
+  }
+  return true;
+};
+
+const runSpecificTerminalSearch = async ({ page, awb, terminalConfig }) => {
+  if (terminalConfig.key === 'svo_sher') {
+    return searchShercargoStatus({ page, awb });
+  }
+  if (terminalConfig.key === 'vko') {
+    return searchVnukovoStatus({ page, awb });
+  }
+  if (terminalConfig.key === 'dme') {
+    return searchDomodedovoStatus({ page, awb });
+  }
+  if (terminalConfig.key === 'zia') {
+    return searchZhukovskyStatus({ page, awb });
+  }
+  return false;
+};
+
+const scrapeGenericCargoStatus = async ({ awb, terminalConfig }) => {
+  const playwright = getPlaywright();
+  if (!playwright || !playwright.chromium) {
+    const error = new Error('Playwright is not installed on server');
+    error.code = 'playwright_missing';
+    throw error;
+  }
+
+  const { chromium } = playwright;
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ locale: 'ru-RU' });
+  const page = await context.newPage();
+  const checkedAt = Date.now();
+
+  try {
+    await page.goto(terminalConfig.url, { waitUntil: 'domcontentloaded', timeout: CARGO_CHECK_TIMEOUT_MS });
+    await page.waitForTimeout(1200);
+
+    let submitted = await runSpecificTerminalSearch({ page, awb, terminalConfig });
+    if (!submitted) {
+      const awbFilled = await fillGenericAwbInputs({ page, awb });
+      if (awbFilled) {
+        submitted = await clickGenericSearchButton(page);
+        if (!submitted) {
+          const input = page.locator('input:not([type="hidden"])').first();
+          if (await input.count()) {
+            await input.press('Enter').catch(() => {});
+            submitted = true;
+          }
+        }
+      }
+    }
+
+    if (submitted) {
+      await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+      await page.waitForTimeout(2000);
+    }
+
+    const statusText = await extractMoscowCargoStatusText(page);
+    const screenshot = await captureMoscowCargoResultScreenshot({ page, awb, terminalKey: terminalConfig.key });
+
+    return {
+      terminal: terminalConfig.label,
+      awb,
+      statusText,
+      tables: [],
+      checkedAt,
+      sourceUrl: terminalConfig.url,
+      screenshotId: screenshot.screenshotId,
+      screenshotUrl: screenshot.screenshotUrl,
+    };
+  } catch (error) {
+    const logsDir = path.resolve(__dirname, 'logs', 'cargo-status');
+    await fs.mkdir(logsDir, { recursive: true });
+    const safeAwb = awb.replace(/[^0-9A-Za-z_-]/g, '_') || 'unknown';
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const screenshotPath = path.join(logsDir, `generic-cargo-${terminalConfig.key}-${safeAwb}-${stamp}.png`);
+    try {
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      error.screenshotPath = screenshotPath;
+    } catch (screenshotError) {
+      // Keep original error.
+    }
+    throw error;
+  } finally {
+    await browser.close();
+  }
 };
 
 const findHeaderIndex = (headers, predicate, fallback) => {
@@ -655,7 +1100,7 @@ const chunks = [];
   return [...new Set(lines)].slice(0, 25).join('\n');
 };
 
-const scrapeMoscowCargoStatus = async ({ awb }) => {
+const scrapeMoscowCargoStatus = async ({ awb, terminalLabel }) => {
   const playwright = getPlaywright();
   if (!playwright || !playwright.chromium) {
     const error = new Error('Playwright is not installed on server');
@@ -699,10 +1144,10 @@ const scrapeMoscowCargoStatus = async ({ awb }) => {
       throw error;
     }
 
-    const screenshot = await captureMoscowCargoResultScreenshot({ page, awb });
+    const screenshot = await captureMoscowCargoResultScreenshot({ page, awb, terminalKey: 'svo_moscow' });
 
     return {
-      terminal: 'Москва-карго',
+      terminal: terminalLabel || 'Москва-карго',
       awb,
       statusText,
       tables,
@@ -774,6 +1219,7 @@ app.post('/cargo/status', async (req, res) => {
   try {
     const awb = normalizeAwb(req.body?.awb);
     const terminal = String(req.body?.terminal || '').trim();
+    const terminalKey = String(req.body?.terminalKey || '').trim();
     const forceRefresh = req.body?.force === true;
 
     if (!awb) {
@@ -781,6 +1227,14 @@ app.post('/cargo/status', async (req, res) => {
     }
     if (!terminal) {
       return res.status(400).json({ error: 'terminal_required' });
+    }
+
+    const terminalConfig = resolveCargoTerminalConfig(terminalKey);
+    if (!terminalConfig) {
+      return res.status(400).json({
+        error: 'terminal_not_supported',
+        details: 'Unsupported terminal key',
+      });
     }
 
     const cacheKey = getCargoCacheKey({ terminal, awb });
@@ -793,7 +1247,9 @@ app.post('/cargo/status', async (req, res) => {
       });
     }
 
-    const data = await scrapeMoscowCargoStatus({ awb });
+    const data = terminalConfig.mode === 'moscow'
+      ? await scrapeMoscowCargoStatus({ awb, terminalLabel: terminalConfig.label })
+      : await scrapeGenericCargoStatus({ awb, terminalConfig });
     const expiresAt = Date.now() + CARGO_STATUS_TTL_MS;
     if (cacheEntry?.data?.screenshotId && cacheEntry.data.screenshotId !== data.screenshotId) {
       await removeCargoScreenshot(cacheEntry.data.screenshotId).catch(() => {});

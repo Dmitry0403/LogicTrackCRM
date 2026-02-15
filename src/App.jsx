@@ -131,6 +131,18 @@ const resolveCargoApiUrl = (urlPath) => {
   return `${CARGO_API_BASE_URL}${urlPath.startsWith("/") ? "" : "/"}${urlPath}`;
 };
 
+const resolveCargoTerminalKey = ({ shipmentAirport, shipmentTerminal }) => {
+  if (shipmentAirport === "Шереметьево") {
+    if (shipmentTerminal === "Москва-карго") return "svo_moscow";
+    if (shipmentTerminal === "Шереметьево-карго") return "svo_sher";
+    return "";
+  }
+  if (shipmentAirport === "Внуково") return "vko";
+  if (shipmentAirport === "Домодедово") return "dme";
+  if (shipmentAirport === "Жуковский") return "zia";
+  return "";
+};
+
 const defaultPowerOfAttorneyRegistry = {
   "Шереметьево": {
     "Москва-карго": [
@@ -482,9 +494,8 @@ const App = () => {
     ...formData,
     registry: powerOfAttorneyRegistry,
   });
-  const isMoscowCargoTerminal =
-    formData.shipmentAirport === "Шереметьево" &&
-    normalizeTerminal(formData.shipmentTerminal) === "Москва-карго";
+  const cargoTerminalKey = resolveCargoTerminalKey(formData);
+  const isCargoCheckAvailable = Boolean(cargoTerminalKey);
 
   const checkAwbStatus = async () => {
     const awb = formData.awb.trim();
@@ -497,10 +508,10 @@ const App = () => {
       return;
     }
 
-    if (!isMoscowCargoTerminal) {
+    if (!isCargoCheckAvailable) {
       setAwbStatusCheck({
         loading: false,
-        error: "Проверка сейчас доступна только для терминала Москва-карго.",
+        error: "Сначала выберите аэропорт и терминал для проверки.",
         data: null,
       });
       return;
@@ -518,7 +529,8 @@ const App = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           awb,
-          terminal: formData.shipmentTerminal,
+          terminal: formData.shipmentTerminal || formData.shipmentAirport,
+          terminalKey: cargoTerminalKey,
         }),
       });
       const payload = await response.json();
@@ -935,7 +947,7 @@ const App = () => {
           powerOfAttorneyStatus={powerOfAttorneyStatus}
           recipientSuggestions={recipientSuggestions}
           awbStatusCheck={awbStatusCheck}
-          isAwbCheckAvailable={isMoscowCargoTerminal}
+          isAwbCheckAvailable={isCargoCheckAvailable}
           isPowerOfAttorneySyncLoading={isPowerOfAttorneySyncLoading}
           onCheckAwbStatus={checkAwbStatus}
           onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}

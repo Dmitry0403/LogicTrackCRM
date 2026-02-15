@@ -179,97 +179,6 @@ small {
   margin-top: 4px;
 }
 
-.awb-status-card {
-  margin-top: 8px;
-  border: 1px solid #d7deea;
-  border-radius: 12px;
-  background: #f8fbff;
-  padding: 12px;
-}
-
-.awb-status-card__header {
-  display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  gap: 12px;
-  margin-bottom: 8px;
-}
-
-.awb-status-card__meta {
-  font-size: 13px;
-  color: #4f617e;
-  margin-top: 2px;
-}
-
-.awb-status-card__badge {
-  font-size: 12px;
-  font-weight: 700;
-  color: #155e75;
-  background: #cffafe;
-  border-radius: 999px;
-  padding: 4px 10px;
-}
-
-.awb-status-accordion {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.awb-status-accordion__item--full {
-  grid-column: 1 / -1;
-}
-
-.awb-status-accordion details {
-  border: 1px solid #dbe4f1;
-  border-radius: 10px;
-  background: #fff;
-  overflow: hidden;
-}
-
-.awb-status-accordion summary {
-  cursor: pointer;
-  padding: 10px 12px;
-  font-weight: 600;
-  background: #f2f6fd;
-}
-
-.awb-status-accordion details[open] summary {
-  border-bottom: 1px solid #e5eaf3;
-}
-
-.awb-status-accordion pre {
-  margin: 0;
-  padding: 10px 12px;
-  white-space: pre-wrap;
-  font-family: inherit;
-  font-size: 14px;
-  line-height: 1.45;
-}
-
-.awb-table-wrap {
-  overflow-x: auto;
-}
-
-.awb-data-table {
-  width: 100%;
-  min-width: 720px;
-  border-collapse: collapse;
-  font-size: 14px;
-}
-
-.awb-data-table th,
-.awb-data-table td {
-  border: 1px solid #e5eaf3;
-  padding: 8px 10px;
-  text-align: left;
-  vertical-align: top;
-}
-
-.awb-data-table th {
-  background: #f3f7fd;
-  font-weight: 700;
-}
 
 .screenshot-modal__overlay {
   position: fixed;
@@ -392,12 +301,4 @@ button:disabled {
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   }
 
-  .awb-status-card__header {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-
-  .awb-status-accordion {
-    grid-template-columns: 1fr;
-  }
 }
