@@ -122,6 +122,14 @@ const getCustomsName = (code) => customsCodeMap[code] || "Введите пра�
 
 const POWER_OF_ATTORNEY_REGISTRY_URL = "http://localhost:3001/poa/registry";
 const POWER_OF_ATTORNEY_FALLBACK_URL = "/power-of-attorney-registry.json";
+const CARGO_STATUS_URL = "http://localhost:3001/cargo/status";
+const CARGO_API_BASE_URL = "http://localhost:3001";
+
+const resolveCargoApiUrl = (urlPath) => {
+  if (!urlPath) return "";
+  if (/^https?:\/\//i.test(urlPath)) return urlPath;
+  return `${CARGO_API_BASE_URL}${urlPath.startsWith("/") ? "" : "/"}${urlPath}`;
+};
 
 const defaultPowerOfAttorneyRegistry = {
   "Шереметьево": {
@@ -316,6 +324,16 @@ const App = () => {
     customsCode: "",
     notes: "",
   });
+  const [awbStatusCheck, setAwbStatusCheck] = React.useState({
+    loading: false,
+    error: "",
+    data: null,
+  });
+  const [cargoScreenshotModal, setCargoScreenshotModal] = React.useState({
+    isOpen: false,
+    screenshotId: "",
+    screenshotUrl: "",
+  });
 
   // Editing state
   const [editingOrderId, setEditingOrderId] = React.useState(null);
@@ -464,6 +482,102 @@ const App = () => {
     ...formData,
     registry: powerOfAttorneyRegistry,
   });
+  const isMoscowCargoTerminal =
+    formData.shipmentAirport === "Шереметьево" &&
+    normalizeTerminal(formData.shipmentTerminal) === "Москва-карго";
+
+  const checkAwbStatus = async () => {
+    const awb = formData.awb.trim();
+    if (!awb) {
+      setAwbStatusCheck({
+        loading: false,
+        error: "Введите номер авианакладной.",
+        data: null,
+      });
+      return;
+    }
+
+    if (!isMoscowCargoTerminal) {
+      setAwbStatusCheck({
+        loading: false,
+        error: "Проверка сейчас доступна только для терминала Москва-карго.",
+        data: null,
+      });
+      return;
+    }
+
+    setAwbStatusCheck({
+      loading: true,
+      error: "",
+      data: null,
+    });
+
+    try {
+      const response = await fetch(CARGO_STATUS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          awb,
+          terminal: formData.shipmentTerminal,
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) {
+        throw new Error(payload?.details || payload?.error || "Ошибка проверки статуса");
+      }
+
+      setAwbStatusCheck({
+        loading: false,
+        error: "",
+        data: payload,
+      });
+      const screenshotId = String(payload?.screenshotId || "");
+      const screenshotUrl = resolveCargoApiUrl(payload?.screenshotUrl || "");
+      if (screenshotId && screenshotUrl) {
+        setCargoScreenshotModal({
+          isOpen: true,
+          screenshotId,
+          screenshotUrl,
+        });
+      } else {
+        setCargoScreenshotModal({
+          isOpen: false,
+          screenshotId: "",
+          screenshotUrl: "",
+        });
+      }
+    } catch (error) {
+      setAwbStatusCheck({
+        loading: false,
+        error: error.message || "Не удалось проверить статус груза.",
+        data: null,
+      });
+      setCargoScreenshotModal({
+        isOpen: false,
+        screenshotId: "",
+        screenshotUrl: "",
+      });
+    }
+  };
+
+  const closeCargoScreenshotModal = async () => {
+    const screenshotId = cargoScreenshotModal.screenshotId;
+    if (screenshotId) {
+      try {
+        await fetch(`${CARGO_API_BASE_URL}/cargo/screenshot/${encodeURIComponent(screenshotId)}`, {
+          method: "DELETE",
+        });
+      } catch (error) {
+        console.warn("Не удалось удалить скриншот:", error);
+      }
+    }
+
+    setCargoScreenshotModal({
+      isOpen: false,
+      screenshotId: "",
+      screenshotUrl: "",
+    });
+  };
 
   const handleFieldChange = (field) => (event) => {
     const value = event.target.value;
@@ -477,6 +591,14 @@ const App = () => {
       }
       return next;
     });
+
+    if (field === "awb" || field === "shipmentAirport" || field === "shipmentTerminal") {
+      setAwbStatusCheck({
+        loading: false,
+        error: "",
+        data: null,
+      });
+    }
   };
 
   const handleSubmit = (event) => {
@@ -514,6 +636,11 @@ const App = () => {
       weight: "",
       customsCode: "",
       notes: "",
+    });
+    setAwbStatusCheck({
+      loading: false,
+      error: "",
+      data: null,
     });
   };
 
@@ -807,7 +934,10 @@ const App = () => {
           customsName={customsName}
           powerOfAttorneyStatus={powerOfAttorneyStatus}
           recipientSuggestions={recipientSuggestions}
+          awbStatusCheck={awbStatusCheck}
+          isAwbCheckAvailable={isMoscowCargoTerminal}
           isPowerOfAttorneySyncLoading={isPowerOfAttorneySyncLoading}
+          onCheckAwbStatus={checkAwbStatus}
           onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}
           onFieldChange={handleFieldChange}
           onSubmit={handleSubmit}
@@ -845,6 +975,28 @@ const App = () => {
         onCancel={handleCancelEdit}
         getCustomsName={getCustomsName}
       />
+
+      {cargoScreenshotModal.isOpen && cargoScreenshotModal.screenshotUrl && (
+        <div
+          className="screenshot-modal__overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Скриншот статуса груза"
+          onClick={closeCargoScreenshotModal}
+        >
+          <div className="screenshot-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="screenshot-modal__header">
+              <h3>Скриншот ответа терминала</h3>
+              <button type="button" onClick={closeCargoScreenshotModal}>
+                Закрыть
+              </button>
+            </div>
+            <div className="screenshot-modal__body">
+              <img src={cargoScreenshotModal.screenshotUrl} alt="Скриншот ответа терминала" />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

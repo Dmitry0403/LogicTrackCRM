@@ -4,6 +4,7 @@ const cors = require('cors');
 const fetch = require('node-fetch');
 const fs = require('fs/promises');
 const path = require('path');
+const { PNG } = require('pngjs');
 const XLSX = require('xlsx');
 
 const app = express();
@@ -36,6 +37,9 @@ app.use(express.json());
 const POA_SYNC_TTL_MS = Number(process.env.POA_SYNC_TTL_MS || 300000);
 const POA_XLSX_URL = process.env.POA_XLSX_URL || '';
 const POA_XLSX_PATH = process.env.POA_XLSX_PATH || '';
+const CARGO_STATUS_TTL_MS = Number(process.env.CARGO_STATUS_TTL_MS || 300000);
+const CARGO_CHECK_TIMEOUT_MS = Number(process.env.CARGO_CHECK_TIMEOUT_MS || 45000);
+const MOSCOW_CARGO_URL = 'https://www.moscow-cargo.com/';
 
 const defaultSheetTabs = {
   'Шереметьево': 'Шереметьево',
@@ -49,6 +53,8 @@ let poaCache = {
   updatedAt: 0,
   data: null,
 };
+const cargoStatusCache = new Map();
+const cargoScreenshotStore = new Map();
 
 const normalizeText = (value) =>
   String(value || '')
@@ -56,6 +62,18 @@ const normalizeText = (value) =>
     .replace(/ё/g, 'е')
     .replace(/\s+/g, ' ')
     .trim();
+
+const normalizeAwb = (value) => String(value || '').replace(/\s+/g, '').trim();
+
+const getCargoCacheKey = ({ terminal, awb }) => `${normalizeText(terminal)}::${normalizeAwb(awb)}`;
+
+const getPlaywright = () => {
+  try {
+    return require('playwright');
+  } catch (error) {
+    return null;
+  }
+};
 
 const parseJsonEnv = (raw, fallback) => {
   if (!raw) return fallback;
@@ -79,6 +97,193 @@ const isDateHeader = (header) => {
   return h.includes('срок') || h.includes('действ') || h.includes('до') || h.includes('expir');
 };
 
+const makeCargoScreenshotMeta = ({ awb }) => {
+  const safeAwb = String(awb || '').replace(/[^0-9A-Za-z_-]/g, '_') || 'unknown';
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const id = `moscow-${safeAwb}-${stamp}`;
+  const logsDir = path.resolve(__dirname, 'logs', 'cargo-status');
+  const filePath = path.join(logsDir, `${id}.png`);
+  return { id, logsDir, filePath };
+};
+
+const rememberCargoScreenshot = ({ id, filePath }) => {
+  cargoScreenshotStore.set(id, filePath);
+};
+
+const removeCargoScreenshot = async (id) => {
+  const filePath = cargoScreenshotStore.get(id);
+  if (!filePath) return false;
+
+  cargoScreenshotStore.delete(id);
+  try {
+    await fs.unlink(filePath);
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+  }
+
+  for (const [cacheKey, entry] of cargoStatusCache.entries()) {
+    if (entry?.data?.screenshotId === id) {
+      cargoStatusCache.delete(cacheKey);
+    }
+  }
+
+  return true;
+};
+
+const buildCargoScreenshotUrl = (id) => `/cargo/screenshot/${id}`;
+
+const cropPngTop = (png, topPx) => {
+  const cropTop = Math.max(0, Math.min(topPx, png.height - 1));
+  if (cropTop === 0) return png;
+
+  const cropped = new PNG({ width: png.width, height: png.height - cropTop });
+  for (let y = cropTop; y < png.height; y += 1) {
+    const srcStart = y * png.width * 4;
+    const srcEnd = srcStart + (png.width * 4);
+    const dstStart = (y - cropTop) * png.width * 4;
+    png.data.copy(cropped.data, dstStart, srcStart, srcEnd);
+  }
+  return cropped;
+};
+
+const stitchPngSegments = (segments) => {
+  const width = Math.max(...segments.map((segment) => segment.png.width));
+  const height = segments.reduce((sum, segment) => sum + segment.png.height, 0);
+  const merged = new PNG({ width, height });
+  let cursorY = 0;
+
+  segments.forEach((segment) => {
+    const { png } = segment;
+    for (let y = 0; y < png.height; y += 1) {
+      const srcStart = y * png.width * 4;
+      const srcEnd = srcStart + (png.width * 4);
+      const dstStart = ((cursorY + y) * width * 4);
+      png.data.copy(merged.data, dstStart, srcStart, srcEnd);
+    }
+    cursorY += png.height;
+  });
+
+  return PNG.sync.write(merged);
+};
+
+const captureMoscowCargoResultScreenshot = async ({ page, awb }) => {
+  const meta = makeCargoScreenshotMeta({ awb });
+  await fs.mkdir(meta.logsDir, { recursive: true });
+
+  const targetInfo = await page.evaluate(() => {
+    const hasVisibleBox = (el) => {
+      const rect = el.getBoundingClientRect();
+      if (rect.width < 300 || rect.height < 200) return false;
+      if (rect.bottom <= 0 || rect.top >= window.innerHeight) return false;
+      const style = window.getComputedStyle(el);
+      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+      return true;
+    };
+
+    const scoreElement = (el) => {
+      if (!hasVisibleBox(el)) return -1;
+      if (el.scrollHeight <= el.clientHeight + 20) return -1;
+      const text = (el.innerText || '').toLowerCase();
+      let score = 0;
+      if (text.includes('история обработки груза')) score += 15;
+      if (text.includes('параметры авианакладной')) score += 12;
+      if (text.includes('таможенная информация')) score += 8;
+      if (text.includes('дата awb')) score += 5;
+      score += Math.min(el.scrollHeight / 500, 15);
+      score += Math.min(el.clientHeight / 300, 5);
+      return score;
+    };
+
+    const candidates = Array.from(document.querySelectorAll('div,section,article,main'));
+    let best = null;
+    let bestScore = -1;
+
+    candidates.forEach((el) => {
+      const score = scoreElement(el);
+      if (score > bestScore) {
+        bestScore = score;
+        best = el;
+      }
+    });
+
+    if (!best) return null;
+    best.setAttribute('data-cargo-capture-target', '1');
+    const rect = best.getBoundingClientRect();
+    return {
+      scrollHeight: best.scrollHeight,
+      clientHeight: best.clientHeight,
+      clip: {
+        x: Math.max(0, rect.left),
+        y: Math.max(0, rect.top),
+        width: Math.max(1, rect.width),
+        height: Math.max(1, rect.height),
+      },
+    };
+  });
+
+  if (!targetInfo) {
+    await page.screenshot({ path: meta.filePath, fullPage: true });
+    rememberCargoScreenshot({ id: meta.id, filePath: meta.filePath });
+    return {
+      screenshotId: meta.id,
+      screenshotUrl: buildCargoScreenshotUrl(meta.id),
+    };
+  }
+
+  const scrollHeight = Number(targetInfo.scrollHeight || 0);
+  const clientHeight = Number(targetInfo.clientHeight || 0);
+  const clip = targetInfo.clip;
+  const maxScroll = Math.max(0, scrollHeight - clientHeight);
+  const offsets = [0];
+  if (maxScroll > 0 && clientHeight > 0) {
+    let next = clientHeight;
+    while (next < maxScroll) {
+      offsets.push(next);
+      next += clientHeight;
+    }
+    offsets.push(maxScroll);
+  }
+
+  const buffers = [];
+  for (const offset of offsets) {
+    await page.evaluate((value) => {
+      const target = document.querySelector('[data-cargo-capture-target="1"]');
+      if (target) target.scrollTop = value;
+    }, offset);
+    await page.waitForTimeout(120);
+    const frameBuffer = await page.screenshot({ clip });
+    buffers.push({ offset, buffer: frameBuffer });
+  }
+
+  await page.evaluate(() => {
+    const target = document.querySelector('[data-cargo-capture-target="1"]');
+    if (target) target.removeAttribute('data-cargo-capture-target');
+  });
+
+  const segments = [];
+  for (let i = 0; i < buffers.length; i += 1) {
+    const current = buffers[i];
+    const png = PNG.sync.read(current.buffer);
+    if (i === 0) {
+      segments.push({ png });
+      continue;
+    }
+
+    const prevOffset = buffers[i - 1].offset;
+    const overlap = Math.max(0, (prevOffset + clientHeight) - current.offset);
+    segments.push({ png: cropPngTop(png, overlap) });
+  }
+
+  const mergedBuffer = stitchPngSegments(segments);
+  await fs.writeFile(meta.filePath, mergedBuffer);
+  rememberCargoScreenshot({ id: meta.id, filePath: meta.filePath });
+
+  return {
+    screenshotId: meta.id,
+    screenshotUrl: buildCargoScreenshotUrl(meta.id),
+  };
+};
+
 const findHeaderIndex = (headers, predicate, fallback) => {
   const idx = headers.findIndex(predicate);
   return idx >= 0 ? idx : fallback;
@@ -93,6 +298,18 @@ const normalizePlusValue = (value) => {
 };
 
 const getCell = (row, idx) => (idx >= 0 ? (row[idx] || '').toString().trim() : '');
+
+const isSheremetyevoSheet = ({ airportName, tabTitle, rows }) => {
+  const airport = normalizeText(airportName);
+  const tab = normalizeText(tabTitle);
+  const header = normalizeText((rows?.[0] || []).join(' '));
+
+  if (airport.includes('шерем') || tab.includes('шерем')) return true;
+  if (header.includes('москва') && header.includes('карго')) return true;
+  if (header.includes('шерем') && header.includes('карго')) return true;
+
+  return false;
+};
 
 const parseNonSheremetyevoRows = (rows) => {
   if (!rows || rows.length === 0) return [];
@@ -242,7 +459,7 @@ const buildPoaRegistryFromXlsx = async () => {
       blankrows: false,
     });
 
-    if (normalizeText(airportName).includes('шерем')) {
+    if (isSheremetyevoSheet({ airportName, tabTitle, rows })) {
       registry[airportName] = parseSheremetyevoRows(rows);
     } else {
       registry[airportName] = parseNonSheremetyevoRows(rows);
@@ -250,6 +467,269 @@ const buildPoaRegistryFromXlsx = async () => {
   }
 
   return registry;
+};
+
+const splitAwbParts = (awbRaw) => {
+  const raw = String(awbRaw || '').trim();
+  if (!raw) return null;
+
+  const direct = raw.match(/^(\d{3})\D*(\d{6,10})$/);
+  if (direct) {
+    return { prefix: direct[1], number: direct[2] };
+  }
+
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 9) return null;
+  return {
+    prefix: digits.slice(0, 3),
+    number: digits.slice(3),
+  };
+};
+
+const resolveMoscowCargoTrackingWidget = async (page) => {
+  const containers = page.locator('form, section, div');
+  const total = await containers.count();
+  const limit = Math.min(total, 300);
+
+  for (let i = 0; i < limit; i += 1) {
+    const container = containers.nth(i);
+    try {
+      if (!(await container.isVisible())) continue;
+    } catch (error) {
+      continue;
+    }
+
+    const textInputs = container.locator('input[type="text"], input[type="search"], input:not([type])');
+    if ((await textInputs.count()) < 2) continue;
+
+    let containerText = '';
+    try {
+      containerText = (await container.innerText()).toLowerCase();
+    } catch (error) {
+      // Ignore text read errors.
+    }
+    if (!containerText.includes('awb') && !containerText.includes('наклад')) continue;
+
+    const hasActionButton =
+      (await container.locator('button').count()) > 0 ||
+      (await container.locator('input[type="submit"]').count()) > 0;
+    if (!hasActionButton) continue;
+
+    return { container, textInputs };
+  }
+
+  return null;
+};
+
+const fillMoscowCargoAwbInputs = async (widget, awbParts) => {
+  const firstInput = widget.textInputs.nth(0);
+  const secondInput = widget.textInputs.nth(1);
+
+  await firstInput.fill('');
+  await secondInput.fill('');
+  await firstInput.fill(awbParts.prefix);
+  await secondInput.fill(awbParts.number);
+};
+
+const triggerMoscowCargoSearch = async (widget) => {
+  const buttons = widget.container.locator('button');
+  const buttonCount = await buttons.count();
+  for (let i = 0; i < buttonCount; i += 1) {
+    const button = buttons.nth(i);
+    try {
+      const text = (await button.innerText()).toLowerCase();
+      if (text.includes('провер') || text.includes('найти') || text.includes('поиск')) {
+        await button.click({ timeout: 5000 });
+        return;
+      }
+    } catch (error) {
+      // Try next button.
+    }
+  }
+
+  const submitButton = widget.container.locator('input[type="submit"]').first();
+  if (await submitButton.count()) {
+    await submitButton.click({ timeout: 5000 });
+    return;
+  }
+
+  await widget.textInputs.nth(1).press('Enter');
+};
+
+const extractMoscowCargoTables = async (page) => {
+  const tables = page.locator('table');
+  const tablesCount = await tables.count();
+  const result = [];
+  const limit = Math.min(tablesCount, 8);
+
+  for (let i = 0; i < limit; i += 1) {
+    const table = tables.nth(i);
+    try {
+      if (!(await table.isVisible())) continue;
+    } catch (error) {
+      continue;
+    }
+
+    const rows = table.locator('tr');
+    const rowCount = await rows.count();
+    const parsedRows = [];
+
+    for (let r = 0; r < rowCount; r += 1) {
+      const row = rows.nth(r);
+      const cells = row.locator('th,td');
+      const cellCount = await cells.count();
+      const parsedCells = [];
+
+      for (let c = 0; c < cellCount; c += 1) {
+        const cell = cells.nth(c);
+        const text = (await cell.innerText()).replace(/\s+/g, ' ').trim();
+        parsedCells.push(text);
+      }
+
+      if (parsedCells.some(Boolean)) {
+        parsedRows.push(parsedCells);
+      }
+    }
+
+    if (parsedRows.length === 0) continue;
+
+    const title = await table.evaluate((el) => {
+      let prev = el.previousElementSibling;
+      while (prev) {
+        const text = (prev.textContent || '').replace(/\s+/g, ' ').trim();
+        if (text) return text;
+        prev = prev.previousElementSibling;
+      }
+      return '';
+    });
+
+    result.push({
+      title: title || `Таблица ${result.length + 1}`,
+      rows: parsedRows,
+    });
+  }
+
+  return result;
+};
+
+const extractMoscowCargoStatusText = async (page) => {
+  const selectors = [
+    '.tracking-result',
+    '.search-result',
+    '.result',
+    '.cargo-status',
+    '[id*="result" i]',
+    '[class*="result" i]',
+    '[class*="status" i]',
+    'main',
+  ];
+
+const chunks = [];
+  for (const selector of selectors) {
+    const locator = page.locator(selector).first();
+    if (await locator.count()) {
+      try {
+        const text = (await locator.innerText()).trim();
+        if (text) chunks.push(text);
+      } catch (error) {
+        // Ignore this selector.
+      }
+    }
+  }
+
+  const compactLines = chunks
+    .flatMap((chunk) => chunk.split('\n'))
+    .map((line) => line.trim())
+    .filter(Boolean);
+  if (compactLines.length > 0) {
+    return [...new Set(compactLines)].slice(0, 25).join('\n');
+  }
+
+  const bodyText = (await page.locator('body').innerText()).trim();
+  const lines = bodyText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((line) => /(статус|груз|наклад|awb|cargo|принят|выдан|достав|терминал)/i.test(line));
+
+  return [...new Set(lines)].slice(0, 25).join('\n');
+};
+
+const scrapeMoscowCargoStatus = async ({ awb }) => {
+  const playwright = getPlaywright();
+  if (!playwright || !playwright.chromium) {
+    const error = new Error('Playwright is not installed on server');
+    error.code = 'playwright_missing';
+    throw error;
+  }
+
+  const { chromium } = playwright;
+  const browser = await chromium.launch({ headless: true });
+  const context = await browser.newContext({ locale: 'ru-RU' });
+  const page = await context.newPage();
+  const checkedAt = Date.now();
+
+  try {
+    await page.goto(MOSCOW_CARGO_URL, { waitUntil: 'domcontentloaded', timeout: CARGO_CHECK_TIMEOUT_MS });
+
+    const awbParts = splitAwbParts(awb);
+    if (!awbParts) {
+      const error = new Error('AWB format is invalid. Expected prefix and number, e.g. 876-14889696');
+      error.code = 'awb_format_invalid';
+      throw error;
+    }
+
+    const trackingWidget = await resolveMoscowCargoTrackingWidget(page);
+    if (!trackingWidget) {
+      const error = new Error('Tracking widget with split AWB inputs was not found on Moscow Cargo page');
+      error.code = 'tracking_widget_not_found';
+      throw error;
+    }
+
+    await fillMoscowCargoAwbInputs(trackingWidget, awbParts);
+    await triggerMoscowCargoSearch(trackingWidget);
+    await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
+    await page.waitForTimeout(2000);
+
+    const tables = await extractMoscowCargoTables(page);
+    const statusText = await extractMoscowCargoStatusText(page);
+    if (!statusText && tables.length === 0) {
+      const error = new Error('Status text was not found in Moscow Cargo response');
+      error.code = 'status_not_found';
+      throw error;
+    }
+
+    const screenshot = await captureMoscowCargoResultScreenshot({ page, awb });
+
+    return {
+      terminal: 'Москва-карго',
+      awb,
+      statusText,
+      tables,
+      checkedAt,
+      sourceUrl: MOSCOW_CARGO_URL,
+      screenshotId: screenshot.screenshotId,
+      screenshotUrl: screenshot.screenshotUrl,
+    };
+  } catch (error) {
+    const logsDir = path.resolve(__dirname, 'logs', 'cargo-status');
+    await fs.mkdir(logsDir, { recursive: true });
+
+    const safeAwb = awb.replace(/[^0-9A-Za-z_-]/g, '_') || 'unknown';
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const screenshotPath = path.join(logsDir, `moscow-cargo-${safeAwb}-${stamp}.png`);
+
+    try {
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+      error.screenshotPath = screenshotPath;
+    } catch (screenshotError) {
+      // Keep original error.
+    }
+
+    throw error;
+  } finally {
+    await browser.close();
+  }
 };
 
 // Exchange authorization code or refresh token with Google
@@ -288,6 +768,126 @@ app.post('/oauth/token', async (req, res) => {
     console.error('oauth proxy error', err);
     return res.status(500).json({ error: 'server_error' });
   }
+});
+
+app.post('/cargo/status', async (req, res) => {
+  try {
+    const awb = normalizeAwb(req.body?.awb);
+    const terminal = String(req.body?.terminal || '').trim();
+    const forceRefresh = req.body?.force === true;
+
+    if (!awb) {
+      return res.status(400).json({ error: 'awb_required' });
+    }
+    if (!terminal) {
+      return res.status(400).json({ error: 'terminal_required' });
+    }
+
+    const cacheKey = getCargoCacheKey({ terminal, awb });
+    const cacheEntry = cargoStatusCache.get(cacheKey);
+    if (!forceRefresh && cacheEntry && Date.now() < cacheEntry.expiresAt) {
+      return res.json({
+        ...cacheEntry.data,
+        cached: true,
+        cacheExpiresAt: cacheEntry.expiresAt,
+      });
+    }
+
+    const data = await scrapeMoscowCargoStatus({ awb });
+    const expiresAt = Date.now() + CARGO_STATUS_TTL_MS;
+    if (cacheEntry?.data?.screenshotId && cacheEntry.data.screenshotId !== data.screenshotId) {
+      await removeCargoScreenshot(cacheEntry.data.screenshotId).catch(() => {});
+    }
+    cargoStatusCache.set(cacheKey, {
+      data,
+      expiresAt,
+    });
+
+    return res.json({
+      ...data,
+      cached: false,
+      cacheExpiresAt: expiresAt,
+    });
+  } catch (error) {
+    const details = error.message || 'cargo_status_failed';
+    const screenshotPath = error.screenshotPath
+      ? path.relative(process.cwd(), error.screenshotPath)
+      : null;
+
+    return res.status(500).json({
+      error: 'cargo_status_failed',
+      details,
+      screenshotPath,
+      requiresPlaywrightInstall: error.code === 'playwright_missing',
+    });
+  }
+});
+
+app.get('/cargo/screenshot/:id', async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) {
+    return res.status(400).json({ error: 'screenshot_id_required' });
+  }
+
+  const filePath = cargoScreenshotStore.get(id);
+  if (!filePath) {
+    return res.status(404).json({ error: 'screenshot_not_found' });
+  }
+
+  try {
+    await fs.access(filePath);
+    return res.sendFile(filePath);
+  } catch (error) {
+    cargoScreenshotStore.delete(id);
+    return res.status(404).json({ error: 'screenshot_not_found' });
+  }
+});
+
+app.delete('/cargo/screenshot/:id', async (req, res) => {
+  const id = String(req.params.id || '').trim();
+  if (!id) {
+    return res.status(400).json({ error: 'screenshot_id_required' });
+  }
+
+  try {
+    const removed = await removeCargoScreenshot(id);
+    return res.json({ removed });
+  } catch (error) {
+    return res.status(500).json({
+      error: 'screenshot_delete_failed',
+      details: error.message,
+    });
+  }
+});
+
+app.get('/cargo/cache', (req, res) => {
+  const now = Date.now();
+  const awb = normalizeAwb(req.query.awb || '');
+  const terminal = String(req.query.terminal || '').trim();
+
+  if (awb && terminal) {
+    const key = getCargoCacheKey({ terminal, awb });
+    const entry = cargoStatusCache.get(key);
+    if (!entry) return res.json({ found: false });
+
+    return res.json({
+      found: true,
+      cached: now < entry.expiresAt,
+      expiresAt: entry.expiresAt,
+      expiresInMs: Math.max(0, entry.expiresAt - now),
+      data: entry.data,
+    });
+  }
+
+  const items = Array.from(cargoStatusCache.entries()).map(([key, entry]) => ({
+    key,
+    cached: now < entry.expiresAt,
+    expiresAt: entry.expiresAt,
+    expiresInMs: Math.max(0, entry.expiresAt - now),
+    data: entry.data,
+  }));
+
+  return res.json({ total: items.length, items });
 });
 
 app.get('/poa/cache', (req, res) => {
@@ -330,3 +930,6 @@ app.get('/poa/registry', async (req, res) => {
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`OAuth proxy listening on http://localhost:${port}`));
+
+
+

@@ -1,3 +1,11 @@
+const normalizeText = (value) =>
+  String(value || "")
+    .toLowerCase()
+    .replace(/ё/g, "е")
+    .trim();
+
+const isHistoryTitle = (title) => normalizeText(title).includes("история обработк");
+
 export function AppHeader({ driveConnected, onOpenSettings }) {
   return (
     <header className="app__header">
@@ -25,11 +33,20 @@ export function OrderFormCard({
   customsName,
   powerOfAttorneyStatus,
   recipientSuggestions,
+  awbStatusCheck,
+  isAwbCheckAvailable,
   isPowerOfAttorneySyncLoading,
+  onCheckAwbStatus,
   onRefreshPowerOfAttorneyRegistry,
   onFieldChange,
   onSubmit,
 }) {
+  const awbStatusText = awbStatusCheck?.data?.statusText || "";
+  const awbTables = Array.isArray(awbStatusCheck?.data?.tables) ? awbStatusCheck.data.tables : [];
+  const awbCheckedAt = awbStatusCheck?.data?.checkedAt
+    ? new Date(awbStatusCheck.data.checkedAt).toLocaleString("ru-RU")
+    : "";
+
   return (
     <section className="card">
       <h2>Новый заказ</h2>
@@ -123,15 +140,98 @@ export function OrderFormCard({
         </div>
         <div className="field">
           <label htmlFor="awb">Номер авианакладной *</label>
-          <input
-            id="awb"
-            name="awb"
-            type="text"
-            placeholder="123-45678901"
-            required
-            value={formData.awb}
-            onChange={onFieldChange("awb")}
-          />
+          <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
+            <input
+              id="awb"
+              name="awb"
+              type="text"
+              placeholder="123-45678901"
+              required
+              value={formData.awb}
+              onChange={onFieldChange("awb")}
+              style={{ flex: 1 }}
+            />
+            <button
+              type="button"
+              onClick={onCheckAwbStatus}
+              disabled={awbStatusCheck?.loading || !isAwbCheckAvailable || !formData.awb.trim()}
+            >
+              {awbStatusCheck?.loading ? "Проверяем..." : "Проверить"}
+            </button>
+          </div>
+          {!isAwbCheckAvailable && (
+            <small className="hint">Проверка статуса доступна только для терминала Москва-карго.</small>
+          )}
+          {awbStatusCheck?.error && (
+            <small style={{ color: "#c0392b" }}>{awbStatusCheck.error}</small>
+          )}
+          {(awbStatusText || awbTables.length > 0) && (
+            <div className="awb-status-card">
+              <div className="awb-status-card__header">
+                <div>
+                  <strong>Статус груза</strong>
+                  <div className="awb-status-card__meta">
+                    Москва-карго{awbCheckedAt ? `, проверено: ${awbCheckedAt}` : ""}
+                  </div>
+                </div>
+                {awbStatusCheck?.data?.cached && (
+                  <span className="awb-status-card__badge">Из кэша</span>
+                )}
+              </div>
+              <div className="awb-status-accordion">
+                {awbTables.length > 0 ? (
+                  awbTables.map((table, index) => {
+                    const rows = Array.isArray(table?.rows) ? table.rows : [];
+                    if (rows.length === 0) return null;
+                    const header = rows[0];
+                    const body = rows.slice(1);
+                    const title = table.title || `Таблица ${index + 1}`;
+                    const full = isHistoryTitle(title);
+
+                    return (
+                      <div
+                        key={`${title}-${index}`}
+                        className={`awb-status-accordion__item ${full ? "awb-status-accordion__item--full" : ""}`}
+                      >
+                        <details open={index === 0}>
+                          <summary>{title}</summary>
+                          <div className="awb-table-wrap">
+                            <table className="awb-data-table">
+                              <thead>
+                                <tr>
+                                  {header.map((cell, cellIndex) => (
+                                    <th key={`h-${index}-${cellIndex}`}>{cell || "\u00A0"}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {body.map((row, rowIndex) => (
+                                  <tr key={`r-${index}-${rowIndex}`}>
+                                    {header.map((_, cellIndex) => (
+                                      <td key={`c-${index}-${rowIndex}-${cellIndex}`}>
+                                        {row[cellIndex] || "\u00A0"}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </details>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className="awb-status-accordion__item awb-status-accordion__item--full">
+                    <details open>
+                      <summary>Сводка</summary>
+                      <pre>{awbStatusText}</pre>
+                    </details>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
         <div className="field">
           <label htmlFor="quantity">Количество (шт) *</label>

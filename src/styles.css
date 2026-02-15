@@ -179,6 +179,147 @@ small {
   margin-top: 4px;
 }
 
+.awb-status-card {
+  margin-top: 8px;
+  border: 1px solid #d7deea;
+  border-radius: 12px;
+  background: #f8fbff;
+  padding: 12px;
+}
+
+.awb-status-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.awb-status-card__meta {
+  font-size: 13px;
+  color: #4f617e;
+  margin-top: 2px;
+}
+
+.awb-status-card__badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: #155e75;
+  background: #cffafe;
+  border-radius: 999px;
+  padding: 4px 10px;
+}
+
+.awb-status-accordion {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.awb-status-accordion__item--full {
+  grid-column: 1 / -1;
+}
+
+.awb-status-accordion details {
+  border: 1px solid #dbe4f1;
+  border-radius: 10px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.awb-status-accordion summary {
+  cursor: pointer;
+  padding: 10px 12px;
+  font-weight: 600;
+  background: #f2f6fd;
+}
+
+.awb-status-accordion details[open] summary {
+  border-bottom: 1px solid #e5eaf3;
+}
+
+.awb-status-accordion pre {
+  margin: 0;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.awb-table-wrap {
+  overflow-x: auto;
+}
+
+.awb-data-table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.awb-data-table th,
+.awb-data-table td {
+  border: 1px solid #e5eaf3;
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.awb-data-table th {
+  background: #f3f7fd;
+  font-weight: 700;
+}
+
+.screenshot-modal__overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1100;
+  padding: 20px;
+}
+
+.screenshot-modal {
+  width: min(1100px, 100%);
+  max-height: 90vh;
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #d7deea;
+  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.25);
+  display: flex;
+  flex-direction: column;
+}
+
+.screenshot-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e5eaf3;
+}
+
+.screenshot-modal__header h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.screenshot-modal__body {
+  padding: 12px;
+  overflow: auto;
+}
+
+.screenshot-modal__body img {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  border: 1px solid #e5eaf3;
+}
+
 button {
   border: none;
   padding: 12px 16px;
@@ -249,5 +390,14 @@ button:disabled {
 @media (max-width: 960px) {
   .table__row {
     grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  }
+
+  .awb-status-card__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .awb-status-accordion {
+    grid-template-columns: 1fr;
   }
 }
