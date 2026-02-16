@@ -143,6 +143,15 @@ const resolveCargoTerminalKey = ({ shipmentAirport, shipmentTerminal }) => {
   return "";
 };
 
+const composeAwb = (prefix, number) => {
+  const p = String(prefix || "").replace(/\D/g, "").slice(0, 3);
+  const n = String(number || "").replace(/\D/g, "").slice(0, 10);
+  if (p && n) return `${p}-${n}`;
+  if (p) return p;
+  if (n) return n;
+  return "";
+};
+
 const defaultPowerOfAttorneyRegistry = {
   "Шереметьево": {
     "Москва-карго": [
@@ -331,6 +340,8 @@ const App = () => {
     recipient: "",
     orderName: "",
     awb: "",
+    awbPrefix: "",
+    awbNumber: "",
     quantity: "",
     weight: "",
     customsCode: "",
@@ -498,7 +509,7 @@ const App = () => {
   const isCargoCheckAvailable = Boolean(cargoTerminalKey);
 
   const checkAwbStatus = async () => {
-    const awb = formData.awb.trim();
+    const awb = composeAwb(formData.awbPrefix, formData.awbNumber) || formData.awb.trim();
     if (!awb) {
       setAwbStatusCheck({
         loading: false,
@@ -529,6 +540,8 @@ const App = () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           awb,
+          awbPrefix: formData.awbPrefix,
+          awbNumber: formData.awbNumber,
           terminal: formData.shipmentTerminal || formData.shipmentAirport,
           terminalKey: cargoTerminalKey,
         }),
@@ -573,15 +586,12 @@ const App = () => {
   };
 
   const closeCargoScreenshotModal = async () => {
-    const screenshotId = cargoScreenshotModal.screenshotId;
-    if (screenshotId) {
-      try {
-        await fetch(`${CARGO_API_BASE_URL}/cargo/screenshot/${encodeURIComponent(screenshotId)}`, {
-          method: "DELETE",
-        });
-      } catch (error) {
-        console.warn("Не удалось удалить скриншот:", error);
-      }
+    try {
+      await fetch(`${CARGO_API_BASE_URL}/cargo/screenshots`, {
+        method: "DELETE",
+      });
+    } catch (error) {
+      console.warn("Не удалось удалить скриншоты:", error);
     }
 
     setCargoScreenshotModal({
@@ -589,6 +599,23 @@ const App = () => {
       screenshotId: "",
       screenshotUrl: "",
     });
+  };
+
+  const openManualCargoCheck = async () => {
+    const payload = awbStatusCheck?.data;
+    if (!payload?.manualRequired) return;
+
+    const awbNumber = String(formData.awbNumber || "").replace(/\D/g, "").slice(0, 10);
+    if (awbNumber) {
+      try {
+        await navigator.clipboard.writeText(awbNumber);
+      } catch (error) {
+        // Clipboard can be blocked by browser policy.
+      }
+    }
+
+    const baseUrl = payload.manualUrl || payload.sourceUrl || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/";
+    window.open(baseUrl, "_blank", "noopener,noreferrer");
   };
 
   const handleFieldChange = (field) => (event) => {
@@ -601,10 +628,22 @@ const App = () => {
       if (field === "shipmentAirport") {
         next.shipmentTerminal = SHEREMETYEVO_VALUES.has(value) ? DEFAULT_SHEREMETYEVO_TERMINAL : "";
       }
+      if (field === "awbPrefix" || field === "awbNumber") {
+        next.awb = composeAwb(
+          field === "awbPrefix" ? value : prev.awbPrefix,
+          field === "awbNumber" ? value : prev.awbNumber,
+        );
+      }
       return next;
     });
 
-    if (field === "awb" || field === "shipmentAirport" || field === "shipmentTerminal") {
+    if (
+      field === "awb" ||
+      field === "awbPrefix" ||
+      field === "awbNumber" ||
+      field === "shipmentAirport" ||
+      field === "shipmentTerminal"
+    ) {
       setAwbStatusCheck({
         loading: false,
         error: "",
@@ -621,7 +660,7 @@ const App = () => {
       shipmentTerminal: formData.shipmentTerminal.trim(),
       name: formData.orderName.trim(),
       recipient: formData.recipient.trim(),
-      awb: formData.awb.trim(),
+      awb: composeAwb(formData.awbPrefix, formData.awbNumber) || formData.awb.trim(),
       quantity: formData.quantity.trim(),
       weight: formData.weight.trim(),
       customsCode: formData.customsCode.trim(),
@@ -644,6 +683,8 @@ const App = () => {
       recipient: "",
       orderName: "",
       awb: "",
+      awbPrefix: "",
+      awbNumber: "",
       quantity: "",
       weight: "",
       customsCode: "",
@@ -950,6 +991,7 @@ const App = () => {
           isAwbCheckAvailable={isCargoCheckAvailable}
           isPowerOfAttorneySyncLoading={isPowerOfAttorneySyncLoading}
           onCheckAwbStatus={checkAwbStatus}
+          onOpenManualCheck={openManualCargoCheck}
           onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}
           onFieldChange={handleFieldChange}
           onSubmit={handleSubmit}
@@ -987,6 +1029,15 @@ const App = () => {
         onCancel={handleCancelEdit}
         getCustomsName={getCustomsName}
       />
+
+      {awbStatusCheck.loading && (
+        <div className="loader-overlay" role="status" aria-live="polite" aria-label="Проверка статуса">
+          <div className="loader-overlay__content">
+            <div className="loader-overlay__spinner" />
+            <div className="loader-overlay__text">Проверяем накладную...</div>
+          </div>
+        </div>
+      )}
 
       {cargoScreenshotModal.isOpen && cargoScreenshotModal.screenshotUrl && (
         <div

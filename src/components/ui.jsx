@@ -29,10 +29,24 @@ export function OrderFormCard({
   isAwbCheckAvailable,
   isPowerOfAttorneySyncLoading,
   onCheckAwbStatus,
+  onOpenManualCheck,
   onRefreshPowerOfAttorneyRegistry,
   onFieldChange,
   onSubmit,
 }) {
+  const handleAwbPrefixChange = (event) => {
+    const digits = String(event.target.value || "").replace(/\D/g, "").slice(0, 3);
+    onFieldChange("awbPrefix")({ target: { value: digits } });
+    if (digits.length === 3) {
+      document.getElementById("awb-number")?.focus();
+    }
+  };
+
+  const handleAwbNumberChange = (event) => {
+    const digits = String(event.target.value || "").replace(/\D/g, "").slice(0, 10);
+    onFieldChange("awbNumber")({ target: { value: digits } });
+  };
+
   return (
     <section className="card">
       <h2>Новый заказ</h2>
@@ -125,22 +139,44 @@ export function OrderFormCard({
           <small>Автоматически формируется по получателю груза.</small>
         </div>
         <div className="field">
-          <label htmlFor="awb">Номер авианакладной *</label>
+          <label htmlFor="awb-prefix">Номер авианакладной *</label>
           <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
             <input
-              id="awb"
-              name="awb"
+              id="awb-prefix"
+              name="awbPrefix"
               type="text"
-              placeholder="123-45678901"
+              placeholder="876"
               required
-              value={formData.awb}
-              onChange={onFieldChange("awb")}
+              value={formData.awbPrefix || ""}
+              onChange={handleAwbPrefixChange}
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={3}
+              style={{ width: "110px", flex: "0 0 110px", textAlign: "center" }}
+            />
+            <span>-</span>
+            <input
+              id="awb-number"
+              name="awbNumber"
+              type="text"
+              placeholder="14889696"
+              required
+              value={formData.awbNumber || ""}
+              onChange={handleAwbNumberChange}
+              inputMode="numeric"
+              autoComplete="off"
+              maxLength={10}
               style={{ flex: 1 }}
             />
             <button
               type="button"
               onClick={onCheckAwbStatus}
-              disabled={awbStatusCheck?.loading || !isAwbCheckAvailable || !formData.awb.trim()}
+              disabled={
+                awbStatusCheck?.loading ||
+                !isAwbCheckAvailable ||
+                !String(formData.awbPrefix || "").trim() ||
+                !String(formData.awbNumber || "").trim()
+              }
             >
               {awbStatusCheck?.loading ? "Проверяем..." : "Проверить"}
             </button>
@@ -150,6 +186,16 @@ export function OrderFormCard({
           )}
           {awbStatusCheck?.error && (
             <small style={{ color: "#c0392b" }}>{awbStatusCheck.error}</small>
+          )}
+          {awbStatusCheck?.data?.manualRequired && (
+            <div style={{ marginTop: "8px", display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+              <small style={{ color: "#c0392b", fontWeight: 700 }}>
+                {awbStatusCheck?.data?.manualMessage || "Требуется ручная проверка на сайте Внуково."}
+              </small>
+              <button type="button" onClick={onOpenManualCheck}>
+                Открыть сайт Внуково
+              </button>
+            </div>
           )}
         </div>
         <div className="field">

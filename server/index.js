@@ -101,6 +101,7 @@ const normalizeText = (value) =>
     .trim();
 
 const normalizeAwb = (value) => String(value || '').replace(/\s+/g, '').trim();
+const normalizeAwbPart = (value, maxLen) => String(value || '').replace(/\D/g, '').slice(0, maxLen);
 
 const getCargoCacheKey = ({ terminal, awb }) => `${normalizeText(terminal)}::${normalizeAwb(awb)}`;
 
@@ -171,6 +172,42 @@ const removeCargoScreenshot = async (id) => {
   }
 
   return removed;
+};
+
+const removeAllCargoScreenshots = async () => {
+  const logsDir = path.resolve(__dirname, 'logs', 'cargo-status');
+  let removed = 0;
+
+  try {
+    const files = await fs.readdir(logsDir);
+    const pngFiles = files.filter((name) => name.toLowerCase().endsWith('.png'));
+    await Promise.all(
+      pngFiles.map(async (name) => {
+        try {
+          await fs.unlink(path.join(logsDir, name));
+          removed += 1;
+        } catch (error) {
+          if (error.code !== 'ENOENT') {
+            throw error;
+          }
+        }
+      }),
+    );
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      throw error;
+    }
+  }
+
+  cargoScreenshotStore.clear();
+
+  for (const [cacheKey, entry] of cargoStatusCache.entries()) {
+    if (entry?.data?.screenshotId) {
+      cargoStatusCache.delete(cacheKey);
+    }
+  }
+
+  return { removed };
 };
 
 const buildCargoScreenshotUrl = (id) => `/cargo/screenshot/${id}`;
@@ -333,10 +370,10 @@ const captureMoscowCargoResultScreenshot = async ({ page, awb, terminalKey = 'ca
   };
 };
 
-const fillGenericAwbInputs = async ({ page, awb }) => {
+const fillGenericAwbInputs = async ({ page, awb, awbParts }) => {
   const inputs = page.locator('input:not([type="hidden"])');
   const count = await inputs.count();
-  const awbParts = splitAwbParts(awb);
+  const resolvedAwbParts = awbParts || splitAwbParts(awb);
   let firstIndex = -1;
   let secondIndex = -1;
   let oneFieldIndex = -1;
@@ -366,11 +403,11 @@ const fillGenericAwbInputs = async ({ page, awb }) => {
     }
   }
 
-  if (awbParts && firstIndex >= 0 && secondIndex >= 0 && firstIndex !== secondIndex) {
+  if (resolvedAwbParts && firstIndex >= 0 && secondIndex >= 0 && firstIndex !== secondIndex) {
     await inputs.nth(firstIndex).fill('');
     await inputs.nth(secondIndex).fill('');
-    await inputs.nth(firstIndex).fill(awbParts.prefix);
-    await inputs.nth(secondIndex).fill(awbParts.number);
+    await inputs.nth(firstIndex).fill(resolvedAwbParts.prefix);
+    await inputs.nth(secondIndex).fill(resolvedAwbParts.number);
     return true;
   }
 
@@ -435,10 +472,10 @@ const clickFirstVisibleBySelectors = async (page, selectors) => {
   return false;
 };
 
-const searchShercargoStatus = async ({ page, awb }) => {
-  const awbParts = splitAwbParts(awb);
-  const numberValue = awbParts ? awbParts.number : awb.replace(/\D/g, '').slice(3);
-  const prefixValue = awbParts ? awbParts.prefix : awb.replace(/\D/g, '').slice(0, 3);
+const searchShercargoStatus = async ({ page, awb, awbParts }) => {
+  const resolvedAwbParts = awbParts || splitAwbParts(awb);
+  const numberValue = resolvedAwbParts ? resolvedAwbParts.number : awb.replace(/\D/g, '').slice(3);
+  const prefixValue = resolvedAwbParts ? resolvedAwbParts.prefix : awb.replace(/\D/g, '').slice(0, 3);
 
   const tryContext = async (ctx) => {
     const inputs = ctx.locator('input[type="text"], input[type="search"], input[type="tel"], input:not([type])');
@@ -556,7 +593,81 @@ const searchShercargoStatus = async ({ page, awb }) => {
   return true;
 };
 
-const searchVnukovoStatus = async ({ page, awb }) => {
+const searchVnukovoStatus = async ({ page, awb, awbParts }) => {
+  const resolvedAwbParts = awbParts || splitAwbParts(awb);
+
+  const trySplitInputs = async () => {
+    const inputs = page.locator('input[type="text"], input[type="search"], input[type="tel"], input:not([type])');
+    const count = await inputs.count();
+    const visible = [];
+
+    for (let i = 0; i < count; i += 1) {
+      const input = inputs.nth(i);
+      try {
+        if (!(await input.isVisible())) continue;
+        if (!(await input.isEditable())) continue;
+        const box = await input.boundingBox();
+        if (!box || box.width < 25 || box.height < 14) continue;
+        visible.push({ input, box });
+      } catch (error) {
+        // Ignore.
+      }
+    }
+
+    if (visible.length < 2 || !resolvedAwbParts) return false;
+
+    visible.sort((a, b) => (a.box.y - b.box.y) || (a.box.x - b.box.x));
+    let pair = null;
+    for (let i = 0; i < visible.length - 1; i += 1) {
+      for (let j = i + 1; j < visible.length; j += 1) {
+        const dy = Math.abs(visible[i].box.y - visible[j].box.y);
+        const dx = Math.abs(visible[i].box.x - visible[j].box.x);
+        if (dy <= 50 && dx <= 900) {
+          pair = [visible[i], visible[j]];
+          break;
+        }
+      }
+      if (pair) break;
+    }
+    if (!pair) pair = [visible[0], visible[1]];
+
+    let first = pair[0];
+    let second = pair[1];
+    if (first.box.x > second.box.x) {
+      [first, second] = [second, first];
+    }
+
+    await first.input.fill('');
+    await second.input.fill('');
+    await first.input.type(resolvedAwbParts.prefix, { delay: 40 });
+    await second.input.type(resolvedAwbParts.number, { delay: 40 });
+
+    const firstVal = String((await first.input.inputValue()) || '').replace(/\D/g, '');
+    const secondVal = String((await second.input.inputValue()) || '').replace(/\D/g, '');
+    if (!firstVal || !secondVal) return false;
+
+    return true;
+  };
+
+  const splitFilled = await trySplitInputs();
+  if (splitFilled) {
+    const clicked = await clickFirstVisibleBySelectors(page, [
+      'button:has-text("Проверить")',
+      'button:has-text("Провер")',
+      'button:has-text("Узнать")',
+      'button:has-text("Найти")',
+      'input[type="submit"]',
+      'input[type="button"]',
+    ]);
+    if (!clicked) {
+      const input = page.locator('input:not([type="hidden"])').nth(1);
+      if (await input.count()) {
+        await input.press('Enter').catch(() => {});
+      }
+    }
+    return true;
+  }
+
   const awbSelectors = [
     'input[name*="awb" i]',
     'input[id*="awb" i]',
@@ -585,7 +696,118 @@ const searchVnukovoStatus = async ({ page, awb }) => {
   return true;
 };
 
-const searchDomodedovoStatus = async ({ page, awb }) => {
+const searchDomodedovoStatus = async ({ page, awb, awbParts }) => {
+  const resolvedAwbParts = awbParts || splitAwbParts(awb);
+
+  const tryCargoPanel = async () => {
+    if (!resolvedAwbParts) return false;
+    const payload = await page.evaluate(() => {
+      const textMatch = (value, pattern) => pattern.test((value || '').toLowerCase());
+      const isVisible = (el) => {
+        if (!el) return false;
+        const rect = el.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        const style = window.getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+        return true;
+      };
+
+      const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,div,span,strong,p'))
+        .filter((el) => textMatch(el.textContent, /информация\s+о\s+грузе/));
+
+      for (const heading of headings) {
+        let node = heading;
+        for (let depth = 0; depth < 8 && node; depth += 1) {
+          const inputs = Array.from(node.querySelectorAll('input')).filter((input) => {
+            const type = (input.getAttribute('type') || '').toLowerCase();
+            return (!type || type === 'text' || type === 'search' || type === 'tel') && isVisible(input);
+          });
+          const buttons = Array.from(node.querySelectorAll('button,input[type="submit"],input[type="button"]'))
+            .filter((button) => isVisible(button));
+          const hasCargoButton = buttons.some((button) => textMatch(button.textContent || button.value, /показать\s+информац/));
+          if (inputs.length >= 2 && hasCargoButton) {
+            return true;
+          }
+          node = node.parentElement;
+        }
+      }
+      return false;
+    });
+    if (!payload) return false;
+
+    // Prefer exact placeholders from DME cargo widget.
+    let prefixInput = page.locator('input[placeholder="123"]').first();
+    let numberInput = page.locator('input[placeholder="12345678"]').first();
+
+    let useFallbackInputs = false;
+    if (!(await prefixInput.count()) || !(await numberInput.count())) {
+      useFallbackInputs = true;
+    }
+    if (!useFallbackInputs) {
+      try {
+        if (!(await prefixInput.isVisible()) || !(await numberInput.isVisible())) {
+          useFallbackInputs = true;
+        }
+      } catch (error) {
+        useFallbackInputs = true;
+      }
+    }
+
+    if (useFallbackInputs) {
+      const inputs = page.locator('input[type="text"], input[type="search"], input[type="tel"], input:not([type])');
+      const count = await inputs.count();
+      const visible = [];
+      for (let i = 0; i < count; i += 1) {
+        const input = inputs.nth(i);
+        try {
+          if (!(await input.isVisible())) continue;
+          if (!(await input.isEditable())) continue;
+          const box = await input.boundingBox();
+          if (!box || box.width < 20 || box.height < 12) continue;
+          visible.push({ input, box });
+        } catch (error) {
+          // Ignore.
+        }
+      }
+      if (visible.length < 2) return false;
+      visible.sort((a, b) => (a.box.y - b.box.y) || (a.box.x - b.box.x));
+      let first = visible[0];
+      let second = visible[1];
+      if (first.box.x > second.box.x) [first, second] = [second, first];
+      prefixInput = first.input;
+      numberInput = second.input;
+    }
+
+    await prefixInput.fill('');
+    await numberInput.fill('');
+    await prefixInput.type(resolvedAwbParts.prefix, { delay: 40 });
+    await numberInput.type(resolvedAwbParts.number, { delay: 40 });
+
+    const firstVal = String((await prefixInput.inputValue()) || '').replace(/\D/g, '');
+    const secondVal = String((await numberInput.inputValue()) || '').replace(/\D/g, '');
+    if (!firstVal || !secondVal) return false;
+
+    const clickedInfo = await clickFirstVisibleBySelectors(page, [
+      'button:has-text("Показать информацию")',
+      'input[type="submit"][value*="Показать информацию"]',
+      'input[type="button"][value*="Показать информацию"]',
+    ]);
+    if (clickedInfo) return true;
+
+    const clickedGeneric = await clickFirstVisibleBySelectors(page, [
+      'button:has-text("Показать")',
+      'input[type="submit"]',
+      'input[type="button"]',
+    ]);
+    if (clickedGeneric) return true;
+
+    await numberInput.press('Enter').catch(() => {});
+    return true;
+  };
+
+  const panelSubmitted = await tryCargoPanel();
+  if (panelSubmitted) return true;
+
   const awbSelectors = [
     'input[name*="awb" i]',
     'input[id*="awb" i]',
@@ -614,7 +836,63 @@ const searchDomodedovoStatus = async ({ page, awb }) => {
   return true;
 };
 
-const searchZhukovskyStatus = async ({ page, awb }) => {
+const searchZhukovskyStatus = async ({ page, awb, awbParts }) => {
+  const resolvedAwbParts = awbParts || splitAwbParts(awb);
+
+  const trySplitInputs = async () => {
+    if (!resolvedAwbParts) return false;
+
+    const panel = page.locator('div, section, form').filter({ hasText: 'Номер накладной' }).first();
+    if (!(await panel.count())) return false;
+
+    const inputs = panel.locator('input[type="text"], input[type="search"], input[type="tel"], input:not([type])');
+    const count = await inputs.count();
+    const visible = [];
+    for (let i = 0; i < count; i += 1) {
+      const input = inputs.nth(i);
+      try {
+        if (!(await input.isVisible())) continue;
+        if (!(await input.isEditable())) continue;
+        const box = await input.boundingBox();
+        if (!box || box.width < 20 || box.height < 12) continue;
+        visible.push({ input, box });
+      } catch (error) {
+        // Ignore.
+      }
+    }
+
+    if (visible.length < 2) return false;
+    visible.sort((a, b) => (a.box.y - b.box.y) || (a.box.x - b.box.x));
+    let first = visible[0];
+    let second = visible[1];
+    if (first.box.x > second.box.x) {
+      [first, second] = [second, first];
+    }
+
+    await first.input.fill('');
+    await second.input.fill('');
+    await first.input.type(resolvedAwbParts.prefix, { delay: 35 });
+    await second.input.type(resolvedAwbParts.number, { delay: 35 });
+
+    const firstVal = String((await first.input.inputValue()) || '').replace(/\D/g, '');
+    const secondVal = String((await second.input.inputValue()) || '').replace(/\D/g, '');
+    if (!firstVal || !secondVal) return false;
+
+    const clicked = await clickFirstVisibleBySelectors(page, [
+      'button:has-text("Поиск")',
+      'input[type="submit"][value*="Поиск"]',
+      'input[type="button"][value*="Поиск"]',
+      'button:has-text("Найти")',
+    ]);
+    if (!clicked) {
+      await second.input.press('Enter').catch(() => {});
+    }
+    return true;
+  };
+
+  const splitFilled = await trySplitInputs();
+  if (splitFilled) return true;
+
   const awbSelectors = [
     'input[name*="awb" i]',
     'input[id*="awb" i]',
@@ -644,23 +922,23 @@ const searchZhukovskyStatus = async ({ page, awb }) => {
   return true;
 };
 
-const runSpecificTerminalSearch = async ({ page, awb, terminalConfig }) => {
+const runSpecificTerminalSearch = async ({ page, awb, awbParts, terminalConfig }) => {
   if (terminalConfig.key === 'svo_sher') {
-    return searchShercargoStatus({ page, awb });
+    return searchShercargoStatus({ page, awb, awbParts });
   }
   if (terminalConfig.key === 'vko') {
-    return searchVnukovoStatus({ page, awb });
+    return searchVnukovoStatus({ page, awb, awbParts });
   }
   if (terminalConfig.key === 'dme') {
-    return searchDomodedovoStatus({ page, awb });
+    return searchDomodedovoStatus({ page, awb, awbParts });
   }
   if (terminalConfig.key === 'zia') {
-    return searchZhukovskyStatus({ page, awb });
+    return searchZhukovskyStatus({ page, awb, awbParts });
   }
   return false;
 };
 
-const scrapeGenericCargoStatus = async ({ awb, terminalConfig }) => {
+const scrapeGenericCargoStatus = async ({ awb, awbParts, terminalConfig }) => {
   const playwright = getPlaywright();
   if (!playwright || !playwright.chromium) {
     const error = new Error('Playwright is not installed on server');
@@ -678,9 +956,9 @@ const scrapeGenericCargoStatus = async ({ awb, terminalConfig }) => {
     await page.goto(terminalConfig.url, { waitUntil: 'domcontentloaded', timeout: CARGO_CHECK_TIMEOUT_MS });
     await page.waitForTimeout(1200);
 
-    let submitted = await runSpecificTerminalSearch({ page, awb, terminalConfig });
+    let submitted = await runSpecificTerminalSearch({ page, awb, awbParts, terminalConfig });
     if (!submitted) {
-      const awbFilled = await fillGenericAwbInputs({ page, awb });
+      const awbFilled = await fillGenericAwbInputs({ page, awb, awbParts });
       if (awbFilled) {
         submitted = await clickGenericSearchButton(page);
         if (!submitted) {
@@ -696,6 +974,26 @@ const scrapeGenericCargoStatus = async ({ awb, terminalConfig }) => {
     if (submitted) {
       await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
       await page.waitForTimeout(2000);
+    }
+
+    if (terminalConfig.key === 'vko') {
+      const manualRequired = await detectVnukovoManualCheck(page);
+      if (manualRequired) {
+        const screenshot = await captureMoscowCargoResultScreenshot({ page, awb, terminalKey: terminalConfig.key });
+        return {
+          terminal: terminalConfig.label,
+          awb,
+          statusText: '',
+          tables: [],
+          checkedAt,
+          sourceUrl: terminalConfig.url,
+          screenshotId: screenshot.screenshotId,
+          screenshotUrl: screenshot.screenshotUrl,
+          manualRequired: true,
+          manualMessage: 'Требуется ручная проверка на сайте Внуково.',
+          manualUrl: terminalConfig.url,
+        };
+      }
     }
 
     const statusText = await extractMoscowCargoStatusText(page);
@@ -1100,7 +1398,36 @@ const chunks = [];
   return [...new Set(lines)].slice(0, 25).join('\n');
 };
 
-const scrapeMoscowCargoStatus = async ({ awb, terminalLabel }) => {
+const detectVnukovoManualCheck = async (page) => {
+  const bodyText = ((await page.locator('body').innerText()).trim() || '').toLowerCase();
+  if (
+    bodyText.includes('вы точно не робот') ||
+    bodyText.includes('подтвердите, что вы не робот') ||
+    bodyText.includes('captcha')
+  ) {
+    return true;
+  }
+
+  const selectors = [
+    'iframe[src*="recaptcha" i]',
+    '[class*="captcha" i]',
+    '[id*="captcha" i]',
+    '[data-sitekey]',
+  ];
+
+  for (const selector of selectors) {
+    try {
+      const locator = page.locator(selector);
+      if ((await locator.count()) > 0) return true;
+    } catch (error) {
+      // Ignore.
+    }
+  }
+
+  return false;
+};
+
+const scrapeMoscowCargoStatus = async ({ awb, awbParts, terminalLabel }) => {
   const playwright = getPlaywright();
   if (!playwright || !playwright.chromium) {
     const error = new Error('Playwright is not installed on server');
@@ -1117,8 +1444,8 @@ const scrapeMoscowCargoStatus = async ({ awb, terminalLabel }) => {
   try {
     await page.goto(MOSCOW_CARGO_URL, { waitUntil: 'domcontentloaded', timeout: CARGO_CHECK_TIMEOUT_MS });
 
-    const awbParts = splitAwbParts(awb);
-    if (!awbParts) {
+    const resolvedAwbParts = awbParts || splitAwbParts(awb);
+    if (!resolvedAwbParts) {
       const error = new Error('AWB format is invalid. Expected prefix and number, e.g. 876-14889696');
       error.code = 'awb_format_invalid';
       throw error;
@@ -1131,7 +1458,7 @@ const scrapeMoscowCargoStatus = async ({ awb, terminalLabel }) => {
       throw error;
     }
 
-    await fillMoscowCargoAwbInputs(trackingWidget, awbParts);
+    await fillMoscowCargoAwbInputs(trackingWidget, resolvedAwbParts);
     await triggerMoscowCargoSearch(trackingWidget);
     await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {});
     await page.waitForTimeout(2000);
@@ -1217,7 +1544,13 @@ app.post('/oauth/token', async (req, res) => {
 
 app.post('/cargo/status', async (req, res) => {
   try {
-    const awb = normalizeAwb(req.body?.awb);
+    const awbPrefix = normalizeAwbPart(req.body?.awbPrefix, 3);
+    const awbNumber = normalizeAwbPart(req.body?.awbNumber, 10);
+    const awbFromParts = awbPrefix && awbNumber ? `${awbPrefix}${awbNumber}` : '';
+    const awb = normalizeAwb(req.body?.awb || awbFromParts);
+    const awbParts = awbPrefix && awbNumber
+      ? { prefix: awbPrefix, number: awbNumber }
+      : splitAwbParts(awb);
     const terminal = String(req.body?.terminal || '').trim();
     const terminalKey = String(req.body?.terminalKey || '').trim();
     const forceRefresh = req.body?.force === true;
@@ -1237,6 +1570,22 @@ app.post('/cargo/status', async (req, res) => {
       });
     }
 
+    if (terminalConfig.key === 'vko') {
+      return res.json({
+        terminal: terminalConfig.label,
+        awb,
+        statusText: '',
+        tables: [],
+        checkedAt: Date.now(),
+        sourceUrl: terminalConfig.url,
+        manualRequired: true,
+        manualMessage: 'Требуется ручная проверка на сайте Внуково.',
+        manualUrl: terminalConfig.url,
+        cached: false,
+        cacheExpiresAt: Date.now() + CARGO_STATUS_TTL_MS,
+      });
+    }
+
     const cacheKey = getCargoCacheKey({ terminal, awb });
     const cacheEntry = cargoStatusCache.get(cacheKey);
     if (!forceRefresh && cacheEntry && Date.now() < cacheEntry.expiresAt) {
@@ -1248,8 +1597,8 @@ app.post('/cargo/status', async (req, res) => {
     }
 
     const data = terminalConfig.mode === 'moscow'
-      ? await scrapeMoscowCargoStatus({ awb, terminalLabel: terminalConfig.label })
-      : await scrapeGenericCargoStatus({ awb, terminalConfig });
+      ? await scrapeMoscowCargoStatus({ awb, awbParts, terminalLabel: terminalConfig.label })
+      : await scrapeGenericCargoStatus({ awb, awbParts, terminalConfig });
     const expiresAt = Date.now() + CARGO_STATUS_TTL_MS;
     if (cacheEntry?.data?.screenshotId && cacheEntry.data.screenshotId !== data.screenshotId) {
       await removeCargoScreenshot(cacheEntry.data.screenshotId).catch(() => {});
@@ -1311,6 +1660,18 @@ app.delete('/cargo/screenshot/:id', async (req, res) => {
   } catch (error) {
     return res.status(500).json({
       error: 'screenshot_delete_failed',
+      details: error.message,
+    });
+  }
+});
+
+app.delete('/cargo/screenshots', async (req, res) => {
+  try {
+    const result = await removeAllCargoScreenshots();
+    return res.json(result);
+  } catch (error) {
+    return res.status(500).json({
+      error: 'screenshots_delete_failed',
       details: error.message,
     });
   }
