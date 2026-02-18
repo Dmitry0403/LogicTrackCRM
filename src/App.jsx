@@ -1,12 +1,16 @@
 ﻿import React from 'react';
 import {
-  AppHeader,
   OrderFormCard,
   SettingsModal,
   DriveSettingsModal,
-  OrdersTable,
   EditOrderModal,
 } from './components/ui';
+import {
+  HeaderNavigation,
+  WorkPanel,
+  WorkflowBoard,
+  TripFormCard,
+} from './components/workspace';
 
 const DRIVE_CONFIG = {
   CLIENT_ID: "389372481906-pfjepgeg2odfqmfdopdbsn2t890uoahe.apps.googleusercontent.com",
@@ -124,6 +128,37 @@ const POWER_OF_ATTORNEY_REGISTRY_URL = "http://localhost:3001/poa/registry";
 const POWER_OF_ATTORNEY_FALLBACK_URL = "/power-of-attorney-registry.json";
 const CARGO_STATUS_URL = "http://localhost:3001/cargo/status";
 const CARGO_API_BASE_URL = "http://localhost:3001";
+const TRIP_CAR_NUMBERS = [
+  "AC 7769-5",
+  "AM 1019-5",
+  "AT 9287-5",
+  "AT 9288-5",
+  "AM 2957-5",
+  "AM 9118-5",
+  "AT 2761-5",
+  "AT 2762-5",
+  "AP 7963-5",
+  "AP 9736-5",
+  "AT 0887-5",
+];
+const TRIP_DRIVER_NAMES = [
+  "Бабрович Юрий",
+  "Медведь Валерий",
+  "Медведь Вадим",
+  "Сержан Чеслав",
+  "Латушко Олег",
+  "Шамко Дмитрий",
+];
+const DEFAULT_ORDER_STAGES = [
+  { id: "order-stage-new", name: "Новые" },
+  { id: "order-stage-progress", name: "В работе" },
+  { id: "order-stage-done", name: "Готово" },
+];
+const DEFAULT_TRIP_STAGES = [
+  { id: "trip-stage-plan", name: "План" },
+  { id: "trip-stage-route", name: "В рейсе" },
+  { id: "trip-stage-done", name: "Завершено" },
+];
 
 const resolveCargoApiUrl = (urlPath) => {
   if (!urlPath) return "";
@@ -322,11 +357,51 @@ const saveOrders = (orders) => {
   localStorage.setItem("logictrack_orders", JSON.stringify(orders));
 };
 
+const loadTrips = () => {
+  const stored = localStorage.getItem("logictrack_trips");
+  return stored ? JSON.parse(stored) : [];
+};
+
+const saveTrips = (trips) => {
+  localStorage.setItem("logictrack_trips", JSON.stringify(trips));
+};
+
+const loadStages = (key, fallback) => {
+  const stored = localStorage.getItem(key);
+  const parsed = stored ? JSON.parse(stored) : null;
+  return Array.isArray(parsed) && parsed.length > 0 ? parsed : fallback;
+};
+
+const saveStages = (key, stages) => {
+  localStorage.setItem(key, JSON.stringify(stages));
+};
+
+const createStage = (prefix, name) => ({
+  id: `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  name,
+});
+
+const getTodayIsoDate = () => {
+  const now = new Date();
+  now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+  return now.toISOString().slice(0, 10);
+};
+
 const App = () => {
   const SHEREMETYEVO_VALUES = new Set(["Шереметьево"]);
   const DEFAULT_SHEREMETYEVO_TERMINAL = "Москва-карго";
 
   const [orders, setOrders] = React.useState(loadOrders);
+  const [trips, setTrips] = React.useState(loadTrips);
+  const [orderStages, setOrderStages] = React.useState(() =>
+    loadStages("logictrack_order_stages", DEFAULT_ORDER_STAGES),
+  );
+  const [tripStages, setTripStages] = React.useState(() =>
+    loadStages("logictrack_trip_stages", DEFAULT_TRIP_STAGES),
+  );
+  const [activeView, setActiveView] = React.useState("orders");
+  const [ordersScreenMode, setOrdersScreenMode] = React.useState("list");
+  const [tripsScreenMode, setTripsScreenMode] = React.useState("list");
   const [driveConnected, setDriveConnected] = React.useState(false);
   const [powerOfAttorneyRegistry, setPowerOfAttorneyRegistry] = React.useState(defaultPowerOfAttorneyRegistry);
   const [isPowerOfAttorneySyncLoading, setIsPowerOfAttorneySyncLoading] = React.useState(false);
@@ -364,6 +439,13 @@ const App = () => {
   const [showEditModal, setShowEditModal] = React.useState(false);
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [showDriveSettingsModal, setShowDriveSettingsModal] = React.useState(false);
+  const [tripFormData, setTripFormData] = React.useState({
+    tripNumber: "",
+    tripDate: getTodayIsoDate(),
+    carNumber: "",
+    driverName: "",
+    orderIds: [],
+  });
 
   
   const [selectedDriveFolder, setSelectedDriveFolder] = React.useState(() => {
@@ -377,6 +459,42 @@ const App = () => {
   React.useEffect(() => {
     saveOrders(orders);
   }, [orders]);
+
+  React.useEffect(() => {
+    saveTrips(trips);
+  }, [trips]);
+
+  React.useEffect(() => {
+    saveStages("logictrack_order_stages", orderStages);
+  }, [orderStages]);
+
+  React.useEffect(() => {
+    saveStages("logictrack_trip_stages", tripStages);
+  }, [tripStages]);
+
+  React.useEffect(() => {
+    const fallbackStageId = orderStages[0]?.id;
+    if (!fallbackStageId) return;
+    const valid = new Set(orderStages.map((s) => s.id));
+    setOrders((prev) =>
+      prev.map((order) => ({
+        ...order,
+        stageId: valid.has(order.stageId) ? order.stageId : fallbackStageId,
+      })),
+    );
+  }, [orderStages]);
+
+  React.useEffect(() => {
+    const fallbackStageId = tripStages[0]?.id;
+    if (!fallbackStageId) return;
+    const valid = new Set(tripStages.map((s) => s.id));
+    setTrips((prev) =>
+      prev.map((trip) => ({
+        ...trip,
+        stageId: valid.has(trip.stageId) ? trip.stageId : fallbackStageId,
+      })),
+    );
+  }, [tripStages]);
 
   const loadPowerOfAttorneyRegistry = React.useCallback(async (forceRefresh = false) => {
     setIsPowerOfAttorneySyncLoading(true);
@@ -656,6 +774,7 @@ const App = () => {
     event.preventDefault();
     const order = {
       id: `order-${Date.now()}`,
+      stageId: orderStages[0]?.id || "order-stage-new",
       shipmentAirport: formData.shipmentAirport.trim(),
       shipmentTerminal: formData.shipmentTerminal.trim(),
       name: formData.orderName.trim(),
@@ -695,6 +814,178 @@ const App = () => {
       error: "",
       data: null,
     });
+    setOrdersScreenMode("list");
+  };
+
+  const handleTripFieldChange = (field) => (event) => {
+    const value = event.target.value;
+    setTripFormData((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleToggleTripOrder = (orderId) => {
+    setTripFormData((prev) => {
+      const exists = prev.orderIds.includes(orderId);
+      return {
+        ...prev,
+        orderIds: exists
+          ? prev.orderIds.filter((id) => id !== orderId)
+          : [...prev.orderIds, orderId],
+      };
+    });
+  };
+
+  const closeCreateTripForm = () => {
+    setTripFormData({
+      tripNumber: "",
+      tripDate: getTodayIsoDate(),
+      carNumber: "",
+      driverName: "",
+      orderIds: [],
+    });
+    setTripsScreenMode("list");
+  };
+
+  const openCreateTripForm = () => {
+    setTripFormData({
+      tripNumber: "",
+      tripDate: getTodayIsoDate(),
+      carNumber: "",
+      driverName: "",
+      orderIds: [],
+    });
+    setTripsScreenMode("create");
+  };
+
+  const handleTripSubmit = (event) => {
+    event.preventDefault();
+    if (tripFormData.orderIds.length === 0) {
+      alert("Выберите хотя бы один заказ для рейса.");
+      return;
+    }
+
+    const selectedOrders = orders.filter((order) => tripFormData.orderIds.includes(order.id));
+    const ordersSummary = selectedOrders
+      .slice(0, 3)
+      .map((order) => order.name || order.recipient || order.id)
+      .join(", ");
+
+    const trip = {
+      id: `trip-${Date.now()}`,
+      stageId: tripStages[0]?.id || "trip-stage-plan",
+      tripNumber: tripFormData.tripNumber.trim(),
+      tripDate: tripFormData.tripDate,
+      carNumber: tripFormData.carNumber,
+      driverName: tripFormData.driverName,
+      orderIds: tripFormData.orderIds,
+      ordersSummary:
+        selectedOrders.length > 3
+          ? `${ordersSummary} (+${selectedOrders.length - 3})`
+          : ordersSummary,
+    };
+
+    setTrips((prev) => [trip, ...prev]);
+    closeCreateTripForm();
+  };
+
+  const handleSelectView = (view) => {
+    if (view === "settings") {
+      setShowSettingsModal(true);
+      return;
+    }
+    setActiveView(view);
+    if (view === "orders") {
+      setOrdersScreenMode("list");
+    }
+    if (view === "trips") {
+      setTripsScreenMode("list");
+    }
+  };
+
+  const moveItemByDirection = (stages, currentStageId, direction) => {
+    const index = stages.findIndex((stage) => stage.id === currentStageId);
+    if (index < 0) return currentStageId;
+    const nextIndex = Math.min(Math.max(index + direction, 0), stages.length - 1);
+    return stages[nextIndex]?.id || currentStageId;
+  };
+
+  const handleMoveOrder = (orderId, direction) => {
+    setOrders((prev) =>
+      prev.map((order) =>
+        order.id === orderId
+          ? { ...order, stageId: moveItemByDirection(orderStages, order.stageId, direction) }
+          : order,
+      ),
+    );
+  };
+
+  const handleMoveTrip = (tripId, direction) => {
+    setTrips((prev) =>
+      prev.map((trip) =>
+        trip.id === tripId
+          ? { ...trip, stageId: moveItemByDirection(tripStages, trip.stageId, direction) }
+          : trip,
+      ),
+    );
+  };
+
+  const handleInsertOrderStage = (afterStageId) => {
+    const stage = createStage("order-stage", "Новый этап");
+    setOrderStages((prev) => {
+      const index = prev.findIndex((item) => item.id === afterStageId);
+      if (index < 0) return [...prev, stage];
+      return [...prev.slice(0, index + 1), stage, ...prev.slice(index + 1)];
+    });
+    return stage.id;
+  };
+
+  const handleInsertTripStage = (afterStageId) => {
+    const stage = createStage("trip-stage", "Новый этап");
+    setTripStages((prev) => {
+      const index = prev.findIndex((item) => item.id === afterStageId);
+      if (index < 0) return [...prev, stage];
+      return [...prev.slice(0, index + 1), stage, ...prev.slice(index + 1)];
+    });
+    return stage.id;
+  };
+
+  const handleRenameOrderStage = (stageId, name) => {
+    const value = String(name || "").trim();
+    if (!value) return;
+    setOrderStages((prev) =>
+      prev.map((stage) => (stage.id === stageId ? { ...stage, name: value } : stage)),
+    );
+  };
+
+  const handleRenameTripStage = (stageId, name) => {
+    const value = String(name || "").trim();
+    if (!value) return;
+    setTripStages((prev) =>
+      prev.map((stage) => (stage.id === stageId ? { ...stage, name: value } : stage)),
+    );
+  };
+
+  const handleDeleteOrderStage = (stageId) => {
+    if (orderStages.length <= 1) return;
+    const remaining = orderStages.filter((stage) => stage.id !== stageId);
+    const fallbackStageId = remaining[0]?.id;
+    setOrderStages(remaining);
+    setOrders((prev) =>
+      prev.map((order) =>
+        order.stageId === stageId ? { ...order, stageId: fallbackStageId } : order,
+      ),
+    );
+  };
+
+  const handleDeleteTripStage = (stageId) => {
+    if (tripStages.length <= 1) return;
+    const remaining = tripStages.filter((stage) => stage.id !== stageId);
+    const fallbackStageId = remaining[0]?.id;
+    setTripStages(remaining);
+    setTrips((prev) =>
+      prev.map((trip) =>
+        trip.stageId === stageId ? { ...trip, stageId: fallbackStageId } : trip,
+      ),
+    );
   };
 
   const connectGoogleDrive = async () => {
@@ -976,26 +1267,120 @@ const App = () => {
 
   return (
     <div className="app">
-      <AppHeader
-        driveConnected={driveConnected}
-        onOpenSettings={() => setShowSettingsModal(true)}
-      />
 
-      <main className="grid">
-        <OrderFormCard
-          formData={formData}
-          customsName={customsName}
-          powerOfAttorneyStatus={powerOfAttorneyStatus}
-          recipientSuggestions={recipientSuggestions}
-          awbStatusCheck={awbStatusCheck}
-          isAwbCheckAvailable={isCargoCheckAvailable}
-          isPowerOfAttorneySyncLoading={isPowerOfAttorneySyncLoading}
-          onCheckAwbStatus={checkAwbStatus}
-          onOpenManualCheck={openManualCargoCheck}
-          onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}
-          onFieldChange={handleFieldChange}
-          onSubmit={handleSubmit}
-        />
+      <main className="workspace">
+        <HeaderNavigation activeView={activeView} onSelectView={handleSelectView} />
+
+        <section className="workspace__content workspace__content--full">
+          {activeView === "orders" && (
+            <>
+              {ordersScreenMode === "list" ? (
+                <WorkPanel
+                  title="Реестр заказов"
+                  actionLabel="Создать заказ"
+                  onAction={() => setOrdersScreenMode("create")}
+                >
+                  <WorkflowBoard
+                    boardTitle="Этапы заявок"
+                    stages={orderStages}
+                    items={orders}
+                    getItemStageId={(order) => order.stageId}
+                    onInsertStage={handleInsertOrderStage}
+                    onRenameStage={handleRenameOrderStage}
+                    onDeleteStage={handleDeleteOrderStage}
+                    renderItemCard={(order) => (
+                      <div className="workflow-card">
+                        <div className="workflow-card__title">{order.name || "Без названия"}</div>
+                        <div className="workflow-card__meta">{order.recipient}</div>
+                        <div className="workflow-card__meta">{order.awb}</div>
+                        <div className="workflow-card__actions">
+                          <button type="button" onClick={() => handleMoveOrder(order.id, -1)}>◀</button>
+                          <button type="button" onClick={() => handleMoveOrder(order.id, 1)}>▶</button>
+                          <button type="button" onClick={() => handleEditClick(order)}>Ред.</button>
+                          <button type="button" onClick={() => handleDelete(order.id)}>Удалить</button>
+                        </div>
+                      </div>
+                    )}
+                  />
+                </WorkPanel>
+              ) : (
+                <WorkPanel
+                  title="Создание заказа"
+                  actionLabel="К списку заказов"
+                  onAction={() => setOrdersScreenMode("list")}
+                >
+                  <OrderFormCard
+                    formData={formData}
+                    customsName={customsName}
+                    powerOfAttorneyStatus={powerOfAttorneyStatus}
+                    recipientSuggestions={recipientSuggestions}
+                    awbStatusCheck={awbStatusCheck}
+                    isAwbCheckAvailable={isCargoCheckAvailable}
+                    isPowerOfAttorneySyncLoading={isPowerOfAttorneySyncLoading}
+                    onCheckAwbStatus={checkAwbStatus}
+                    onOpenManualCheck={openManualCargoCheck}
+                    onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}
+                    onFieldChange={handleFieldChange}
+                    onSubmit={handleSubmit}
+                    embedded
+                  />
+                </WorkPanel>
+              )}
+            </>
+          )}
+
+          {activeView === "trips" && (
+            <>
+              {tripsScreenMode === "list" ? (
+                <WorkPanel
+                  title="Список рейсов"
+                  actionLabel="Создать рейс"
+                  onAction={openCreateTripForm}
+                >
+                  <WorkflowBoard
+                    boardTitle="Этапы рейсов"
+                    stages={tripStages}
+                    items={trips}
+                    getItemStageId={(trip) => trip.stageId}
+                    onInsertStage={handleInsertTripStage}
+                    onRenameStage={handleRenameTripStage}
+                    onDeleteStage={handleDeleteTripStage}
+                    renderItemCard={(trip) => (
+                      <div className="workflow-card">
+                        <div className="workflow-card__title">{trip.tripNumber || "Без номера"}</div>
+                        <div className="workflow-card__meta">{trip.tripDate}</div>
+                        <div className="workflow-card__meta">{trip.carNumber} · {trip.driverName}</div>
+                        <div className="workflow-card__meta">{trip.ordersSummary || `Заказов: ${trip.orderIds?.length || 0}`}</div>
+                        <div className="workflow-card__actions">
+                          <button type="button" onClick={() => handleMoveTrip(trip.id, -1)}>◀</button>
+                          <button type="button" onClick={() => handleMoveTrip(trip.id, 1)}>▶</button>
+                        </div>
+                      </div>
+                    )}
+                  />
+                </WorkPanel>
+              ) : (
+                <WorkPanel
+                  title="Создание рейса"
+                  actionLabel="К списку рейсов"
+                  onAction={closeCreateTripForm}
+                >
+                  <TripFormCard
+                    formData={tripFormData}
+                    onFieldChange={handleTripFieldChange}
+                    onToggleOrder={handleToggleTripOrder}
+                    onSubmit={handleTripSubmit}
+                    orders={orders}
+                    carNumbers={TRIP_CAR_NUMBERS}
+                    driverNames={TRIP_DRIVER_NAMES}
+                    embedded
+                  />
+                </WorkPanel>
+              )}
+            </>
+          )}
+
+        </section>
       </main>
 
       <SettingsModal
@@ -1013,12 +1398,6 @@ const App = () => {
         onSelectDriveFolder={selectDriveFolder}
         onDisconnectGoogleDrive={handleDisconnectGoogleDrive}
         onClose={() => setShowDriveSettingsModal(false)}
-      />
-
-      <OrdersTable
-        orders={orders}
-        onEditClick={handleEditClick}
-        onDelete={handleDelete}
       />
 
       <EditOrderModal
@@ -1064,4 +1443,6 @@ const App = () => {
   );
 };
 export default App;
+
+
 
