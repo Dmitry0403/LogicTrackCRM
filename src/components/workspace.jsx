@@ -1,4 +1,4 @@
-import React from "react";
+﻿import React from "react";
 
 function RequestsIcon() {
   return (
@@ -80,7 +80,9 @@ export function WorkflowBoard({
   boardTitle,
   stages,
   items,
+  getItemId,
   getItemStageId,
+  onMoveItemToStage,
   onInsertStage,
   onRenameStage,
   onDeleteStage,
@@ -90,6 +92,9 @@ export function WorkflowBoard({
   const [editingStageId, setEditingStageId] = React.useState("");
   const [editingStageName, setEditingStageName] = React.useState("");
   const [deleteStageId, setDeleteStageId] = React.useState("");
+  const [dragOverStageId, setDragOverStageId] = React.useState("");
+  const [draggingItemId, setDraggingItemId] = React.useState("");
+  const renameFormRef = React.useRef(null);
 
   const openRenameModal = (stage) => {
     setActiveStageId(stage.id);
@@ -102,13 +107,18 @@ export function WorkflowBoard({
     setEditingStageName("");
   };
 
-  const submitRenameStage = (event) => {
-    event.preventDefault();
+  const commitRenameStage = React.useCallback(() => {
     const value = editingStageName.trim();
-    if (!value || !editingStageId) return;
+    if (!value || !editingStageId) return false;
     onRenameStage(editingStageId, value);
     closeRenameInline();
     setActiveStageId("");
+    return true;
+  }, [editingStageId, editingStageName, onRenameStage]);
+
+  const submitRenameStage = (event) => {
+    event.preventDefault();
+    commitRenameStage();
   };
 
   const openDeleteModal = (stageId) => {
@@ -139,17 +149,70 @@ export function WorkflowBoard({
     setEditingStageName("Новый этап");
   };
 
+  const handleDragStart = (event, itemId) => {
+    setDraggingItemId(String(itemId));
+    event.dataTransfer.setData("text/plain", String(itemId));
+    event.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOverStage = (event, stageId) => {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "move";
+    if (dragOverStageId !== stageId) {
+      setDragOverStageId(stageId);
+    }
+  };
+
+  const handleDragLeaveStage = (event, stageId) => {
+    const related = event.relatedTarget;
+    if (related && event.currentTarget.contains(related)) return;
+    if (dragOverStageId === stageId) {
+      setDragOverStageId("");
+    }
+  };
+
+  const handleDropToStage = (event, stageId) => {
+    event.preventDefault();
+    const itemId = event.dataTransfer.getData("text/plain");
+    setDragOverStageId("");
+    setDraggingItemId("");
+    if (!itemId || !onMoveItemToStage) return;
+    onMoveItemToStage(itemId, stageId);
+  };
+
+  React.useEffect(() => {
+    if (!editingStageId || deleteStageId) return undefined;
+
+    const handlePointerDownOutsideInline = (event) => {
+      const formNode = renameFormRef.current;
+      if (!formNode || formNode.contains(event.target)) return;
+      const deleteButton = event.target.closest(".workflow-column__icon-btn--delete");
+      if (deleteButton) return;
+      commitRenameStage();
+    };
+
+    document.addEventListener("pointerdown", handlePointerDownOutsideInline);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDownOutsideInline);
+    };
+  }, [editingStageId, deleteStageId, commitRenameStage]);
+
   return (
     <div className="workflow-board">
-      <div className="workflow-board__head">{boardTitle}</div>
       <div className="workflow-columns">
         {stages.map((stage) => {
           const stageItems = items.filter((item) => getItemStageId(item) === stage.id);
           return (
-            <section className="workflow-column" key={stage.id}>
+            <section
+              className={`workflow-column ${dragOverStageId === stage.id ? "workflow-column--drop-target" : ""}`}
+              key={stage.id}
+              onDragOver={(event) => handleDragOverStage(event, stage.id)}
+              onDragLeave={(event) => handleDragLeaveStage(event, stage.id)}
+              onDrop={(event) => handleDropToStage(event, stage.id)}
+            >
               <header className="workflow-column__head">
                 {editingStageId === stage.id ? (
-                  <form className="workflow-column__title-edit" onSubmit={submitRenameStage}>
+                  <form ref={renameFormRef} className="workflow-column__title-edit" onSubmit={submitRenameStage}>
                     <input
                       type="text"
                       value={editingStageName}
@@ -195,7 +258,22 @@ export function WorkflowBoard({
                   <div className="workflow-column__empty">Нет карточек</div>
                 ) : (
                   stageItems.map((item) => (
-                    <div key={item.id}>{renderItemCard(item)}</div>
+                    <div
+                      key={getItemId(item)}
+                      className={`workflow-draggable-card ${
+                        draggingItemId === String(getItemId(item))
+                          ? "workflow-draggable-card--dragging"
+                          : ""
+                      }`}
+                      draggable
+                      onDragStart={(event) => handleDragStart(event, getItemId(item))}
+                      onDragEnd={() => {
+                        setDragOverStageId("");
+                        setDraggingItemId("");
+                      }}
+                    >
+                      {renderItemCard(item)}
+                    </div>
                   ))
                 )}
               </div>
@@ -217,7 +295,6 @@ export function WorkflowBoard({
           <div className="modal-card workflow-modal">
             <div className="modal-card__header">
               <h2>Удалить этап?</h2>
-              <button type="button" onClick={closeDeleteModal}>Закрыть</button>
             </div>
             <div className="modal-card__body">
               <p>Этап будет удален, карточки переместятся в первый этап.</p>
@@ -240,6 +317,7 @@ export function TripFormCard({
   onFieldChange,
   onToggleOrder,
   onSubmit,
+  submitLabel = "Создать рейс",
   orders,
   carNumbers,
   driverNames,
@@ -330,7 +408,7 @@ export function TripFormCard({
       </div>
 
       <button type="submit" className="primary" disabled={orders.length === 0}>
-        Создать рейс
+        {submitLabel}
       </button>
     </form>
   );
@@ -394,3 +472,5 @@ export function SettingsSection({ onOpenSettings }) {
     </section>
   );
 }
+
+

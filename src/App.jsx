@@ -3,7 +3,6 @@ import {
   OrderFormCard,
   SettingsModal,
   DriveSettingsModal,
-  EditOrderModal,
 } from './components/ui';
 import {
   HeaderNavigation,
@@ -185,6 +184,15 @@ const composeAwb = (prefix, number) => {
   if (p) return p;
   if (n) return n;
   return "";
+};
+
+const splitAwb = (awb) => {
+  const clean = String(awb || "").trim();
+  const match = clean.match(/^(\d{3})-(\d{1,10})$/);
+  if (match) {
+    return { awbPrefix: match[1], awbNumber: match[2] };
+  }
+  return { awbPrefix: "", awbNumber: clean.replace(/\D/g, "").slice(0, 10) };
 };
 
 const defaultPowerOfAttorneyRegistry = {
@@ -432,11 +440,9 @@ const App = () => {
     screenshotId: "",
     screenshotUrl: "",
   });
-
-  // Editing state
+  const awbCheckAbortRef = React.useRef(null);
   const [editingOrderId, setEditingOrderId] = React.useState(null);
-  const [editingFormData, setEditingFormData] = React.useState(null);
-  const [showEditModal, setShowEditModal] = React.useState(false);
+  const [editingTripId, setEditingTripId] = React.useState(null);
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [showDriveSettingsModal, setShowDriveSettingsModal] = React.useState(false);
   const [tripFormData, setTripFormData] = React.useState({
@@ -651,11 +657,14 @@ const App = () => {
       error: "",
       data: null,
     });
+    const abortController = new AbortController();
+    awbCheckAbortRef.current = abortController;
 
     try {
       const response = await fetch(CARGO_STATUS_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortController.signal,
         body: JSON.stringify({
           awb,
           awbPrefix: formData.awbPrefix,
@@ -690,6 +699,14 @@ const App = () => {
         });
       }
     } catch (error) {
+      if (error?.name === "AbortError") {
+        setAwbStatusCheck({
+          loading: false,
+          error: "",
+          data: null,
+        });
+        return;
+      }
       setAwbStatusCheck({
         loading: false,
         error: error.message || "Не удалось проверить статус груза.",
@@ -700,10 +717,14 @@ const App = () => {
         screenshotId: "",
         screenshotUrl: "",
       });
+    } finally {
+      if (awbCheckAbortRef.current === abortController) {
+        awbCheckAbortRef.current = null;
+      }
     }
   };
 
-  const closeCargoScreenshotModal = async () => {
+  const clearCargoScreenshotsCache = async () => {
     try {
       await fetch(`${CARGO_API_BASE_URL}/cargo/screenshots`, {
         method: "DELETE",
@@ -711,6 +732,28 @@ const App = () => {
     } catch (error) {
       console.warn("Не удалось удалить скриншоты:", error);
     }
+  };
+
+  const cancelAwbStatusCheck = async () => {
+    if (awbCheckAbortRef.current) {
+      awbCheckAbortRef.current.abort();
+      awbCheckAbortRef.current = null;
+    }
+    await clearCargoScreenshotsCache();
+    setCargoScreenshotModal({
+      isOpen: false,
+      screenshotId: "",
+      screenshotUrl: "",
+    });
+    setAwbStatusCheck({
+      loading: false,
+      error: "",
+      data: null,
+    });
+  };
+
+  const closeCargoScreenshotModal = async () => {
+    await clearCargoScreenshotsCache();
 
     setCargoScreenshotModal({
       isOpen: false,
@@ -741,7 +784,11 @@ const App = () => {
     setFormData((prev) => {
       const next = { ...prev, [field]: value };
       if (field === "recipient") {
-        next.orderName = value.trim();
+        const previousOrderName = String(prev.orderName || "").trim();
+        const previousRecipient = String(prev.recipient || "").trim();
+        if (!previousOrderName || previousOrderName === previousRecipient) {
+          next.orderName = value.trim();
+        }
       }
       if (field === "shipmentAirport") {
         next.shipmentTerminal = SHEREMETYEVO_VALUES.has(value) ? DEFAULT_SHEREMETYEVO_TERMINAL : "";
@@ -773,8 +820,10 @@ const App = () => {
   const handleSubmit = (event) => {
     event.preventDefault();
     const order = {
-      id: `order-${Date.now()}`,
-      stageId: orderStages[0]?.id || "order-stage-new",
+      id: editingOrderId || `order-${Date.now()}`,
+      stageId: editingOrderId
+        ? orders.find((item) => item.id === editingOrderId)?.stageId || (orderStages[0]?.id || "order-stage-new")
+        : (orderStages[0]?.id || "order-stage-new"),
       shipmentAirport: formData.shipmentAirport.trim(),
       shipmentTerminal: formData.shipmentTerminal.trim(),
       name: formData.orderName.trim(),
@@ -788,12 +837,21 @@ const App = () => {
       driveFolder: null,
       driveFolderId: null,
     };
-
-    setOrders((prev) => [order, ...prev]);
-
-    // Автоматически создать папку в Google Drive если подключено
-    if (driveConnected) {
-      createDriveFolderForOrder(order.name, order.id);
+    const originalOrder = editingOrderId
+      ? orders.find((item) => item.id === editingOrderId)
+      : null;
+    if (originalOrder) {
+      order.driveFolder = originalOrder.driveFolder || null;
+      order.driveFolderId = originalOrder.driveFolderId || null;
+      setOrders((prev) => prev.map((item) => (item.id === editingOrderId ? order : item)));
+      if (originalOrder.name !== order.name && order.driveFolderId) {
+        updateDriveFolderName(order.driveFolderId, order.name);
+      }
+    } else {
+      setOrders((prev) => [order, ...prev]);
+      if (driveConnected) {
+        createDriveFolderForOrder(order.name, order.id);
+      }
     }
 
     setFormData({
@@ -809,6 +867,7 @@ const App = () => {
       customsCode: "",
       notes: "",
     });
+    setEditingOrderId(null);
     setAwbStatusCheck({
       loading: false,
       error: "",
@@ -835,6 +894,7 @@ const App = () => {
   };
 
   const closeCreateTripForm = () => {
+    setEditingTripId(null);
     setTripFormData({
       tripNumber: "",
       tripDate: getTodayIsoDate(),
@@ -846,6 +906,7 @@ const App = () => {
   };
 
   const openCreateTripForm = () => {
+    setEditingTripId(null);
     setTripFormData({
       tripNumber: "",
       tripDate: getTodayIsoDate(),
@@ -870,8 +931,10 @@ const App = () => {
       .join(", ");
 
     const trip = {
-      id: `trip-${Date.now()}`,
-      stageId: tripStages[0]?.id || "trip-stage-plan",
+      id: editingTripId || `trip-${Date.now()}`,
+      stageId: editingTripId
+        ? trips.find((item) => item.id === editingTripId)?.stageId || (tripStages[0]?.id || "trip-stage-plan")
+        : (tripStages[0]?.id || "trip-stage-plan"),
       tripNumber: tripFormData.tripNumber.trim(),
       tripDate: tripFormData.tripDate,
       carNumber: tripFormData.carNumber,
@@ -882,8 +945,11 @@ const App = () => {
           ? `${ordersSummary} (+${selectedOrders.length - 3})`
           : ordersSummary,
     };
-
-    setTrips((prev) => [trip, ...prev]);
+    if (editingTripId) {
+      setTrips((prev) => prev.map((item) => (item.id === editingTripId ? trip : item)));
+    } else {
+      setTrips((prev) => [trip, ...prev]);
+    }
     closeCreateTripForm();
   };
 
@@ -918,12 +984,28 @@ const App = () => {
     );
   };
 
+  const handleMoveOrderToStage = (orderId, stageId) => {
+    setOrders((prev) =>
+      prev.map((order) =>
+        order.id === orderId ? { ...order, stageId } : order,
+      ),
+    );
+  };
+
   const handleMoveTrip = (tripId, direction) => {
     setTrips((prev) =>
       prev.map((trip) =>
         trip.id === tripId
           ? { ...trip, stageId: moveItemByDirection(tripStages, trip.stageId, direction) }
           : trip,
+      ),
+    );
+  };
+
+  const handleMoveTripToStage = (tripId, stageId) => {
+    setTrips((prev) =>
+      prev.map((trip) =>
+        trip.id === tripId ? { ...trip, stageId } : trip,
       ),
     );
   };
@@ -1206,50 +1288,53 @@ const App = () => {
     }
   };
 
-  // Open edit modal
   const handleEditClick = (order) => {
-    setEditingOrderId(order.id);
-    setEditingFormData({ ...order });
-    setShowEditModal(true);
-  };
-
-  // Handle edit form change
-  const handleEditFieldChange = (field) => (event) => {
-    const value = event.target.value;
-    setEditingFormData((prev) => {
-      const next = { ...prev, [field]: value };
-      if (field === 'recipient') {
-        next.orderName = value.trim();
-        next.name = value.trim();
-      }
-      return next;
+    const awbParts = splitAwb(order.awb);
+    setFormData({
+      shipmentAirport: order.shipmentAirport || "",
+      shipmentTerminal: order.shipmentTerminal || "",
+      recipient: order.recipient || "",
+      orderName: order.name || "",
+      awb: order.awb || "",
+      awbPrefix: awbParts.awbPrefix,
+      awbNumber: awbParts.awbNumber,
+      quantity: order.quantity || "",
+      weight: order.weight || "",
+      customsCode: order.customsCode || "",
+      notes: order.notes || "",
     });
+    setEditingOrderId(order.id);
+    setOrdersScreenMode("create");
   };
 
-  // Save edit
-  const handleSaveEdit = () => {
-    if (!editingFormData) return;
-    
-    // Найти оригинальный заказ, чтобы проверить, изменилось ли имя
-    const originalOrder = orders.find((o) => o.id === editingOrderId);
-    if (originalOrder && editingFormData.name !== originalOrder.name && editingFormData.driveFolderId) {
-      // Переименовать папку в Google Drive если имя изменилось
-      updateDriveFolderName(editingFormData.driveFolderId, editingFormData.name);
-    }
-
-    setOrders((prev) =>
-      prev.map((o) => (o.id === editingOrderId ? editingFormData : o))
-    );
-    setShowEditModal(false);
-    setEditingOrderId(null);
-    setEditingFormData(null);
+  const handleEditTripClick = (trip) => {
+    setTripFormData({
+      tripNumber: trip.tripNumber || "",
+      tripDate: trip.tripDate || getTodayIsoDate(),
+      carNumber: trip.carNumber || "",
+      driverName: trip.driverName || "",
+      orderIds: Array.isArray(trip.orderIds) ? trip.orderIds : [],
+    });
+    setEditingTripId(trip.id);
+    setTripsScreenMode("create");
   };
 
-  // Cancel edit
-  const handleCancelEdit = () => {
-    setShowEditModal(false);
+  const cancelOrderForm = () => {
     setEditingOrderId(null);
-    setEditingFormData(null);
+    setFormData({
+      shipmentAirport: "",
+      shipmentTerminal: "",
+      recipient: "",
+      orderName: "",
+      awb: "",
+      awbPrefix: "",
+      awbNumber: "",
+      quantity: "",
+      weight: "",
+      customsCode: "",
+      notes: "",
+    });
+    setOrdersScreenMode("list");
   };
 
   const settingsSections = [
@@ -1278,13 +1363,18 @@ const App = () => {
                 <WorkPanel
                   title="Реестр заказов"
                   actionLabel="Создать заказ"
-                  onAction={() => setOrdersScreenMode("create")}
+                  onAction={() => {
+                    setEditingOrderId(null);
+                    setOrdersScreenMode("create");
+                  }}
                 >
                   <WorkflowBoard
                     boardTitle="Этапы заявок"
                     stages={orderStages}
                     items={orders}
+                    getItemId={(order) => order.id}
                     getItemStageId={(order) => order.stageId}
+                    onMoveItemToStage={handleMoveOrderToStage}
                     onInsertStage={handleInsertOrderStage}
                     onRenameStage={handleRenameOrderStage}
                     onDeleteStage={handleDeleteOrderStage}
@@ -1294,8 +1384,6 @@ const App = () => {
                         <div className="workflow-card__meta">{order.recipient}</div>
                         <div className="workflow-card__meta">{order.awb}</div>
                         <div className="workflow-card__actions">
-                          <button type="button" onClick={() => handleMoveOrder(order.id, -1)}>◀</button>
-                          <button type="button" onClick={() => handleMoveOrder(order.id, 1)}>▶</button>
                           <button type="button" onClick={() => handleEditClick(order)}>Ред.</button>
                           <button type="button" onClick={() => handleDelete(order.id)}>Удалить</button>
                         </div>
@@ -1305,9 +1393,7 @@ const App = () => {
                 </WorkPanel>
               ) : (
                 <WorkPanel
-                  title="Создание заказа"
-                  actionLabel="К списку заказов"
-                  onAction={() => setOrdersScreenMode("list")}
+                  title={editingOrderId ? "Редактирование заказа" : "Создание заказа"}
                 >
                   <OrderFormCard
                     formData={formData}
@@ -1322,6 +1408,7 @@ const App = () => {
                     onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}
                     onFieldChange={handleFieldChange}
                     onSubmit={handleSubmit}
+                    onCancel={cancelOrderForm}
                     embedded
                   />
                 </WorkPanel>
@@ -1341,7 +1428,9 @@ const App = () => {
                     boardTitle="Этапы рейсов"
                     stages={tripStages}
                     items={trips}
+                    getItemId={(trip) => trip.id}
                     getItemStageId={(trip) => trip.stageId}
+                    onMoveItemToStage={handleMoveTripToStage}
                     onInsertStage={handleInsertTripStage}
                     onRenameStage={handleRenameTripStage}
                     onDeleteStage={handleDeleteTripStage}
@@ -1352,8 +1441,7 @@ const App = () => {
                         <div className="workflow-card__meta">{trip.carNumber} · {trip.driverName}</div>
                         <div className="workflow-card__meta">{trip.ordersSummary || `Заказов: ${trip.orderIds?.length || 0}`}</div>
                         <div className="workflow-card__actions">
-                          <button type="button" onClick={() => handleMoveTrip(trip.id, -1)}>◀</button>
-                          <button type="button" onClick={() => handleMoveTrip(trip.id, 1)}>▶</button>
+                          <button type="button" onClick={() => handleEditTripClick(trip)}>Ред.</button>
                         </div>
                       </div>
                     )}
@@ -1361,7 +1449,7 @@ const App = () => {
                 </WorkPanel>
               ) : (
                 <WorkPanel
-                  title="Создание рейса"
+                  title={editingTripId ? "Редактирование рейса" : "Создание рейса"}
                   actionLabel="К списку рейсов"
                   onAction={closeCreateTripForm}
                 >
@@ -1370,6 +1458,7 @@ const App = () => {
                     onFieldChange={handleTripFieldChange}
                     onToggleOrder={handleToggleTripOrder}
                     onSubmit={handleTripSubmit}
+                    submitLabel={editingTripId ? "Сохранить изменения" : "Создать рейс"}
                     orders={orders}
                     carNumbers={TRIP_CAR_NUMBERS}
                     driverNames={TRIP_DRIVER_NAMES}
@@ -1400,18 +1489,18 @@ const App = () => {
         onClose={() => setShowDriveSettingsModal(false)}
       />
 
-      <EditOrderModal
-        isOpen={showEditModal}
-        editingFormData={editingFormData}
-        onFieldChange={handleEditFieldChange}
-        onSave={handleSaveEdit}
-        onCancel={handleCancelEdit}
-        getCustomsName={getCustomsName}
-      />
-
       {awbStatusCheck.loading && (
         <div className="loader-overlay" role="status" aria-live="polite" aria-label="Проверка статуса">
           <div className="loader-overlay__content">
+            <button
+              type="button"
+              className="loader-overlay__close"
+              aria-label="Прервать проверку"
+              title="Прервать проверку"
+              onClick={cancelAwbStatusCheck}
+            >
+              ×
+            </button>
             <div className="loader-overlay__spinner" />
             <div className="loader-overlay__text">Проверяем накладную...</div>
           </div>

@@ -1,4 +1,4 @@
-export function AppHeader({ driveConnected, onOpenSettings }) {
+﻿export function AppHeader({ driveConnected, onOpenSettings }) {
   return (
     <header className="app__header">
       <div>
@@ -33,6 +33,7 @@ export function OrderFormCard({
   onRefreshPowerOfAttorneyRegistry,
   onFieldChange,
   onSubmit,
+  onCancel,
   embedded = false,
 }) {
   const handleAwbPrefixChange = (event) => {
@@ -49,8 +50,8 @@ export function OrderFormCard({
   };
 
   const form = (
-    <form onSubmit={onSubmit}>
-      <div className="field">
+    <form onSubmit={onSubmit} className="order-form">
+      <div className="field order-form__left">
         <label htmlFor="shipmentAirport">Аэропорт отгрузки *</label>
         <select
           id="shipmentAirport"
@@ -69,7 +70,7 @@ export function OrderFormCard({
         </select>
       </div>
       {formData.shipmentAirport === "Шереметьево" && (
-        <div className="field">
+        <div className="field order-form__left">
           <span>Терминал в Шереметьево *</span>
           <div className="radio-group" role="radiogroup" aria-label="Терминал в Шереметьево">
             <label className="radio-option" htmlFor="svo-terminal-moscow-cargo">
@@ -97,7 +98,7 @@ export function OrderFormCard({
           </div>
         </div>
       )}
-      <div className="field">
+      <div className="field order-form__left">
         <label htmlFor="recipient">Получатель груза *</label>
         <input
           id="recipient"
@@ -134,12 +135,12 @@ export function OrderFormCard({
           </button>
         </div>
       </div>
-      <div className="field">
+      <div className="field order-form__left">
         <label htmlFor="orderName">Название заказа</label>
-        <input id="orderName" name="orderName" type="text" readOnly value={formData.orderName} />
+        <input id="orderName" name="orderName" type="text" value={formData.orderName} onChange={onFieldChange("orderName")} />
         <small>Автоматически формируется по получателю груза.</small>
       </div>
-      <div className="field">
+      <div className="field order-form__left">
         <label htmlFor="awb-prefix">Номер авианакладной *</label>
         <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
           <input
@@ -197,7 +198,7 @@ export function OrderFormCard({
           </div>
         )}
       </div>
-      <div className="field">
+      <div className="field order-form__right">
         <label htmlFor="quantity">Количество (шт) *</label>
         <input
           id="quantity"
@@ -208,9 +209,15 @@ export function OrderFormCard({
           required
           value={formData.quantity}
           onChange={onFieldChange("quantity")}
+          onWheel={(event) => event.currentTarget.blur()}
+          onKeyDown={(event) => {
+            if (["e", "E", "+", "-"].includes(event.key)) {
+              event.preventDefault();
+            }
+          }}
         />
       </div>
-      <div className="field">
+      <div className="field order-form__right">
         <label htmlFor="weight">Вес (кг) *</label>
         <input
           id="weight"
@@ -221,9 +228,15 @@ export function OrderFormCard({
           required
           value={formData.weight}
           onChange={onFieldChange("weight")}
+          onWheel={(event) => event.currentTarget.blur()}
+          onKeyDown={(event) => {
+            if (["e", "E", "+", "-"].includes(event.key)) {
+              event.preventDefault();
+            }
+          }}
         />
       </div>
-      <div className="field">
+      <div className="field order-form__right">
         <label htmlFor="customsCode">Код таможни назначения *</label>
         <input
           id="customsCode"
@@ -236,7 +249,7 @@ export function OrderFormCard({
         />
         <small className="hint">{customsName}</small>
       </div>
-      <div className="field">
+      <div className="field order-form__right">
         <label htmlFor="notes">Примечания</label>
         <textarea
           id="notes"
@@ -247,9 +260,14 @@ export function OrderFormCard({
           onChange={onFieldChange("notes")}
         />
       </div>
-      <button type="submit" className="primary">
-        Создать заказ
-      </button>
+      <div className="order-form__actions">
+        <button type="submit" className="primary">
+          Сохранить
+        </button>
+        <button type="button" onClick={() => onCancel?.()}>
+          Отменить
+        </button>
+      </div>
     </form>
   );
 
@@ -389,55 +407,5 @@ export function OrdersTable({ orders, onEditClick, onDelete, onCreateOrder, embe
       </div>
       {table}
     </section>
-  );
-}
-
-export function EditOrderModal({
-  isOpen,
-  editingFormData,
-  onFieldChange,
-  onSave,
-  onCancel,
-  getCustomsName,
-}) {
-  if (!isOpen || !editingFormData) return null;
-
-  return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
-      <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "600px", width: "90%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
-        <h2>Редактировать заказ</h2>
-        <form>
-          <div className="field">
-            <label htmlFor="edit-recipient">Получатель груза</label>
-            <input id="edit-recipient" type="text" value={editingFormData.recipient || ""} onChange={onFieldChange("recipient")} />
-          </div>
-          <div className="field">
-            <label htmlFor="edit-awb">Номер авианакладной</label>
-            <input id="edit-awb" type="text" value={editingFormData.awb || ""} onChange={onFieldChange("awb")} />
-          </div>
-          <div className="field">
-            <label htmlFor="edit-quantity">Количество (шт)</label>
-            <input id="edit-quantity" type="number" min="1" value={editingFormData.quantity || ""} onChange={onFieldChange("quantity")} />
-          </div>
-          <div className="field">
-            <label htmlFor="edit-weight">Вес (кг)</label>
-            <input id="edit-weight" type="number" min="0" step="0.01" value={editingFormData.weight || ""} onChange={onFieldChange("weight")} />
-          </div>
-          <div className="field">
-            <label htmlFor="edit-customsCode">Код таможни назначения</label>
-            <input id="edit-customsCode" type="text" value={editingFormData.customsCode || ""} onChange={onFieldChange("customsCode")} />
-            <small className="hint">{editingFormData.customsCode ? getCustomsName(editingFormData.customsCode.trim()) : "Введите код таможни"}</small>
-          </div>
-          <div className="field">
-            <label htmlFor="edit-notes">Примечания</label>
-            <textarea id="edit-notes" rows="4" value={editingFormData.notes || ""} onChange={onFieldChange("notes")} />
-          </div>
-          <div style={{ display: "flex", gap: "1rem", marginTop: "1.5rem" }}>
-            <button type="button" className="primary" onClick={onSave}>Сохранить</button>
-            <button type="button" onClick={onCancel} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>Отмена</button>
-          </div>
-        </form>
-      </div>
-    </div>
   );
 }

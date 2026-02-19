@@ -39,6 +39,7 @@ const POA_XLSX_URL = process.env.POA_XLSX_URL || '';
 const POA_XLSX_PATH = process.env.POA_XLSX_PATH || '';
 const CARGO_STATUS_TTL_MS = Number(process.env.CARGO_STATUS_TTL_MS || 300000);
 const CARGO_CHECK_TIMEOUT_MS = Number(process.env.CARGO_CHECK_TIMEOUT_MS || 45000);
+const CARGO_SCREENSHOTS_ENABLED = String(process.env.CARGO_SCREENSHOTS_ENABLED || 'true').toLowerCase() === 'true';
 const MOSCOW_CARGO_URL = 'https://www.moscow-cargo.com/';
 const SHER_CARGO_URL = 'https://www.shercargo.ru/it/free/';
 const VNUKOVO_CARGO_URL = 'https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/';
@@ -253,6 +254,13 @@ const stitchPngSegments = (segments) => {
 };
 
 const captureMoscowCargoResultScreenshot = async ({ page, awb, terminalKey = 'cargo' }) => {
+  if (!CARGO_SCREENSHOTS_ENABLED) {
+    return {
+      screenshotId: '',
+      screenshotUrl: '',
+    };
+  }
+
   const meta = makeCargoScreenshotMeta({ awb, terminalKey });
   await fs.mkdir(meta.logsDir, { recursive: true });
 
@@ -1010,16 +1018,18 @@ const scrapeGenericCargoStatus = async ({ awb, awbParts, terminalConfig }) => {
       screenshotUrl: screenshot.screenshotUrl,
     };
   } catch (error) {
-    const logsDir = path.resolve(__dirname, 'logs', 'cargo-status');
-    await fs.mkdir(logsDir, { recursive: true });
-    const safeAwb = awb.replace(/[^0-9A-Za-z_-]/g, '_') || 'unknown';
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const screenshotPath = path.join(logsDir, `generic-cargo-${terminalConfig.key}-${safeAwb}-${stamp}.png`);
-    try {
-      await page.screenshot({ path: screenshotPath, fullPage: true });
-      error.screenshotPath = screenshotPath;
-    } catch (screenshotError) {
-      // Keep original error.
+    if (CARGO_SCREENSHOTS_ENABLED) {
+      const logsDir = path.resolve(__dirname, 'logs', 'cargo-status');
+      await fs.mkdir(logsDir, { recursive: true });
+      const safeAwb = awb.replace(/[^0-9A-Za-z_-]/g, '_') || 'unknown';
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const screenshotPath = path.join(logsDir, `generic-cargo-${terminalConfig.key}-${safeAwb}-${stamp}.png`);
+      try {
+        await page.screenshot({ path: screenshotPath, fullPage: true });
+        error.screenshotPath = screenshotPath;
+      } catch (screenshotError) {
+        // Keep original error.
+      }
     }
     throw error;
   } finally {
@@ -1484,18 +1494,20 @@ const scrapeMoscowCargoStatus = async ({ awb, awbParts, terminalLabel }) => {
       screenshotUrl: screenshot.screenshotUrl,
     };
   } catch (error) {
-    const logsDir = path.resolve(__dirname, 'logs', 'cargo-status');
-    await fs.mkdir(logsDir, { recursive: true });
+    if (CARGO_SCREENSHOTS_ENABLED) {
+      const logsDir = path.resolve(__dirname, 'logs', 'cargo-status');
+      await fs.mkdir(logsDir, { recursive: true });
 
-    const safeAwb = awb.replace(/[^0-9A-Za-z_-]/g, '_') || 'unknown';
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const screenshotPath = path.join(logsDir, `moscow-cargo-${safeAwb}-${stamp}.png`);
+      const safeAwb = awb.replace(/[^0-9A-Za-z_-]/g, '_') || 'unknown';
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const screenshotPath = path.join(logsDir, `moscow-cargo-${safeAwb}-${stamp}.png`);
 
-    try {
-      await page.screenshot({ path: screenshotPath, fullPage: true });
-      error.screenshotPath = screenshotPath;
-    } catch (screenshotError) {
-      // Keep original error.
+      try {
+        await page.screenshot({ path: screenshotPath, fullPage: true });
+        error.screenshotPath = screenshotPath;
+      } catch (screenshotError) {
+        // Keep original error.
+      }
     }
 
     throw error;
