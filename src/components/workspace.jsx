@@ -82,10 +82,13 @@ export function WorkflowBoard({
   items,
   getItemId,
   getItemStageId,
+  getItemWeight,
   onMoveItemToStage,
   onInsertStage,
   onRenameStage,
   onDeleteStage,
+  allowStageManagement = true,
+  isStageDefault,
   renderItemCard,
 }) {
   const [activeStageId, setActiveStageId] = React.useState("");
@@ -95,8 +98,24 @@ export function WorkflowBoard({
   const [dragOverStageId, setDragOverStageId] = React.useState("");
   const [draggingItemId, setDraggingItemId] = React.useState("");
   const renameFormRef = React.useRef(null);
+  const toWeightNumber = React.useCallback((value) => {
+    if (value == null) return 0;
+    const normalized = String(value).replace(",", ".").trim();
+    const parsed = Number.parseFloat(normalized);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }, []);
+
+  const isStageManageable = React.useCallback(
+    (stage) => {
+      if (!allowStageManagement) return false;
+      if (!stage) return false;
+      return !(isStageDefault && isStageDefault(stage));
+    },
+    [allowStageManagement, isStageDefault],
+  );
 
   const openRenameModal = (stage) => {
+    if (!isStageManageable(stage)) return;
     setActiveStageId(stage.id);
     setEditingStageId(stage.id);
     setEditingStageName(stage.name);
@@ -122,6 +141,8 @@ export function WorkflowBoard({
   };
 
   const openDeleteModal = (stageId) => {
+    const stage = stages.find((item) => item.id === stageId);
+    if (!isStageManageable(stage)) return;
     setDeleteStageId(stageId);
   };
 
@@ -142,6 +163,7 @@ export function WorkflowBoard({
   };
 
   const handleInsertStage = (afterStageId) => {
+    if (!allowStageManagement || !onInsertStage) return;
     const createdStageId = onInsertStage(afterStageId);
     if (!createdStageId) return;
     setActiveStageId(createdStageId);
@@ -202,6 +224,12 @@ export function WorkflowBoard({
       <div className="workflow-columns">
         {stages.map((stage) => {
           const stageItems = items.filter((item) => getItemStageId(item) === stage.id);
+          const stageTotalWeight = stageItems.reduce(
+            (sum, item) => sum + toWeightNumber(getItemWeight ? getItemWeight(item) : 0),
+            0,
+          );
+          const stageIsDefault = Boolean(isStageDefault && isStageDefault(stage));
+          const stageCanManage = isStageManageable(stage);
           return (
             <section
               className={`workflow-column ${dragOverStageId === stage.id ? "workflow-column--drop-target" : ""}`}
@@ -210,7 +238,7 @@ export function WorkflowBoard({
               onDragLeave={(event) => handleDragLeaveStage(event, stage.id)}
               onDrop={(event) => handleDropToStage(event, stage.id)}
             >
-              <header className="workflow-column__head">
+              <header className={`workflow-column__head ${stageIsDefault ? "workflow-column__head--default" : ""}`}>
                 {editingStageId === stage.id ? (
                   <form ref={renameFormRef} className="workflow-column__title-edit" onSubmit={submitRenameStage}>
                     <input
@@ -230,28 +258,35 @@ export function WorkflowBoard({
                   <div className="workflow-column__title-wrap">
                     <div className="workflow-column__title">{stage.name}</div>
                     <div className="workflow-column__count">{stageItems.length}</div>
+                    <div className="workflow-column__weight">
+                      {stageTotalWeight.toLocaleString("ru-RU", {
+                        minimumFractionDigits: 0,
+                        maximumFractionDigits: 2,
+                      })} кг
+                    </div>
                   </div>
                 )}
-                {activeStageId === stage.id ? (
-                  <button
-                    type="button"
-                    className="workflow-column__icon-btn workflow-column__icon-btn--delete"
-                    title="Удалить этап"
-                    onClick={() => openDeleteModal(stage.id)}
-                    disabled={stages.length <= 1}
-                  >
-                    🗑
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    className="workflow-column__icon-btn workflow-column__icon-btn--edit"
-                    title="Редактировать"
-                    onClick={() => openRenameModal(stage)}
-                  >
-                    ✎
-                  </button>
-                )}
+                {stageCanManage &&
+                  (activeStageId === stage.id ? (
+                    <button
+                      type="button"
+                      className="workflow-column__icon-btn workflow-column__icon-btn--delete"
+                      title="Удалить этап"
+                      onClick={() => openDeleteModal(stage.id)}
+                      disabled={stages.length <= 1}
+                    >
+                      🗑
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="workflow-column__icon-btn workflow-column__icon-btn--edit"
+                      title="Редактировать"
+                      onClick={() => openRenameModal(stage)}
+                    >
+                      ✎
+                    </button>
+                  ))}
               </header>
               <div className="workflow-column__body">
                 {stageItems.length === 0 ? (
@@ -277,20 +312,22 @@ export function WorkflowBoard({
                   ))
                 )}
               </div>
-              <button
-                type="button"
-                className="workflow-column__add-next"
-                title="Добавить этап справа"
-                onClick={() => handleInsertStage(stage.id)}
-              >
-                +
-              </button>
+              {allowStageManagement && (
+                <button
+                  type="button"
+                  className="workflow-column__add-next"
+                  title="Добавить этап справа"
+                  onClick={() => handleInsertStage(stage.id)}
+                >
+                  +
+                </button>
+              )}
             </section>
           );
         })}
       </div>
 
-      {Boolean(deleteStageId) && (
+      {allowStageManagement && Boolean(deleteStageId) && (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Подтверждение удаления этапа">
           <div className="modal-card workflow-modal">
             <div className="modal-card__header">
@@ -317,15 +354,22 @@ export function TripFormCard({
   onFieldChange,
   onToggleOrder,
   onSubmit,
+  onCancel,
   submitLabel = "Создать рейс",
   orders,
   carNumbers,
   driverNames,
   embedded = false,
 }) {
+  const selectedOrders = orders.filter((order) => formData.orderIds.includes(order.id));
+  const totalWeight = selectedOrders.reduce((sum, order) => {
+    const parsed = Number.parseFloat(String(order.weight || "0").replace(",", "."));
+    return sum + (Number.isFinite(parsed) ? parsed : 0);
+  }, 0);
+
   const content = (
     <form onSubmit={onSubmit} className="trip-form">
-      <div className="field">
+      <div className="field trip-form__left">
         <label htmlFor="trip-number">Номер рейса *</label>
         <input
           id="trip-number"
@@ -337,31 +381,46 @@ export function TripFormCard({
         />
       </div>
 
-      <div className="field">
+      <div className="field trip-form__right">
         <label htmlFor="trip-date">Дата</label>
-        <input id="trip-date" type="date" value={formData.tripDate} readOnly />
+        <input
+          id="trip-date"
+          type="date"
+          value={formData.tripDate}
+          onChange={onFieldChange("tripDate")}
+        />
       </div>
 
-      <div className="field">
+      <div className="field trip-form__left">
         <label htmlFor="car-number">Автомобиль *</label>
-        <select
-          id="car-number"
-          required
-          value={formData.carNumber}
-          onChange={onFieldChange("carNumber")}
-        >
-          <option value="" disabled>
-            Выберите автомобиль
-          </option>
-          {carNumbers.map((car) => (
-            <option key={car} value={car}>
-              {car}
+        <div className="trip-car-row">
+          <select
+            id="car-number"
+            required
+            value={formData.carNumber}
+            onChange={onFieldChange("carNumber")}
+          >
+            <option value="" disabled>
+              Выберите автомобиль
             </option>
-          ))}
-        </select>
+            {carNumbers.map((car) => (
+              <option key={car} value={car}>
+                {car}
+              </option>
+            ))}
+          </select>
+          <label className="trip-car-row__checkbox">
+            <input
+              type="checkbox"
+              checked={Boolean(formData.hasTrailer)}
+              onChange={onFieldChange("hasTrailer")}
+            />
+            <span>Прицеп</span>
+          </label>
+        </div>
       </div>
 
-      <div className="field">
+      <div className="field trip-form__right">
         <label htmlFor="driver-name">Водитель *</label>
         <select
           id="driver-name"
@@ -380,7 +439,7 @@ export function TripFormCard({
         </select>
       </div>
 
-      <div className="field">
+      <div className="field trip-form__orders">
         <span>Заказы для рейса *</span>
         <div className="trip-orders-list">
           {orders.length === 0 ? (
@@ -391,15 +450,19 @@ export function TripFormCard({
             orders.map((order) => {
               const checked = formData.orderIds.includes(order.id);
               return (
-                <label className="trip-order-item" key={order.id}>
+                <label className={`trip-order-item ${checked ? "trip-order-item--checked" : ""}`} key={order.id}>
                   <input
                     type="checkbox"
                     checked={checked}
                     onChange={() => onToggleOrder(order.id)}
                   />
-                  <span>
-                    {order.name || "Без названия"} | {order.recipient} | {order.awb}
+                  <span className="trip-order-item__content">
+                    <span className="trip-order-item__title">{order.name || order.recipient || "Без названия"}</span>
+                    <span className="trip-order-item__meta">
+                      AWB: {order.awb || "—"} | {order.weight || "—"} кг | {order.quantity || "—"} мест | {order.customsName || order.customsCode || "—"}
+                    </span>
                   </span>
+                  <span className="trip-order-item__airport">{order.shipmentAirport || "—"}</span>
                 </label>
               );
             })
@@ -407,9 +470,26 @@ export function TripFormCard({
         </div>
       </div>
 
-      <button type="submit" className="primary" disabled={orders.length === 0}>
-        {submitLabel}
-      </button>
+      <div className="trip-form__footer">
+        <div className="trip-form__summary">
+          <div className="trip-form__summary-item">
+            <span>Выбрано заказов</span>
+            <strong>{selectedOrders.length}</strong>
+          </div>
+          <div className="trip-form__summary-item">
+            <span>Итоговый вес</span>
+            <strong>{totalWeight.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} кг</strong>
+          </div>
+        </div>
+        <div className="trip-form__actions">
+          <button type="submit" className="primary" disabled={orders.length === 0}>
+            {submitLabel}
+          </button>
+          <button type="button" onClick={() => onCancel?.()}>
+            Отменить
+          </button>
+        </div>
+      </div>
     </form>
   );
 

@@ -23,6 +23,7 @@
 export function OrderFormCard({
   formData,
   customsName,
+  customsSuggestions,
   powerOfAttorneyStatus,
   recipientSuggestions,
   awbStatusCheck,
@@ -242,11 +243,17 @@ export function OrderFormCard({
           id="customsCode"
           name="customsCode"
           type="text"
+          list="customs-code-suggestions"
           placeholder="06536"
           required
           value={formData.customsCode}
           onChange={onFieldChange("customsCode")}
         />
+        <datalist id="customs-code-suggestions">
+          {(customsSuggestions || []).map((item, index) => (
+            <option key={`${item.value}-${index}`} value={item.value} label={item.label} />
+          ))}
+        </datalist>
         <small className="hint">{customsName}</small>
       </div>
       <div className="field order-form__right">

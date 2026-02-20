@@ -439,9 +439,150 @@ small {
 }
 
 .trip-form {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+  gap: 14px 20px;
+  align-items: start;
+}
+
+.trip-form__left {
+  grid-column: 1;
+}
+
+.trip-form__right {
+  grid-column: 2;
+}
+
+.trip-form__orders {
+  grid-column: 1 / -1;
+}
+
+.trip-car-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.trip-car-row select {
+  flex: 1;
+}
+
+.trip-car-row__checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.trip-car-row__checkbox input[type="checkbox"] {
+  margin: 0;
+}
+
+.trip-orders-list {
+  border: 1px solid #d1dbe8;
+  border-radius: 14px;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+}
+
+.trip-order-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #ffffff;
+  border-bottom: 1px solid #dbe5ef;
+}
+
+.trip-order-item:last-child {
+  border-bottom: none;
+}
+
+.trip-order-item--checked {
+  background: #eef7f4;
+}
+
+.trip-order-item input[type="checkbox"] {
+  margin: 0;
+  width: 18px;
+  height: 18px;
+}
+
+.trip-order-item__content {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.trip-order-item__title {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.trip-order-item__meta {
+  font-size: 14px;
+  color: #4f617e;
+}
+
+.trip-order-item__airport {
+  border-radius: 999px;
+  background: #d1fae5;
+  color: #047857;
+  padding: 6px 10px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.trip-form__footer {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.trip-form__summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #f1f5f9;
+}
+
+.trip-form__summary-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.trip-form__summary-item span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #94a3b8;
+  font-weight: 700;
+}
+
+.trip-form__summary-item strong {
+  font-size: 20px;
+  line-height: 1.1;
+  color: #0f172a;
+}
+
+.trip-form__summary-item:last-child strong {
+  color: #059669;
+}
+
+.trip-form__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .panel-section {
@@ -515,6 +656,11 @@ small {
   padding: 10px 12px;
 }
 
+.workflow-column__head--default {
+  background: #eaf3ff;
+  border-color: #c9dcff;
+}
+
 .workflow-column__title-wrap {
   display: inline-flex;
   align-items: center;
@@ -533,6 +679,18 @@ small {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workflow-column__weight {
+  min-height: 24px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 8px;
   font-size: 12px;
   font-weight: 700;
 }
@@ -623,6 +781,7 @@ small {
   flex-direction: column;
   gap: 6px;
   transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+  position: relative;
 }
 
 .workflow-card:hover {
@@ -654,15 +813,43 @@ small {
   color: #475569;
 }
 
-.workflow-card__actions {
-  display: flex;
-  flex-wrap: wrap;
+.workflow-card__top-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
   gap: 6px;
-  margin-top: 4px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
 }
 
-.workflow-card__actions button {
-  padding: 6px 9px;
+.workflow-card:hover .workflow-card__top-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.workflow-card__icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e2e8f0;
+  font-size: 14px;
+}
+
+.workflow-card__icon-btn--danger {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.workflow-card__check-btn {
+  margin-top: 6px;
+  margin-left: auto;
+  padding: 6px 10px;
   border-radius: 8px;
   font-size: 12px;
 }
@@ -673,28 +860,8 @@ small {
   justify-content: flex-end;
 }
 
-.trip-orders-list {
-  border: 1px solid #d1d5db;
-  border-radius: 10px;
-  padding: 10px;
-  max-height: 240px;
-  overflow: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.trip-order-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.trip-order-item input[type="checkbox"] {
-  margin: 0;
-}
-
 .trip-orders-list__empty {
+  padding: 12px 14px;
   color: #6b7280;
 }
 
@@ -770,6 +937,34 @@ button:disabled {
 }
 
 @media (max-width: 960px) {
+  .trip-form {
+    grid-template-columns: 1fr;
+  }
+
+  .trip-form__left,
+  .trip-form__right,
+  .trip-form__orders,
+  .trip-form__footer {
+    grid-column: 1;
+  }
+
+  .trip-order-item {
+    grid-template-columns: auto 1fr;
+  }
+
+  .trip-order-item__airport {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .trip-form__summary-item strong {
+    font-size: 28px;
+  }
+
+  .trip-car-row {
+    flex-wrap: wrap;
+  }
+
   .topbar {
     flex-direction: column;
     align-items: flex-start;

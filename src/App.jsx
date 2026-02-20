@@ -123,6 +123,20 @@ const customsCodeMap = {
 
 const getCustomsName = (code) => customsCodeMap[code] || "Введите правильный код";
 
+const getCustomsSuggestions = (typedValue) => {
+  const typed = normalizeText(typedValue);
+
+  return Object.entries(customsCodeMap)
+    .filter(([code, name]) => {
+      if (!typed) return true;
+      return code.includes(typed) || normalizeText(name).includes(typed);
+    })
+    .map(([code, name]) => ({
+      value: code,
+      label: `${code} - ${name}`,
+    }));
+};
+
 const POWER_OF_ATTORNEY_REGISTRY_URL = "http://localhost:3001/poa/registry";
 const POWER_OF_ATTORNEY_FALLBACK_URL = "/power-of-attorney-registry.json";
 const CARGO_STATUS_URL = "http://localhost:3001/cargo/status";
@@ -148,16 +162,20 @@ const TRIP_DRIVER_NAMES = [
   "Латушко Олег",
   "Шамко Дмитрий",
 ];
+const TRAILER_NUMBER = "А 1482 Е-5";
 const DEFAULT_ORDER_STAGES = [
-  { id: "order-stage-new", name: "Новые" },
-  { id: "order-stage-progress", name: "В работе" },
-  { id: "order-stage-done", name: "Готово" },
+  { id: "order-stage-plan", name: "План" },
+  { id: "order-stage-warehouse", name: "На складе" },
+  { id: "order-stage-in-car", name: "В машине" },
+  { id: "order-stage-delivered", name: "Доставлено" },
 ];
 const DEFAULT_TRIP_STAGES = [
   { id: "trip-stage-plan", name: "План" },
-  { id: "trip-stage-route", name: "В рейсе" },
-  { id: "trip-stage-done", name: "Завершено" },
+  { id: "trip-stage-in-route", name: "В рейсе" },
+  { id: "trip-stage-completed", name: "Завершено" },
 ];
+const DEFAULT_ORDER_STAGE_IDS = new Set(DEFAULT_ORDER_STAGES.map((stage) => stage.id));
+const DEFAULT_TRIP_STAGE_IDS = new Set(DEFAULT_TRIP_STAGES.map((stage) => stage.id));
 
 const resolveCargoApiUrl = (urlPath) => {
   if (!urlPath) return "";
@@ -256,6 +274,19 @@ const parseDate = (rawDate) => {
 
 const formatRuDate = (date) =>
   `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}.${date.getFullYear()}`;
+
+const formatTripDateShort = (rawDate) => {
+  const value = String(rawDate || "").trim();
+  if (!value) return "—";
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const [, year, month, day] = match;
+    return `${day}.${month}.${year}`;
+  }
+  const parsed = parseDate(value);
+  if (!parsed) return value;
+  return `${String(parsed.getDate()).padStart(2, "0")}.${String(parsed.getMonth() + 1).padStart(2, "0")}.${String(parsed.getFullYear())}`;
+};
 
 const getPowerOfAttorneyStatus = ({ shipmentAirport, shipmentTerminal, recipient, registry }) => {
   const normalizedRecipient = normalizeText(recipient);
@@ -395,18 +426,30 @@ const getTodayIsoDate = () => {
   return now.toISOString().slice(0, 10);
 };
 
+const parseTripCarNumber = (rawValue) => {
+  const value = String(rawValue || "").trim();
+  if (!value) {
+    return { carNumber: "", hasTrailer: false, trailerNumber: "" };
+  }
+  const parts = value.split("/");
+  if (parts.length < 2) {
+    return { carNumber: value, hasTrailer: false, trailerNumber: "" };
+  }
+  return {
+    carNumber: String(parts[0] || "").trim(),
+    hasTrailer: true,
+    trailerNumber: String(parts.slice(1).join("/") || "").trim(),
+  };
+};
+
 const App = () => {
   const SHEREMETYEVO_VALUES = new Set(["Шереметьево"]);
   const DEFAULT_SHEREMETYEVO_TERMINAL = "Москва-карго";
 
   const [orders, setOrders] = React.useState(loadOrders);
   const [trips, setTrips] = React.useState(loadTrips);
-  const [orderStages, setOrderStages] = React.useState(() =>
-    loadStages("logictrack_order_stages", DEFAULT_ORDER_STAGES),
-  );
-  const [tripStages, setTripStages] = React.useState(() =>
-    loadStages("logictrack_trip_stages", DEFAULT_TRIP_STAGES),
-  );
+  const [orderStages, setOrderStages] = React.useState(DEFAULT_ORDER_STAGES);
+  const [tripStages, setTripStages] = React.useState(DEFAULT_TRIP_STAGES);
   const [activeView, setActiveView] = React.useState("orders");
   const [ordersScreenMode, setOrdersScreenMode] = React.useState("list");
   const [tripsScreenMode, setTripsScreenMode] = React.useState("list");
@@ -443,12 +486,19 @@ const App = () => {
   const awbCheckAbortRef = React.useRef(null);
   const [editingOrderId, setEditingOrderId] = React.useState(null);
   const [editingTripId, setEditingTripId] = React.useState(null);
+  const [deleteCardModal, setDeleteCardModal] = React.useState({
+    isOpen: false,
+    type: "",
+    id: "",
+    title: "",
+  });
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [showDriveSettingsModal, setShowDriveSettingsModal] = React.useState(false);
   const [tripFormData, setTripFormData] = React.useState({
     tripNumber: "",
     tripDate: getTodayIsoDate(),
     carNumber: "",
+    hasTrailer: false,
     driverName: "",
     orderIds: [],
   });
@@ -469,14 +519,6 @@ const App = () => {
   React.useEffect(() => {
     saveTrips(trips);
   }, [trips]);
-
-  React.useEffect(() => {
-    saveStages("logictrack_order_stages", orderStages);
-  }, [orderStages]);
-
-  React.useEffect(() => {
-    saveStages("logictrack_trip_stages", tripStages);
-  }, [tripStages]);
 
   React.useEffect(() => {
     const fallbackStageId = orderStages[0]?.id;
@@ -629,11 +671,11 @@ const App = () => {
     ...formData,
     registry: powerOfAttorneyRegistry,
   });
+  const customsSuggestions = getCustomsSuggestions(formData.customsCode);
   const cargoTerminalKey = resolveCargoTerminalKey(formData);
   const isCargoCheckAvailable = Boolean(cargoTerminalKey);
 
-  const checkAwbStatus = async () => {
-    const awb = composeAwb(formData.awbPrefix, formData.awbNumber) || formData.awb.trim();
+  const runAwbStatusCheck = async ({ awb, awbPrefix, awbNumber, shipmentAirport, shipmentTerminal }) => {
     if (!awb) {
       setAwbStatusCheck({
         loading: false,
@@ -643,7 +685,8 @@ const App = () => {
       return;
     }
 
-    if (!isCargoCheckAvailable) {
+    const terminalKey = resolveCargoTerminalKey({ shipmentAirport, shipmentTerminal });
+    if (!terminalKey) {
       setAwbStatusCheck({
         loading: false,
         error: "Сначала выберите аэропорт и терминал для проверки.",
@@ -667,10 +710,10 @@ const App = () => {
         signal: abortController.signal,
         body: JSON.stringify({
           awb,
-          awbPrefix: formData.awbPrefix,
-          awbNumber: formData.awbNumber,
-          terminal: formData.shipmentTerminal || formData.shipmentAirport,
-          terminalKey: cargoTerminalKey,
+          awbPrefix,
+          awbNumber,
+          terminal: shipmentTerminal || shipmentAirport,
+          terminalKey,
         }),
       });
       const payload = await response.json();
@@ -724,6 +767,38 @@ const App = () => {
     }
   };
 
+  const checkAwbStatus = async () => {
+    const awb = composeAwb(formData.awbPrefix, formData.awbNumber) || formData.awb.trim();
+    await runAwbStatusCheck({
+      awb,
+      awbPrefix: formData.awbPrefix,
+      awbNumber: formData.awbNumber,
+      shipmentAirport: formData.shipmentAirport,
+      shipmentTerminal: formData.shipmentTerminal,
+    });
+  };
+
+  const checkOrderAwbStatus = async (order) => {
+    if (String(order?.shipmentAirport || "").trim() === "Внуково") {
+      window.open(
+        "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/",
+        "_blank",
+        "noopener,noreferrer",
+      );
+      return;
+    }
+
+    const awbText = String(order?.awb || "").trim();
+    const awbParts = splitAwb(awbText);
+    await runAwbStatusCheck({
+      awb: awbText,
+      awbPrefix: awbParts.awbPrefix,
+      awbNumber: awbParts.awbNumber,
+      shipmentAirport: String(order?.shipmentAirport || ""),
+      shipmentTerminal: String(order?.shipmentTerminal || ""),
+    });
+  };
+
   const clearCargoScreenshotsCache = async () => {
     try {
       await fetch(`${CARGO_API_BASE_URL}/cargo/screenshots`, {
@@ -734,12 +809,21 @@ const App = () => {
     }
   };
 
+  const scheduleCargoScreenshotsCleanup = () => {
+    void clearCargoScreenshotsCache();
+    [1500, 5000].forEach((delayMs) => {
+      setTimeout(() => {
+        void clearCargoScreenshotsCache();
+      }, delayMs);
+    });
+  };
+
   const cancelAwbStatusCheck = async () => {
     if (awbCheckAbortRef.current) {
       awbCheckAbortRef.current.abort();
       awbCheckAbortRef.current = null;
     }
-    await clearCargoScreenshotsCache();
+    scheduleCargoScreenshotsCleanup();
     setCargoScreenshotModal({
       isOpen: false,
       screenshotId: "",
@@ -753,7 +837,7 @@ const App = () => {
   };
 
   const closeCargoScreenshotModal = async () => {
-    await clearCargoScreenshotsCache();
+    scheduleCargoScreenshotsCleanup();
 
     setCargoScreenshotModal({
       isOpen: false,
@@ -822,8 +906,8 @@ const App = () => {
     const order = {
       id: editingOrderId || `order-${Date.now()}`,
       stageId: editingOrderId
-        ? orders.find((item) => item.id === editingOrderId)?.stageId || (orderStages[0]?.id || "order-stage-new")
-        : (orderStages[0]?.id || "order-stage-new"),
+        ? orders.find((item) => item.id === editingOrderId)?.stageId || (orderStages[0]?.id || "order-stage-plan")
+        : (orderStages[0]?.id || "order-stage-plan"),
       shipmentAirport: formData.shipmentAirport.trim(),
       shipmentTerminal: formData.shipmentTerminal.trim(),
       name: formData.orderName.trim(),
@@ -877,7 +961,7 @@ const App = () => {
   };
 
   const handleTripFieldChange = (field) => (event) => {
-    const value = event.target.value;
+    const value = event.target.type === "checkbox" ? event.target.checked : event.target.value;
     setTripFormData((prev) => ({ ...prev, [field]: value }));
   };
 
@@ -899,6 +983,7 @@ const App = () => {
       tripNumber: "",
       tripDate: getTodayIsoDate(),
       carNumber: "",
+      hasTrailer: false,
       driverName: "",
       orderIds: [],
     });
@@ -911,6 +996,7 @@ const App = () => {
       tripNumber: "",
       tripDate: getTodayIsoDate(),
       carNumber: "",
+      hasTrailer: false,
       driverName: "",
       orderIds: [],
     });
@@ -930,6 +1016,10 @@ const App = () => {
       .map((order) => order.name || order.recipient || order.id)
       .join(", ");
 
+    const composedCarNumber = tripFormData.hasTrailer
+      ? `${tripFormData.carNumber} / ${TRAILER_NUMBER}`
+      : tripFormData.carNumber;
+
     const trip = {
       id: editingTripId || `trip-${Date.now()}`,
       stageId: editingTripId
@@ -937,7 +1027,10 @@ const App = () => {
         : (tripStages[0]?.id || "trip-stage-plan"),
       tripNumber: tripFormData.tripNumber.trim(),
       tripDate: tripFormData.tripDate,
-      carNumber: tripFormData.carNumber,
+      carNumberBase: tripFormData.carNumber,
+      carNumber: composedCarNumber,
+      hasTrailer: Boolean(tripFormData.hasTrailer),
+      trailerNumber: tripFormData.hasTrailer ? TRAILER_NUMBER : "",
       driverName: tripFormData.driverName,
       orderIds: tripFormData.orderIds,
       ordersSummary:
@@ -1276,16 +1369,56 @@ const App = () => {
     setDriveHint('Токены очищены. Нажмите "Подключить Google Drive" заново.');
   };
 
-  // Delete order
-  const handleDelete = async (orderId) => {
-    if (confirm('Вы уверены? Этот заказ и его папка в Google Drive будут удалены.')) {
-      // Найти заказ и удалить его папку в Google Drive
-      const orderToDelete = orders.find((o) => o.id === orderId);
-      if (orderToDelete && orderToDelete.driveFolderId) {
+  const openDeleteOrderConfirm = (order) => {
+    setDeleteCardModal({
+      isOpen: true,
+      type: "order",
+      id: order.id,
+      title: order.name || "Без названия",
+    });
+  };
+
+  const openDeleteTripConfirm = (trip) => {
+    setDeleteCardModal({
+      isOpen: true,
+      type: "trip",
+      id: trip.id,
+      title: trip.tripNumber || "Без номера",
+    });
+  };
+
+  const closeDeleteCardModal = () => {
+    setDeleteCardModal({
+      isOpen: false,
+      type: "",
+      id: "",
+      title: "",
+    });
+  };
+
+  const confirmDeleteCard = async () => {
+    const { type, id } = deleteCardModal;
+    if (!id || !type) return;
+
+    if (type === "order") {
+      const orderToDelete = orders.find((o) => o.id === id);
+      if (orderToDelete?.driveFolderId) {
         await deleteDriveFolder(orderToDelete.driveFolderId);
       }
-      setOrders((prev) => prev.filter((o) => o.id !== orderId));
+      setOrders((prev) => prev.filter((o) => o.id !== id));
+      if (editingOrderId === id) {
+        cancelOrderForm();
+      }
     }
+
+    if (type === "trip") {
+      setTrips((prev) => prev.filter((trip) => trip.id !== id));
+      if (editingTripId === id) {
+        closeCreateTripForm();
+      }
+    }
+
+    closeDeleteCardModal();
   };
 
   const handleEditClick = (order) => {
@@ -1308,10 +1441,13 @@ const App = () => {
   };
 
   const handleEditTripClick = (trip) => {
+    const parsedCar = parseTripCarNumber(trip.carNumber);
     setTripFormData({
       tripNumber: trip.tripNumber || "",
       tripDate: trip.tripDate || getTodayIsoDate(),
-      carNumber: trip.carNumber || "",
+      carNumber: trip.carNumberBase || parsedCar.carNumber,
+      hasTrailer:
+        typeof trip.hasTrailer === "boolean" ? trip.hasTrailer : parsedCar.hasTrailer,
       driverName: trip.driverName || "",
       orderIds: Array.isArray(trip.orderIds) ? trip.orderIds : [],
     });
@@ -1374,19 +1510,31 @@ const App = () => {
                     items={orders}
                     getItemId={(order) => order.id}
                     getItemStageId={(order) => order.stageId}
+                    getItemWeight={(order) => order.weight}
                     onMoveItemToStage={handleMoveOrderToStage}
                     onInsertStage={handleInsertOrderStage}
                     onRenameStage={handleRenameOrderStage}
                     onDeleteStage={handleDeleteOrderStage}
+                    allowStageManagement
+                    isStageDefault={(stage) => DEFAULT_ORDER_STAGE_IDS.has(stage.id)}
                     renderItemCard={(order) => (
                       <div className="workflow-card">
-                        <div className="workflow-card__title">{order.name || "Без названия"}</div>
-                        <div className="workflow-card__meta">{order.recipient}</div>
-                        <div className="workflow-card__meta">{order.awb}</div>
-                        <div className="workflow-card__actions">
-                          <button type="button" onClick={() => handleEditClick(order)}>Ред.</button>
-                          <button type="button" onClick={() => handleDelete(order.id)}>Удалить</button>
+                        <div className="workflow-card__top-actions">
+                          <button type="button" className="workflow-card__icon-btn" title="Редактировать" onClick={() => handleEditClick(order)}>✎</button>
+                          <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title="Удалить" onClick={() => openDeleteOrderConfirm(order)}>🗑</button>
                         </div>
+                        <div className="workflow-card__title">{order.name || "Без названия"}</div>
+                        <div className="workflow-card__meta">{order.shipmentAirport || "—"}</div>
+                        <div className="workflow-card__meta">{order.awb || "—"}</div>
+                        <div className="workflow-card__meta">{order.customsName || order.customsCode || "—"}</div>
+                        <div className="workflow-card__meta">{order.weight || "—"} кг / {order.quantity || "—"} шт</div>
+                        <button
+                          type="button"
+                          className="workflow-card__check-btn"
+                          onClick={() => checkOrderAwbStatus(order)}
+                        >
+                          Check AWB
+                        </button>
                       </div>
                     )}
                   />
@@ -1398,6 +1546,7 @@ const App = () => {
                   <OrderFormCard
                     formData={formData}
                     customsName={customsName}
+                    customsSuggestions={customsSuggestions}
                     powerOfAttorneyStatus={powerOfAttorneyStatus}
                     recipientSuggestions={recipientSuggestions}
                     awbStatusCheck={awbStatusCheck}
@@ -1430,35 +1579,62 @@ const App = () => {
                     items={trips}
                     getItemId={(trip) => trip.id}
                     getItemStageId={(trip) => trip.stageId}
+                    getItemWeight={(trip) =>
+                      (trip.orderIds || []).reduce((sum, orderId) => {
+                        const order = orders.find((item) => item.id === orderId);
+                        const weight = Number.parseFloat(String(order?.weight ?? "0").replace(",", "."));
+                        return sum + (Number.isFinite(weight) ? weight : 0);
+                      }, 0)
+                    }
                     onMoveItemToStage={handleMoveTripToStage}
                     onInsertStage={handleInsertTripStage}
                     onRenameStage={handleRenameTripStage}
                     onDeleteStage={handleDeleteTripStage}
-                    renderItemCard={(trip) => (
-                      <div className="workflow-card">
-                        <div className="workflow-card__title">{trip.tripNumber || "Без номера"}</div>
-                        <div className="workflow-card__meta">{trip.tripDate}</div>
-                        <div className="workflow-card__meta">{trip.carNumber} · {trip.driverName}</div>
-                        <div className="workflow-card__meta">{trip.ordersSummary || `Заказов: ${trip.orderIds?.length || 0}`}</div>
-                        <div className="workflow-card__actions">
-                          <button type="button" onClick={() => handleEditTripClick(trip)}>Ред.</button>
+                    allowStageManagement
+                    isStageDefault={(stage) => DEFAULT_TRIP_STAGE_IDS.has(stage.id)}
+                    renderItemCard={(trip) => {
+                      const tripOrders = orders.filter((order) => (trip.orderIds || []).includes(order.id));
+                      const totalTripWeight = tripOrders.reduce((sum, order) => {
+                        const parsed = Number.parseFloat(String(order.weight || "0").replace(",", "."));
+                        return sum + (Number.isFinite(parsed) ? parsed : 0);
+                      }, 0);
+                      const cargoComposition = tripOrders
+                        .map((order) => order.name || order.recipient || order.awb || order.id)
+                        .join(", ");
+
+                      return (
+                        <div className="workflow-card">
+                          <div className="workflow-card__top-actions">
+                            <button type="button" className="workflow-card__icon-btn" title="Редактировать" onClick={() => handleEditTripClick(trip)}>✎</button>
+                            <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title="Удалить" onClick={() => openDeleteTripConfirm(trip)}>🗑</button>
+                          </div>
+                          <div className="workflow-card__title">
+                            {(trip.tripNumber || "Без номера")} от {formatTripDateShort(trip.tripDate)}
+                          </div>
+                          <div className="workflow-card__meta">{trip.carNumber || "—"} · {trip.driverName || "—"}</div>
+                          <div className="workflow-card__meta">
+                            Заказов: {tripOrders.length} · Вес: {totalTripWeight.toLocaleString("ru-RU", {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 2,
+                            })} кг
+                          </div>
+                          <div className="workflow-card__meta">{cargoComposition || "—"}</div>
                         </div>
-                      </div>
-                    )}
+                      );
+                    }}
                   />
                 </WorkPanel>
               ) : (
                 <WorkPanel
                   title={editingTripId ? "Редактирование рейса" : "Создание рейса"}
-                  actionLabel="К списку рейсов"
-                  onAction={closeCreateTripForm}
                 >
                   <TripFormCard
                     formData={tripFormData}
                     onFieldChange={handleTripFieldChange}
                     onToggleOrder={handleToggleTripOrder}
                     onSubmit={handleTripSubmit}
-                    submitLabel={editingTripId ? "Сохранить изменения" : "Создать рейс"}
+                    onCancel={closeCreateTripForm}
+                    submitLabel="Сохранить"
                     orders={orders}
                     carNumbers={TRIP_CAR_NUMBERS}
                     driverNames={TRIP_DRIVER_NAMES}
@@ -1488,6 +1664,29 @@ const App = () => {
         onDisconnectGoogleDrive={handleDisconnectGoogleDrive}
         onClose={() => setShowDriveSettingsModal(false)}
       />
+
+      {deleteCardModal.isOpen && (
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Подтверждение удаления карточки">
+          <div className="modal-card workflow-modal">
+            <div className="modal-card__header">
+              <h2>Удалить карточку?</h2>
+            </div>
+            <div className="modal-card__body">
+              <p>
+                Карточка "{deleteCardModal.title}" будет удалена без возможности восстановления.
+              </p>
+              <div className="workflow-confirm-actions">
+                <button type="button" className="primary" onClick={confirmDeleteCard}>
+                  Удалить
+                </button>
+                <button type="button" onClick={closeDeleteCardModal}>
+                  Отмена
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {awbStatusCheck.loading && (
         <div className="loader-overlay" role="status" aria-live="polite" aria-label="Проверка статуса">
