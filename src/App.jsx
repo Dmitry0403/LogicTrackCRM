@@ -174,6 +174,11 @@ const DEFAULT_TRIP_STAGES = [
   { id: "trip-stage-in-route", name: "В рейсе" },
   { id: "trip-stage-completed", name: "Завершено" },
 ];
+const ORDER_STAGE_PLAN_ID = "order-stage-plan";
+const ORDER_STAGE_WAREHOUSE_ID = "order-stage-warehouse";
+const ORDER_STAGE_IN_CAR_ID = "order-stage-in-car";
+const ORDER_STAGE_DELIVERED_ID = "order-stage-delivered";
+const TRIP_STAGE_COMPLETED_ID = "trip-stage-completed";
 const DEFAULT_ORDER_STAGE_IDS = new Set(DEFAULT_ORDER_STAGES.map((stage) => stage.id));
 const DEFAULT_TRIP_STAGE_IDS = new Set(DEFAULT_TRIP_STAGES.map((stage) => stage.id));
 
@@ -965,6 +970,37 @@ const App = () => {
     setTripFormData((prev) => ({ ...prev, [field]: value }));
   };
 
+  const editingTrip = React.useMemo(
+    () => trips.find((trip) => trip.id === editingTripId) || null,
+    [trips, editingTripId],
+  );
+  const occupiedOrderIdsByOtherTrips = React.useMemo(() => {
+    const ids = new Set();
+    trips.forEach((trip) => {
+      if (trip.id === editingTripId) return;
+      (trip.orderIds || []).forEach((orderId) => ids.add(orderId));
+    });
+    return ids;
+  }, [trips, editingTripId]);
+  const availableOrdersForTrip = React.useMemo(() => {
+    const editingOrderIds = new Set(editingTrip?.orderIds || []);
+    return orders.filter((order) => {
+      if (editingOrderIds.has(order.id)) return true;
+      const isWarehouse = order.stageId === ORDER_STAGE_WAREHOUSE_ID;
+      const isFree = !occupiedOrderIdsByOtherTrips.has(order.id);
+      return isWarehouse && isFree;
+    });
+  }, [orders, occupiedOrderIdsByOtherTrips, editingTrip]);
+
+  React.useEffect(() => {
+    const allowedOrderIds = new Set(availableOrdersForTrip.map((order) => order.id));
+    setTripFormData((prev) => {
+      const filteredOrderIds = prev.orderIds.filter((orderId) => allowedOrderIds.has(orderId));
+      if (filteredOrderIds.length === prev.orderIds.length) return prev;
+      return { ...prev, orderIds: filteredOrderIds };
+    });
+  }, [availableOrdersForTrip]);
+
   const handleToggleTripOrder = (orderId) => {
     setTripFormData((prev) => {
       const exists = prev.orderIds.includes(orderId);
@@ -1005,12 +1041,14 @@ const App = () => {
 
   const handleTripSubmit = (event) => {
     event.preventDefault();
-    if (tripFormData.orderIds.length === 0) {
+    const allowedOrderIds = new Set(availableOrdersForTrip.map((order) => order.id));
+    const selectedOrderIds = tripFormData.orderIds.filter((orderId) => allowedOrderIds.has(orderId));
+    if (selectedOrderIds.length === 0) {
       alert("Выберите хотя бы один заказ для рейса.");
       return;
     }
 
-    const selectedOrders = orders.filter((order) => tripFormData.orderIds.includes(order.id));
+    const selectedOrders = orders.filter((order) => selectedOrderIds.includes(order.id));
     const ordersSummary = selectedOrders
       .slice(0, 3)
       .map((order) => order.name || order.recipient || order.id)
@@ -1032,7 +1070,7 @@ const App = () => {
       hasTrailer: Boolean(tripFormData.hasTrailer),
       trailerNumber: tripFormData.hasTrailer ? TRAILER_NUMBER : "",
       driverName: tripFormData.driverName,
-      orderIds: tripFormData.orderIds,
+      orderIds: selectedOrderIds,
       ordersSummary:
         selectedOrders.length > 3
           ? `${ordersSummary} (+${selectedOrders.length - 3})`
@@ -1043,6 +1081,30 @@ const App = () => {
     } else {
       setTrips((prev) => [trip, ...prev]);
     }
+
+    const previousOrderIds = new Set(editingTrip?.orderIds || []);
+    const selectedOrderIdsSet = new Set(selectedOrderIds);
+    const occupiedByOtherTrips = new Set();
+    trips.forEach((existingTrip) => {
+      if (existingTrip.id === editingTripId) return;
+      (existingTrip.orderIds || []).forEach((orderId) => occupiedByOtherTrips.add(orderId));
+    });
+    setOrders((prev) =>
+      prev.map((order) => {
+        if (selectedOrderIdsSet.has(order.id)) {
+          return { ...order, stageId: ORDER_STAGE_IN_CAR_ID };
+        }
+        if (
+          editingTripId &&
+          previousOrderIds.has(order.id) &&
+          !occupiedByOtherTrips.has(order.id) &&
+          order.stageId === ORDER_STAGE_IN_CAR_ID
+        ) {
+          return { ...order, stageId: ORDER_STAGE_WAREHOUSE_ID };
+        }
+        return order;
+      }),
+    );
     closeCreateTripForm();
   };
 
@@ -1067,7 +1129,44 @@ const App = () => {
     return stages[nextIndex]?.id || currentStageId;
   };
 
+  const shouldRemoveOrderFromTrip = (stageId) =>
+    stageId === ORDER_STAGE_PLAN_ID || stageId === ORDER_STAGE_WAREHOUSE_ID;
+  const buildTripOrdersSummary = (orderIds, sourceOrders) => {
+    const selectedOrders = sourceOrders.filter((order) => orderIds.includes(order.id));
+    const summaryHead = selectedOrders
+      .slice(0, 3)
+      .map((order) => order.name || order.recipient || order.id)
+      .join(", ");
+    return selectedOrders.length > 3
+      ? `${summaryHead} (+${selectedOrders.length - 3})`
+      : summaryHead;
+  };
+  const removeOrderIdsFromTrips = (orderIdsToRemove, sourceOrders, excludedTripId = "") => {
+    const idsToRemove = new Set(orderIdsToRemove);
+    if (idsToRemove.size === 0) return;
+    setTrips((prevTrips) =>
+      prevTrips.map((trip) => {
+        if (excludedTripId && trip.id === excludedTripId) return trip;
+        const currentOrderIds = Array.isArray(trip.orderIds) ? trip.orderIds : [];
+        const nextOrderIds = currentOrderIds.filter((id) => !idsToRemove.has(id));
+        if (nextOrderIds.length === currentOrderIds.length) return trip;
+        return {
+          ...trip,
+          orderIds: nextOrderIds,
+          ordersSummary: buildTripOrdersSummary(nextOrderIds, sourceOrders),
+        };
+      }),
+    );
+  };
+  const removeOrderFromTrips = (orderId, sourceOrders = orders, excludedTripId = "") => {
+    removeOrderIdsFromTrips([orderId], sourceOrders, excludedTripId);
+  };
+
   const handleMoveOrder = (orderId, direction) => {
+    const orderToMove = orders.find((order) => order.id === orderId);
+    const nextStageId = orderToMove
+      ? moveItemByDirection(orderStages, orderToMove.stageId, direction)
+      : "";
     setOrders((prev) =>
       prev.map((order) =>
         order.id === orderId
@@ -1075,6 +1174,9 @@ const App = () => {
           : order,
       ),
     );
+    if (shouldRemoveOrderFromTrip(nextStageId)) {
+      removeOrderFromTrips(orderId);
+    }
   };
 
   const handleMoveOrderToStage = (orderId, stageId) => {
@@ -1083,24 +1185,91 @@ const App = () => {
         order.id === orderId ? { ...order, stageId } : order,
       ),
     );
+    if (shouldRemoveOrderFromTrip(stageId)) {
+      removeOrderFromTrips(orderId);
+    }
   };
 
   const handleMoveTrip = (tripId, direction) => {
-    setTrips((prev) =>
-      prev.map((trip) =>
-        trip.id === tripId
-          ? { ...trip, stageId: moveItemByDirection(tripStages, trip.stageId, direction) }
-          : trip,
-      ),
-    );
+    setTrips((prev) => {
+      let movedTrip = null;
+      let previousStageId = "";
+      let nextStageId = "";
+      const nextTrips = prev.map((trip) => {
+        if (trip.id !== tripId) return trip;
+        movedTrip = trip;
+        previousStageId = trip.stageId;
+        nextStageId = moveItemByDirection(tripStages, trip.stageId, direction);
+        return { ...trip, stageId: nextStageId };
+      });
+
+      if (movedTrip && nextStageId === TRIP_STAGE_COMPLETED_ID) {
+        const movedOrderIds = new Set(movedTrip.orderIds || []);
+        setOrders((prevOrders) =>
+          prevOrders.map((order) =>
+            movedOrderIds.has(order.id)
+              ? { ...order, stageId: ORDER_STAGE_DELIVERED_ID }
+              : order,
+          ),
+        );
+      }
+      if (
+        movedTrip &&
+        previousStageId === TRIP_STAGE_COMPLETED_ID &&
+        nextStageId !== TRIP_STAGE_COMPLETED_ID
+      ) {
+        const movedOrderIds = new Set(movedTrip.orderIds || []);
+        setOrders((prevOrders) =>
+          prevOrders.map((order) =>
+            movedOrderIds.has(order.id)
+              ? { ...order, stageId: ORDER_STAGE_IN_CAR_ID }
+              : order,
+          ),
+        );
+      }
+
+      return nextTrips;
+    });
   };
 
   const handleMoveTripToStage = (tripId, stageId) => {
-    setTrips((prev) =>
-      prev.map((trip) =>
-        trip.id === tripId ? { ...trip, stageId } : trip,
-      ),
-    );
+    setTrips((prev) => {
+      let movedTrip = null;
+      let previousStageId = "";
+      const nextTrips = prev.map((trip) => {
+        if (trip.id !== tripId) return trip;
+        movedTrip = trip;
+        previousStageId = trip.stageId;
+        return { ...trip, stageId };
+      });
+
+      if (movedTrip && stageId === TRIP_STAGE_COMPLETED_ID) {
+        const movedOrderIds = new Set(movedTrip.orderIds || []);
+        setOrders((prevOrders) =>
+          prevOrders.map((order) =>
+            movedOrderIds.has(order.id)
+              ? { ...order, stageId: ORDER_STAGE_DELIVERED_ID }
+              : order,
+          ),
+        );
+      }
+      if (
+        movedTrip &&
+        previousStageId === TRIP_STAGE_COMPLETED_ID &&
+        stageId !== TRIP_STAGE_COMPLETED_ID
+      ) {
+        const movedOrderIds = new Set(movedTrip.orderIds || []);
+        setOrders((prevOrders) =>
+          prevOrders.map((order) =>
+            movedOrderIds.has(order.id)
+              ? { ...order, stageId: ORDER_STAGE_IN_CAR_ID }
+              : order,
+          ),
+        );
+      }
+
+      return nextTrips;
+    });
   };
 
   const handleInsertOrderStage = (afterStageId) => {
@@ -1405,13 +1574,36 @@ const App = () => {
       if (orderToDelete?.driveFolderId) {
         await deleteDriveFolder(orderToDelete.driveFolderId);
       }
-      setOrders((prev) => prev.filter((o) => o.id !== id));
+      const remainingOrders = orders.filter((o) => o.id !== id);
+      setOrders(remainingOrders);
+      removeOrderFromTrips(id, remainingOrders);
       if (editingOrderId === id) {
         cancelOrderForm();
       }
     }
 
     if (type === "trip") {
+      const tripToDelete = trips.find((trip) => trip.id === id);
+      const tripOrderIds = new Set(tripToDelete?.orderIds || []);
+      if (tripToDelete?.stageId === TRIP_STAGE_COMPLETED_ID) {
+        const ordersToDelete = orders.filter((order) => tripOrderIds.has(order.id));
+        for (const order of ordersToDelete) {
+          if (order?.driveFolderId) {
+            await deleteDriveFolder(order.driveFolderId);
+          }
+        }
+        const remainingOrders = orders.filter((order) => !tripOrderIds.has(order.id));
+        setOrders(remainingOrders);
+        removeOrderIdsFromTrips(Array.from(tripOrderIds), remainingOrders, id);
+      } else {
+        setOrders((prevOrders) =>
+          prevOrders.map((order) =>
+            tripOrderIds.has(order.id)
+              ? { ...order, stageId: ORDER_STAGE_WAREHOUSE_ID }
+              : order,
+          ),
+        );
+      }
       setTrips((prev) => prev.filter((trip) => trip.id !== id));
       if (editingTripId === id) {
         closeCreateTripForm();
@@ -1438,6 +1630,10 @@ const App = () => {
     });
     setEditingOrderId(order.id);
     setOrdersScreenMode("create");
+  };
+  const handleEditOrderFromTripClick = (order) => {
+    setActiveView("orders");
+    handleEditClick(order);
   };
 
   const handleEditTripClick = (trip) => {
@@ -1520,21 +1716,34 @@ const App = () => {
                     renderItemCard={(order) => (
                       <div className="workflow-card">
                         <div className="workflow-card__top-actions">
-                          <button type="button" className="workflow-card__icon-btn" title="Редактировать" onClick={() => handleEditClick(order)}>✎</button>
-                          <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title="Удалить" onClick={() => openDeleteOrderConfirm(order)}>🗑</button>
+                          <button type="button" className="workflow-card__icon-btn" title="Редактировать" onClick={() => handleEditClick(order)} aria-label="Редактировать">
+                            <span aria-hidden="true">&#9998;</span>
+                          </button>
+                          <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title="Удалить" onClick={() => openDeleteOrderConfirm(order)} aria-label="Удалить">
+                            <span aria-hidden="true">&#128465;</span>
+                          </button>
                         </div>
                         <div className="workflow-card__title">{order.name || "Без названия"}</div>
-                        <div className="workflow-card__meta">{order.shipmentAirport || "—"}</div>
-                        <div className="workflow-card__meta">{order.awb || "—"}</div>
-                        <div className="workflow-card__meta">{order.customsName || order.customsCode || "—"}</div>
-                        <div className="workflow-card__meta">{order.weight || "—"} кг / {order.quantity || "—"} шт</div>
-                        <button
-                          type="button"
-                          className="workflow-card__check-btn"
-                          onClick={() => checkOrderAwbStatus(order)}
-                        >
-                          Check AWB
-                        </button>
+                        <div className="workflow-card__meta">
+                          {order.shipmentAirport || "—"} - {order.customsName || order.customsCode || "—"}
+                        </div>
+                        <div className="workflow-card__meta">
+                          AWB:{" "}
+                          {order.awb ? (
+                            <button
+                              type="button"
+                              className="workflow-card__order-link"
+                              onClick={() => checkOrderAwbStatus(order)}
+                              title="Проверить накладную"
+                              aria-label={`Проверить накладную ${order.awb}`}
+                            >
+                              {order.awb}
+                            </button>
+                          ) : (
+                            "—"
+                          )}
+                        </div>
+                        <div className="workflow-card__meta">{order.quantity || "—"} мест / {order.weight || "—"} кг</div>
                       </div>
                     )}
                   />
@@ -1598,15 +1807,15 @@ const App = () => {
                         const parsed = Number.parseFloat(String(order.weight || "0").replace(",", "."));
                         return sum + (Number.isFinite(parsed) ? parsed : 0);
                       }, 0);
-                      const cargoComposition = tripOrders
-                        .map((order) => order.name || order.recipient || order.awb || order.id)
-                        .join(", ");
-
                       return (
                         <div className="workflow-card">
                           <div className="workflow-card__top-actions">
-                            <button type="button" className="workflow-card__icon-btn" title="Редактировать" onClick={() => handleEditTripClick(trip)}>✎</button>
-                            <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title="Удалить" onClick={() => openDeleteTripConfirm(trip)}>🗑</button>
+                            <button type="button" className="workflow-card__icon-btn" title="Редактировать" onClick={() => handleEditTripClick(trip)} aria-label="Редактировать">
+                              <span aria-hidden="true">&#9998;</span>
+                            </button>
+                            <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title="Удалить" onClick={() => openDeleteTripConfirm(trip)} aria-label="Удалить">
+                              <span aria-hidden="true">&#128465;</span>
+                            </button>
                           </div>
                           <div className="workflow-card__title">
                             {(trip.tripNumber || "Без номера")} от {formatTripDateShort(trip.tripDate)}
@@ -1618,7 +1827,23 @@ const App = () => {
                               maximumFractionDigits: 2,
                             })} кг
                           </div>
-                          <div className="workflow-card__meta">{cargoComposition || "—"}</div>
+                          <div className="workflow-card__meta">
+                            {tripOrders.length === 0
+                              ? "—"
+                              : tripOrders.map((order, index) => (
+                                  <React.Fragment key={order.id}>
+                                    <button
+                                      type="button"
+                                      className="workflow-card__order-link"
+                                      onClick={() => handleEditOrderFromTripClick(order)}
+                                      title="Открыть заказ для редактирования"
+                                    >
+                                      {order.name || order.recipient || order.awb || order.id}
+                                    </button>
+                                    {index < tripOrders.length - 1 ? ", " : ""}
+                                  </React.Fragment>
+                                ))}
+                          </div>
                         </div>
                       );
                     }}
@@ -1635,7 +1860,7 @@ const App = () => {
                     onSubmit={handleTripSubmit}
                     onCancel={closeCreateTripForm}
                     submitLabel="Сохранить"
-                    orders={orders}
+                    orders={availableOrdersForTrip}
                     carNumbers={TRIP_CAR_NUMBERS}
                     driverNames={TRIP_DRIVER_NAMES}
                     embedded
@@ -1698,7 +1923,7 @@ const App = () => {
               title="Прервать проверку"
               onClick={cancelAwbStatusCheck}
             >
-              ×
+              ?
             </button>
             <div className="loader-overlay__spinner" />
             <div className="loader-overlay__text">Проверяем накладную...</div>
@@ -1731,6 +1956,11 @@ const App = () => {
   );
 };
 export default App;
+
+
+
+
+
 
 
 

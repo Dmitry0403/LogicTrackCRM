@@ -29,7 +29,7 @@ function SettingsIcon() {
 
 export function HeaderNavigation({ activeView, onSelectView }) {
   const items = [
-    { id: "orders", label: "Заявки", icon: <RequestsIcon /> },
+    { id: "orders", label: "Заказы", icon: <RequestsIcon /> },
     { id: "trips", label: "Рейсы", icon: <TripsIcon /> },
     { id: "settings", label: "Настройки", icon: <SettingsIcon /> },
   ];
@@ -444,7 +444,7 @@ export function TripFormCard({
         <div className="trip-orders-list">
           {orders.length === 0 ? (
             <div className="trip-orders-list__empty">
-              Пока нет заказов. Сначала создайте хотя бы один заказ.
+              Пока нет заказов На складе. Добавьте хотя бы один заказ.
             </div>
           ) : (
             orders.map((order) => {
@@ -459,7 +459,7 @@ export function TripFormCard({
                   <span className="trip-order-item__content">
                     <span className="trip-order-item__title">{order.name || order.recipient || "Без названия"}</span>
                     <span className="trip-order-item__meta">
-                      AWB: {order.awb || "—"} | {order.weight || "—"} кг | {order.quantity || "—"} мест | {order.customsName || order.customsCode || "—"}
+                      AWB: {order.awb || "—"} | {order.quantity || "—"} мест | {order.weight || "—"} кг | {order.customsName || order.customsCode || "—"}
                     </span>
                   </span>
                   <span className="trip-order-item__airport">{order.shipmentAirport || "—"}</span>

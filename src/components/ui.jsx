@@ -200,7 +200,7 @@ export function OrderFormCard({
         )}
       </div>
       <div className="field order-form__right">
-        <label htmlFor="quantity">Количество (шт) *</label>
+        <label htmlFor="quantity">Количество (мест) *</label>
         <input
           id="quantity"
           name="quantity"
@@ -416,3 +416,4 @@ export function OrdersTable({ orders, onEditClick, onDelete, onCreateOrder, embe
     </section>
   );
 }
+

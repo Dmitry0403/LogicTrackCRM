@@ -441,8 +441,12 @@ small {
 .trip-form {
   display: grid;
   grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   gap: 14px 20px;
   align-items: start;
+  flex: 1;
+  height: 100%;
+  align-content: start;
 }
 
 .trip-form__left {
@@ -455,6 +459,7 @@ small {
 
 .trip-form__orders {
   grid-column: 1 / -1;
+  margin-top: 0;
 }
 
 .trip-car-row {
@@ -539,11 +544,13 @@ small {
 
 .trip-form__footer {
   grid-column: 1 / -1;
+  grid-row: 5;
   display: flex;
   justify-content: space-between;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
+  margin-top: 0;
 }
 
 .trip-form__summary {
@@ -602,7 +609,7 @@ small {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  justify-content: flex-end;
+  justify-content: flex-start;
 }
 
 .workflow-board {
@@ -811,6 +818,25 @@ small {
 .workflow-card__meta {
   font-size: 13px;
   color: #475569;
+}
+
+.workflow-card__order-link {
+  border: none;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+  font-weight: 400;
+  transition: font-weight 0.18s ease;
+}
+
+.workflow-card__order-link:hover {
+  text-decoration: none;
+  color: inherit;
+  font-weight: 500;
 }
 
 .workflow-card__top-actions {
