@@ -458,6 +458,18 @@ const parseTripCarNumber = (rawValue) => {
   };
 };
 
+const extractDriverSurname = (driverName) => {
+  const value = String(driverName || "").trim();
+  if (!value) return "";
+  return value.split(/\s+/)[0] || "";
+};
+
+const buildTripDriveFolderName = ({ carNumber, driverName }) => {
+  const car = String(carNumber || "").trim();
+  const surname = extractDriverSurname(driverName);
+  return [car, surname].filter(Boolean).join(" ").trim() || "Рейс";
+};
+
 const App = () => {
   const SHEREMETYEVO_VALUES = new Set(["Шереметьево"]);
   const DEFAULT_SHEREMETYEVO_TERMINAL = "Москва-карго";
@@ -502,6 +514,7 @@ const App = () => {
     screenshotUrl: "",
   });
   const [isTripPrintLoading, setIsTripPrintLoading] = React.useState(false);
+  const [isDeleteCardLoading, setIsDeleteCardLoading] = React.useState(false);
   const awbCheckAbortRef = React.useRef(null);
   const [editingOrderId, setEditingOrderId] = React.useState(null);
   const [editingTripId, setEditingTripId] = React.useState(null);
@@ -1102,6 +1115,8 @@ const App = () => {
       trailerNumber: tripFormData.hasTrailer ? TRAILER_NUMBER : "",
       driverName: tripFormData.driverName,
       orderIds: selectedOrderIds,
+      driveFolder: editingTrip?.driveFolder || null,
+      driveFolderId: editingTrip?.driveFolderId || null,
       ordersSummary:
         selectedOrders.length > 3
           ? `${ordersSummary} (+${selectedOrders.length - 3})`
@@ -1109,6 +1124,17 @@ const App = () => {
     };
     if (editingTripId) {
       setTrips((prev) => prev.map((item) => (item.id === editingTripId ? trip : item)));
+      const previousTripFolderName = buildTripDriveFolderName({
+        carNumber: editingTrip?.carNumberBase || editingTrip?.carNumber,
+        driverName: editingTrip?.driverName,
+      });
+      const nextTripFolderName = buildTripDriveFolderName({
+        carNumber: trip.carNumberBase || trip.carNumber,
+        driverName: trip.driverName,
+      });
+      if (editingTrip?.driveFolderId && previousTripFolderName !== nextTripFolderName) {
+        void updateDriveFolderName(editingTrip.driveFolderId, nextTripFolderName);
+      }
     } else {
       setTrips((prev) => [trip, ...prev]);
     }
@@ -1136,6 +1162,14 @@ const App = () => {
         return order;
       }),
     );
+    const addedOrderIds = selectedOrderIds.filter((orderId) => !previousOrderIds.has(orderId));
+    const removedOrderIds = Array.from(previousOrderIds).filter((orderId) => !selectedOrderIdsSet.has(orderId));
+    void syncTripOrderFolders({
+      trip,
+      previousTrip: editingTrip,
+      addedOrderIds,
+      removedOrderIds,
+    });
     closeCreateTripForm();
     return { trip, selectedOrders };
   };
@@ -1274,12 +1308,23 @@ const App = () => {
   const removeOrderIdsFromTrips = (orderIdsToRemove, sourceOrders, excludedTripId = "") => {
     const idsToRemove = new Set(orderIdsToRemove);
     if (idsToRemove.size === 0) return;
+    const sourceOrdersById = new Map(sourceOrders.map((order) => [order.id, order]));
     setTrips((prevTrips) =>
       prevTrips.map((trip) => {
         if (excludedTripId && trip.id === excludedTripId) return trip;
         const currentOrderIds = Array.isArray(trip.orderIds) ? trip.orderIds : [];
         const nextOrderIds = currentOrderIds.filter((id) => !idsToRemove.has(id));
         if (nextOrderIds.length === currentOrderIds.length) return trip;
+        if (driveConnected && trip.driveFolderId) {
+          currentOrderIds
+            .filter((id) => idsToRemove.has(id))
+            .forEach((orderId) => {
+              const order = sourceOrdersById.get(orderId);
+              if (order?.driveFolderId) {
+                void moveOrderFolderToBase(order);
+              }
+            });
+        }
         return {
           ...trip,
           orderIds: nextOrderIds,
@@ -1535,17 +1580,14 @@ const App = () => {
     throw new Error('Требуется авторизация');
   };
 
-  // Создать папку в Google Drive для заказа
-  const createDriveFolderForOrder = async (orderName, orderId) => {
+  const createDriveFolder = async (name, parentId = null) => {
     try {
       const accessToken = await ensureAccessToken();
-      const bodyObj = { name: orderName, mimeType: 'application/vnd.google-apps.folder' };
-      
-      // Если выбрана папка, создать подпапку внутри нее
-      if (selectedDriveFolder && selectedDriveFolder.id) {
-        bodyObj.parents = [selectedDriveFolder.id];
+      const bodyObj = { name, mimeType: 'application/vnd.google-apps.folder' };
+      if (parentId) {
+        bodyObj.parents = [parentId];
       }
-      
+
       const res = await fetch('https://www.googleapis.com/drive/v3/files', {
         method: 'POST',
         headers: {
@@ -1556,17 +1598,141 @@ const App = () => {
       });
       const data = await res.json();
       if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-      
-      const folderUrl = `https://drive.google.com/drive/folders/${data.id}`;
-      // Обновить заказ ссылкой на папку
-      setOrders((prev) =>
-        prev.map((o) => (o.id === orderId ? { ...o, driveFolder: folderUrl, driveFolderId: data.id } : o))
-      );
-      console.log('Папка создана:', folderUrl);
-      return { folderId: data.id, folderUrl };
+      return {
+        folderId: data.id,
+        folderUrl: `https://drive.google.com/drive/folders/${data.id}`,
+      };
     } catch (err) {
       console.error('Ошибка создания папки:', err);
-      // Не прерываем создание заказа если Google Drive недоступен
+      return null;
+    }
+  };
+
+  // Создать папку в Google Drive для заказа
+  const createDriveFolderForOrder = async (orderName, orderId) => {
+    const created = await createDriveFolder(orderName, selectedDriveFolder?.id || null);
+    if (!created) return null;
+
+    setOrders((prev) =>
+      prev.map((o) => (o.id === orderId ? { ...o, driveFolder: created.folderUrl, driveFolderId: created.folderId } : o))
+    );
+    console.log('Папка заказа создана:', created.folderUrl);
+    return created;
+  };
+
+  const createDriveFolderForTrip = async (trip) => {
+    const tripFolderName = buildTripDriveFolderName({
+      carNumber: trip.carNumberBase || trip.carNumber,
+      driverName: trip.driverName,
+    });
+    const created = await createDriveFolder(tripFolderName, selectedDriveFolder?.id || null);
+    if (!created) return null;
+
+    setTrips((prev) =>
+      prev.map((item) =>
+        item.id === trip.id
+          ? { ...item, driveFolder: created.folderUrl, driveFolderId: created.folderId }
+          : item
+      )
+    );
+    console.log('Папка рейса создана:', created.folderUrl);
+    return created;
+  };
+
+  const moveDriveFolderToParent = async (folderId, parentId = null) => {
+    if (!folderId) return false;
+    try {
+      const accessToken = await ensureAccessToken();
+      const metaRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${folderId}?fields=parents`,
+        {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        },
+      );
+      const meta = await metaRes.json();
+      if (meta.error) throw new Error(meta.error.message || JSON.stringify(meta.error));
+
+      const currentParents = Array.isArray(meta.parents) ? meta.parents : [];
+      const removeParents = currentParents.filter((id) => id !== parentId).join(",");
+      const shouldAddParent = Boolean(parentId) && !currentParents.includes(parentId);
+      if (!removeParents && !shouldAddParent) return true;
+
+      const params = new URLSearchParams();
+      if (removeParents) params.set('removeParents', removeParents);
+      if (shouldAddParent && parentId) params.set('addParents', parentId);
+
+      const moveRes = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${folderId}?${params.toString()}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        },
+      );
+      const moved = await moveRes.json();
+      if (moved.error) throw new Error(moved.error.message || JSON.stringify(moved.error));
+      return true;
+    } catch (err) {
+      console.error('Ошибка перемещения папки:', err);
+      return false;
+    }
+  };
+
+  const moveOrderFolderToTrip = async (order, tripFolderId) => {
+    if (!order?.driveFolderId || !tripFolderId) return;
+    await moveDriveFolderToParent(order.driveFolderId, tripFolderId);
+  };
+
+  const moveOrderFolderToBase = async (order) => {
+    if (!order?.driveFolderId) return;
+    await moveDriveFolderToParent(order.driveFolderId, selectedDriveFolder?.id || null);
+  };
+
+  const syncTripOrderFolders = async ({
+    trip,
+    previousTrip = null,
+    addedOrderIds = [],
+    removedOrderIds = [],
+  }) => {
+    if (!driveConnected) return;
+    const ordersById = new Map(orders.map((order) => [order.id, order]));
+
+    let tripFolderId = trip.driveFolderId || previousTrip?.driveFolderId || null;
+    let orderIdsToMoveIntoTrip = addedOrderIds;
+    if (!tripFolderId) {
+      const created = await createDriveFolderForTrip(trip);
+      tripFolderId = created?.folderId || null;
+      orderIdsToMoveIntoTrip = Array.isArray(trip.orderIds) ? trip.orderIds : [];
+    }
+
+    if (tripFolderId) {
+      for (const orderId of orderIdsToMoveIntoTrip) {
+        const order = ordersById.get(orderId);
+        if (!order) continue;
+
+        let orderFolderId = order.driveFolderId || null;
+        if (!orderFolderId) {
+          const created = await createDriveFolderForOrder(
+            order.name || order.recipient || order.id || "Заказ",
+            order.id,
+          );
+          orderFolderId = created?.folderId || null;
+        }
+
+        if (orderFolderId) {
+          await moveDriveFolderToParent(orderFolderId, tripFolderId);
+        }
+      }
+    }
+
+    for (const orderId of removedOrderIds) {
+      const order = ordersById.get(orderId);
+      if (order?.driveFolderId) {
+        await moveOrderFolderToBase(order);
+      }
     }
   };
 
@@ -1687,6 +1853,7 @@ const App = () => {
   };
 
   const closeDeleteCardModal = () => {
+    if (isDeleteCardLoading) return;
     setDeleteCardModal({
       isOpen: false,
       type: "",
@@ -1697,50 +1864,67 @@ const App = () => {
 
   const confirmDeleteCard = async () => {
     const { type, id } = deleteCardModal;
-    if (!id || !type) return;
+    if (!id || !type || isDeleteCardLoading) return;
+    setIsDeleteCardLoading(true);
 
-    if (type === "order") {
-      const orderToDelete = orders.find((o) => o.id === id);
-      if (orderToDelete?.driveFolderId) {
-        await deleteDriveFolder(orderToDelete.driveFolderId);
-      }
-      const remainingOrders = orders.filter((o) => o.id !== id);
-      setOrders(remainingOrders);
-      removeOrderFromTrips(id, remainingOrders);
-      if (editingOrderId === id) {
-        cancelOrderForm();
-      }
-    }
-
-    if (type === "trip") {
-      const tripToDelete = trips.find((trip) => trip.id === id);
-      const tripOrderIds = new Set(tripToDelete?.orderIds || []);
-      if (tripToDelete?.stageId === TRIP_STAGE_COMPLETED_ID) {
-        const ordersToDelete = orders.filter((order) => tripOrderIds.has(order.id));
-        for (const order of ordersToDelete) {
-          if (order?.driveFolderId) {
-            await deleteDriveFolder(order.driveFolderId);
-          }
+    try {
+      if (type === "order") {
+        const orderToDelete = orders.find((o) => o.id === id);
+        if (orderToDelete?.driveFolderId) {
+          await deleteDriveFolder(orderToDelete.driveFolderId);
         }
-        const remainingOrders = orders.filter((order) => !tripOrderIds.has(order.id));
+        const remainingOrders = orders.filter((o) => o.id !== id);
         setOrders(remainingOrders);
-        removeOrderIdsFromTrips(Array.from(tripOrderIds), remainingOrders, id);
-      } else {
-        setOrders((prevOrders) =>
-          prevOrders.map((order) =>
-            tripOrderIds.has(order.id)
-              ? { ...order, stageId: ORDER_STAGE_WAREHOUSE_ID }
-              : order,
-          ),
-        );
+        removeOrderFromTrips(id, remainingOrders);
+        if (editingOrderId === id) {
+          cancelOrderForm();
+        }
       }
-      setTrips((prev) => prev.filter((trip) => trip.id !== id));
-      if (editingTripId === id) {
-        closeCreateTripForm();
-      }
-    }
 
-    closeDeleteCardModal();
+      if (type === "trip") {
+        const tripToDelete = trips.find((trip) => trip.id === id);
+        const tripOrderIds = new Set(tripToDelete?.orderIds || []);
+        if (tripToDelete?.stageId === TRIP_STAGE_COMPLETED_ID) {
+          const ordersToDelete = orders.filter((order) => tripOrderIds.has(order.id));
+          for (const order of ordersToDelete) {
+            if (order?.driveFolderId) {
+              await deleteDriveFolder(order.driveFolderId);
+            }
+          }
+          const remainingOrders = orders.filter((order) => !tripOrderIds.has(order.id));
+          setOrders(remainingOrders);
+          removeOrderIdsFromTrips(Array.from(tripOrderIds), remainingOrders, id);
+        } else {
+          const tripOrders = orders.filter((order) => tripOrderIds.has(order.id));
+          for (const order of tripOrders) {
+            if (order?.driveFolderId) {
+              await moveOrderFolderToBase(order);
+            }
+          }
+          setOrders((prevOrders) =>
+            prevOrders.map((order) =>
+              tripOrderIds.has(order.id)
+                ? { ...order, stageId: ORDER_STAGE_WAREHOUSE_ID }
+                : order,
+            ),
+          );
+        }
+        if (tripToDelete?.driveFolderId) {
+          await deleteDriveFolder(tripToDelete.driveFolderId);
+        }
+        setTrips((prev) => prev.filter((trip) => trip.id !== id));
+        if (editingTripId === id) {
+          closeCreateTripForm();
+        }
+      }
+
+      closeDeleteCardModal();
+    } catch (error) {
+      console.error("delete_card_failed", error);
+      alert(`Не удалось удалить карточку: ${error?.message || "неизвестная ошибка"}`);
+    } finally {
+      setIsDeleteCardLoading(false);
+    }
   };
 
   const createOrderFormDataFromOrder = (order) => {
@@ -2064,14 +2248,28 @@ const App = () => {
                 Карточка "{deleteCardModal.title}" будет удалена без возможности восстановления.
               </p>
               <div className="workflow-confirm-actions">
-                <button type="button" className="primary" onClick={confirmDeleteCard}>
-                  Удалить
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={confirmDeleteCard}
+                  disabled={isDeleteCardLoading}
+                >
+                  {isDeleteCardLoading ? "Удаление..." : "Удалить"}
                 </button>
-                <button type="button" onClick={closeDeleteCardModal}>
+                <button type="button" onClick={closeDeleteCardModal} disabled={isDeleteCardLoading}>
                   Отмена
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {isDeleteCardLoading && (
+        <div className="loader-overlay" role="status" aria-live="polite" aria-label="Удаление карточки">
+          <div className="loader-overlay__content">
+            <div className="loader-overlay__spinner" />
+            <div className="loader-overlay__text">Удаляем карточку...</div>
           </div>
         </div>
       )}
