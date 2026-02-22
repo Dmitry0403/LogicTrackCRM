@@ -1,11 +1,15 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
 const fs = require('fs/promises');
 const path = require('path');
+const os = require('os');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const { PNG } = require('pngjs');
 const XLSX = require('xlsx');
+const execFileAsync = promisify(execFile);
 
 const app = express();
 
@@ -40,6 +44,13 @@ const POA_XLSX_PATH = process.env.POA_XLSX_PATH || '';
 const CARGO_STATUS_TTL_MS = Number(process.env.CARGO_STATUS_TTL_MS || 300000);
 const CARGO_CHECK_TIMEOUT_MS = Number(process.env.CARGO_CHECK_TIMEOUT_MS || 45000);
 const CARGO_SCREENSHOTS_ENABLED = String(process.env.CARGO_SCREENSHOTS_ENABLED || 'true').toLowerCase() === 'true';
+const TRIP_APPLICATION_TEMPLATE_PATH = (() => {
+  const rawPath = String(process.env.TRIP_APPLICATION_TEMPLATE_PATH || './templates/STS order.docx').trim();
+  if (!rawPath) {
+    return path.resolve(__dirname, 'templates', 'STS order.docx');
+  }
+  return path.isAbsolute(rawPath) ? rawPath : path.resolve(__dirname, rawPath);
+})();
 const MOSCOW_CARGO_URL = 'https://www.moscow-cargo.com/';
 const SHER_CARGO_URL = 'https://www.shercargo.ru/it/free/';
 const VNUKOVO_CARGO_URL = 'https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/';
@@ -103,6 +114,297 @@ const normalizeText = (value) =>
 
 const normalizeAwb = (value) => String(value || '').replace(/\s+/g, '').trim();
 const normalizeAwbPart = (value, maxLen) => String(value || '').replace(/\D/g, '').slice(0, maxLen);
+const escapeHtml = (value) =>
+  String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+const formatTripDateRu = (rawDate) => {
+  const value = String(rawDate || '').trim();
+  if (!value) return '';
+  const isoMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) {
+    return `${isoMatch[3]}.${isoMatch[2]}.${isoMatch[1]}`;
+  }
+  return value;
+};
+
+const buildTripApplicationPdfHtml = ({ trip, orders }) => {
+  const rows = orders
+    .map((order, index) => `
+      <tr>
+        <td>${index + 1}</td>
+        <td>${escapeHtml(order.name || order.recipient || 'Без названия')}</td>
+        <td>${escapeHtml(order.awb || '-')}</td>
+        <td>${escapeHtml(order.recipient || '-')}</td>
+        <td>${escapeHtml(order.customsName || order.customsCode || '-')}</td>
+        <td>${escapeHtml(order.quantity || '-')}</td>
+        <td>${escapeHtml(order.weight || '-')}</td>
+      </tr>
+    `)
+    .join('');
+
+  return `<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>Заявка СТС</title>
+  <style>
+    @page { size: A4; margin: 14mm; }
+    body { margin: 0; font-family: "Times New Roman", serif; color: #111; font-size: 13px; }
+    .doc { width: 100%; }
+    .title { text-align: center; font-size: 22px; font-weight: 700; margin-bottom: 14px; }
+    .meta { margin-bottom: 12px; line-height: 1.5; }
+    .meta-row { display: flex; gap: 10px; }
+    .meta-key { min-width: 170px; font-weight: 700; }
+    table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+    th, td { border: 1px solid #111; padding: 6px 7px; vertical-align: top; }
+    th { text-align: left; font-weight: 700; }
+    .signatures { margin-top: 28px; display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .sign-box { min-height: 90px; border-top: 1px solid #111; padding-top: 6px; }
+    .muted { color: #444; font-size: 12px; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <div class="doc">
+    <div class="title">Заявка СТС</div>
+    <div class="meta">
+      <div class="meta-row"><div class="meta-key">Номер рейса:</div><div>${escapeHtml(trip.tripNumber || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Дата рейса:</div><div>${escapeHtml(formatTripDateRu(trip.tripDate) || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Автомобиль:</div><div>${escapeHtml(trip.carNumber || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Водитель:</div><div>${escapeHtml(trip.driverName || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Количество заказов:</div><div>${orders.length}</div></div>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th style="width: 34px;">№</th>
+          <th>Заказ</th>
+          <th>AWB</th>
+          <th>Получатель</th>
+          <th>Таможня назначения</th>
+          <th style="width: 70px;">Мест</th>
+          <th style="width: 70px;">Вес, кг</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${rows}
+      </tbody>
+    </table>
+    <div class="signatures">
+      <div>
+        <div class="sign-box">Подпись ответственного</div>
+        <div class="muted">ФИО, подпись, дата</div>
+      </div>
+      <div>
+        <div class="sign-box">М.П.</div>
+        <div class="muted">Печать</div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+};
+
+const generatePdfFromHtml = async (html) => {
+  const playwright = getPlaywright();
+  if (!playwright || !playwright.chromium) {
+    const error = new Error('Playwright is not installed on server');
+    error.code = 'playwright_missing';
+    throw error;
+  }
+
+  const { chromium } = playwright;
+  const browser = await chromium.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle' });
+    return await page.pdf({
+      format: 'A4',
+      printBackground: true,
+      margin: { top: '14mm', right: '14mm', bottom: '14mm', left: '14mm' },
+    });
+  } finally {
+    await browser.close();
+  }
+};
+
+const generateTripPdfFromWordTemplate = async ({ templatePath, trip, orders }) => {
+  const tempDir = path.join(os.tmpdir(), `trip-app-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const tempDocxPath = path.join(tempDir, 'trip-application.docx');
+  const tempPdfPath = path.join(tempDir, 'trip-application.pdf');
+  await fs.mkdir(tempDir, { recursive: true });
+  await fs.copyFile(templatePath, tempDocxPath);
+
+  const payload = {
+    tripNumber: String(trip.tripNumber || '').trim(),
+    tripDate: formatTripDateRu(trip.tripDate),
+    carNumber: String(trip.carNumber || '').trim(),
+    driverName: String(trip.driverName || '').trim(),
+    airport: String(orders[0]?.shipmentAirport || '').trim(),
+    signerRole: String(trip.signerRole || 'Менеджер').trim(),
+    signerName: String(trip.signerName || 'Косенко Д.В.').trim(),
+    labels: {
+      awbPrefix: '-авианакладная №',
+      places: 'мест',
+      kg: 'кг',
+      customsPrefix: 'Таможня назначения -',
+    },
+    orders: orders.map((order) => ({
+      name: String(order.name || order.recipient || 'Без названия').trim(),
+      awb: String(order.awb || '').trim(),
+      quantity: String(order.quantity || '').trim(),
+      weight: String(order.weight || '').trim(),
+      customsName: String(order.customsName || order.customsCode || '').trim(),
+      customsCode: String(order.customsCode || '').trim(),
+    })),
+  };
+
+  const payloadPath = path.join(tempDir, 'trip-application.payload.json');
+  const psScriptPath = path.join(tempDir, 'trip-application.ps1');
+  await fs.writeFile(payloadPath, JSON.stringify(payload), 'utf8');
+
+  const psScript = `
+param(
+  [string]$payloadPath,
+  [string]$tempDocxPath,
+  [string]$tempPdfPath
+)
+$ErrorActionPreference = 'Stop'
+$payloadBytes = [System.IO.File]::ReadAllBytes($payloadPath)
+$payloadText = [System.Text.Encoding]::UTF8.GetString($payloadBytes)
+$payload = $payloadText | ConvertFrom-Json
+
+$word = New-Object -ComObject Word.Application
+$word.Visible = $false
+$word.DisplayAlerts = 0
+$doc = $null
+
+function Replace-InRange {
+  param(
+    [object]$range,
+    [string]$searchText,
+    [string]$replaceText
+  )
+  if (-not $range -or [string]::IsNullOrEmpty($searchText)) { return }
+  $null = $range.Find.Execute(
+    $searchText,
+    $false, $false, $false, $false, $false,
+    $true, 1, $false,
+    [string]$replaceText,
+    2
+  )
+}
+
+try {
+  $doc = $word.Documents.Open($tempDocxPath, $false, $false, $false)
+  $wdExportFormatPDF = 17
+
+  $fullRange = $doc.Range()
+  Replace-InRange $fullRange '{{TRIP_NUMBER}}' $payload.tripNumber
+  Replace-InRange $fullRange '{{TRIP_DATE}}' $payload.tripDate
+  Replace-InRange $fullRange '{{AIRPORT}}' $payload.airport
+  Replace-InRange $fullRange '{{CAR_NUMBER}}' $payload.carNumber
+  Replace-InRange $fullRange '{{DRIVER_NAME}}' $payload.driverName
+
+  Replace-InRange $fullRange '{{SIGNER_ROLE}}' $payload.signerRole
+  Replace-InRange $fullRange '{{SIGNER_NAME}}' $payload.signerName
+  Replace-InRange $fullRange '{{SIGNER_ROLE|Менеджер}}' $payload.signerRole
+  Replace-InRange $fullRange '{{SIGNER_NAME|Косенко Д.В.}}' $payload.signerName
+
+  $startPara = $null
+  $endPara = $null
+  for ($i = 1; $i -le $doc.Paragraphs.Count; $i++) {
+    $text = ($doc.Paragraphs.Item($i).Range.Text -replace '[\\r\\a]','').Trim()
+    if (-not $startPara -and $text.Contains('{{ORDERS_START}}')) { $startPara = $doc.Paragraphs.Item($i) }
+    if (-not $endPara -and $text.Contains('{{ORDERS_END}}')) { $endPara = $doc.Paragraphs.Item($i) }
+  }
+
+  if ($startPara -ne $null -and $endPara -ne $null -and $endPara.Range.Start -gt $startPara.Range.End) {
+    $targetRange = $doc.Range($startPara.Range.End, $endPara.Range.Start)
+    $lines = New-Object System.Collections.Generic.List[string]
+    $index = 1
+    foreach ($order in $payload.orders) {
+      $lines.Add(("{0}.{1} {2} {3} - {4} {5} / {6} {7}," -f $index, $order.name, $payload.labels.awbPrefix, $order.awb, $order.quantity, $payload.labels.places, $order.weight, $payload.labels.kg))
+      $lines.Add(("{0} {1} / {2}" -f $payload.labels.customsPrefix, $order.customsName, $order.customsCode))
+      $index++
+    }
+    $insertedText = if ($lines.Count -gt 0) { ($lines -join [Environment]::NewLine) + [Environment]::NewLine } else { '' }
+    $targetRange.Text = $insertedText
+
+    $startPara.Range.Text = ''
+    $endPara.Range.Text = ''
+
+    $ordersRange = $targetRange.Duplicate
+    $visibleLineIndex = 0
+    $orderIdx = 0
+    foreach ($p in $ordersRange.Paragraphs) {
+      $lineText = ($p.Range.Text -replace '[\\r\\a]','').Trim()
+      if (-not $lineText) { continue }
+      $visibleLineIndex++
+
+      if (($visibleLineIndex % 2) -eq 1 -and $orderIdx -lt $payload.orders.Count) {
+        $nameValue = [string]$payload.orders[$orderIdx].name
+        $orderIdx++
+        if ([string]::IsNullOrWhiteSpace($nameValue)) { continue }
+        $p.Range.ParagraphFormat.LeftIndent = 0
+        $p.Range.ParagraphFormat.FirstLineIndent = 0
+        $p.Range.ParagraphFormat.SpaceAfter = 0
+        $lineRange = $p.Range.Duplicate
+        $lineRange.End = $lineRange.End - 1
+        $recipientPos = $lineText.IndexOf($nameValue, [System.StringComparison]::OrdinalIgnoreCase)
+        if ($recipientPos -ge 0) {
+          $nameRange = $doc.Range($lineRange.Start + $recipientPos, $lineRange.Start + $recipientPos + $nameValue.Length)
+          $nameRange.Bold = 1
+        }
+      }
+
+      if (($visibleLineIndex % 2) -eq 0 -and $lineText -like ($payload.labels.customsPrefix + '*')) {
+        $p.Range.ParagraphFormat.LeftIndent = 32
+        $p.Range.ParagraphFormat.FirstLineIndent = 0
+        $p.Range.ParagraphFormat.SpaceAfter = 8
+      }
+    }
+  }
+
+  $fullRangeAfter = $doc.Range()
+  Replace-InRange $fullRangeAfter '{{ORDERS_START}}' ''
+  Replace-InRange $fullRangeAfter '{{ORDERS_END}}' ''
+
+  $doc.ExportAsFixedFormat($tempPdfPath, $wdExportFormatPDF)
+}
+finally {
+  if ($doc -ne $null) {
+    $doc.Close([ref]$false)
+  }
+  $word.Quit()
+}
+`;
+  await fs.writeFile(psScriptPath, `\uFEFF${psScript}`, 'utf16le');
+
+  try {
+    const { stderr } = await execFileAsync('powershell.exe', [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy', 'Bypass',
+      '-File',
+      psScriptPath,
+      '-payloadPath', payloadPath,
+      '-tempDocxPath', tempDocxPath,
+      '-tempPdfPath', tempPdfPath,
+    ], { windowsHide: true, maxBuffer: 20 * 1024 * 1024 });
+    if (stderr && String(stderr).trim()) {
+      throw new Error(String(stderr).trim());
+    }
+    const pdfBuffer = await fs.readFile(tempPdfPath);
+    return pdfBuffer;
+  } finally {
+    await fs.rm(tempDir, { recursive: true, force: true });
+  }
+};
 
 const getCargoCacheKey = ({ terminal, awb }) => `${normalizeText(terminal)}::${normalizeAwb(awb)}`;
 
@@ -1757,8 +2059,63 @@ app.get('/poa/registry', async (req, res) => {
   }
 });
 
+app.post('/trip-application/pdf', async (req, res) => {
+  try {
+    const tripRaw = req.body?.trip || {};
+    const ordersRaw = Array.isArray(req.body?.orders) ? req.body.orders : [];
+
+    const trip = {
+      tripNumber: String(tripRaw.tripNumber || '').trim(),
+      tripDate: String(tripRaw.tripDate || '').trim(),
+      carNumber: String(tripRaw.carNumber || '').trim(),
+      driverName: String(tripRaw.driverName || '').trim(),
+    };
+
+    if (!trip.tripNumber || !trip.carNumber || !trip.driverName) {
+      return res.status(400).json({ error: 'trip_fields_required' });
+    }
+    if (ordersRaw.length === 0) {
+      return res.status(400).json({ error: 'orders_required' });
+    }
+
+    const orders = ordersRaw.map((order) => ({
+      name: String(order?.name || '').trim(),
+      awb: String(order?.awb || '').trim(),
+      recipient: String(order?.recipient || '').trim(),
+      shipmentAirport: String(order?.shipmentAirport || '').trim(),
+      customsName: String(order?.customsName || '').trim(),
+      customsCode: String(order?.customsCode || '').trim(),
+      quantity: String(order?.quantity || '').trim(),
+      weight: String(order?.weight || '').trim(),
+    }));
+
+    const pdfBuffer = await generateTripPdfFromWordTemplate({
+      templatePath: TRIP_APPLICATION_TEMPLATE_PATH,
+      trip,
+      orders,
+    });
+    const safeTripNumber = (trip.tripNumber || 'trip').replace(/[^0-9A-Za-z_-]+/g, '_');
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="trip-application-${safeTripNumber}.pdf"`);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    console.error('trip_pdf_generation_failed', {
+      message: error.message,
+      stack: error.stack,
+      templatePath: TRIP_APPLICATION_TEMPLATE_PATH,
+    });
+    return res.status(500).json({
+      error: 'trip_pdf_generation_failed',
+      details: error.message,
+    });
+  }
+});
+
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`OAuth proxy listening on http://localhost:${port}`));
+
+
 
 
 

@@ -184,6 +184,35 @@ export function OrderFormCard({
             {awbStatusCheck?.loading ? "Проверяем..." : "Проверить"}
           </button>
         </div>
+        <div
+          style={{
+            marginTop: "8px",
+            display: "flex",
+            gap: "10px",
+            alignItems: "center",
+            flexWrap: "wrap",
+            minHeight: "44px",
+          }}
+        >
+          <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontWeight: 600 }}>
+            <input
+              type="checkbox"
+              checked={Boolean(formData.hasHawb)}
+              onChange={onFieldChange("hasHawb")}
+            />
+            HAWB
+          </label>
+          {formData.hasHawb && (
+            <input
+              type="text"
+              value={formData.hawb || ""}
+              onChange={onFieldChange("hawb")}
+              placeholder="Введите HAWB"
+              required
+              style={{ maxWidth: "260px" }}
+            />
+          )}
+        </div>
         {!isAwbCheckAvailable && (
           <small className="hint">Выберите аэропорт и терминал, затем нажмите "Проверить".</small>
         )}

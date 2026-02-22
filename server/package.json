@@ -4,7 +4,9 @@
   "private": true,
   "main": "index.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "stop": "node -e \"const cp=require('child_process');let out='';try{out=cp.execSync('netstat -ano | findstr :3001',{encoding:'utf8'});}catch(e){out=((e&&e.stdout)||'').toString();}const ids=[...new Set(out.split(/\\r?\\n/).map(s=>s.trim()).filter(Boolean).map(s=>s.split(/\\s+/).pop()).filter(Boolean))];for(const id of ids){try{cp.execSync('taskkill /PID '+id+' /F',{stdio:'ignore'});}catch{}}\"",
+    "restart": "npm run stop && npm run start"
   },
   "dependencies": {
     "cors": "^2.8.5",

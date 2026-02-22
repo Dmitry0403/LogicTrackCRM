@@ -354,11 +354,13 @@ export function TripFormCard({
   onFieldChange,
   onToggleOrder,
   onSubmit,
+  onPrint,
   onCancel,
   submitLabel = "Создать рейс",
   orders,
   carNumbers,
   driverNames,
+  isPrintLoading = false,
   embedded = false,
 }) {
   const selectedOrders = orders.filter((order) => formData.orderIds.includes(order.id));
@@ -482,10 +484,21 @@ export function TripFormCard({
           </div>
         </div>
         <div className="trip-form__actions">
-          <button type="submit" className="primary" disabled={orders.length === 0}>
+          <button type="submit" className="primary" disabled={orders.length === 0 || isPrintLoading}>
             {submitLabel}
           </button>
-          <button type="button" onClick={() => onCancel?.()}>
+          <button
+            type="button"
+            onClick={(event) => {
+              const form = event.currentTarget.form;
+              if (form && !form.reportValidity()) return;
+              onPrint?.();
+            }}
+            disabled={orders.length === 0 || isPrintLoading}
+          >
+            {isPrintLoading ? "Готовим печать..." : "Печать заявки"}
+          </button>
+          <button type="button" onClick={() => onCancel?.()} disabled={isPrintLoading}>
             Отменить
           </button>
         </div>

@@ -200,10 +200,13 @@ const resolveCargoTerminalKey = ({ shipmentAirport, shipmentTerminal }) => {
   return "";
 };
 
-const composeAwb = (prefix, number) => {
+const composeAwb = (prefix, number, hawb = "") => {
   const p = String(prefix || "").replace(/\D/g, "").slice(0, 3);
   const n = String(number || "").replace(/\D/g, "").slice(0, 10);
-  if (p && n) return `${p}-${n}`;
+  const hawbPart = String(hawb || "").trim().replace(/\//g, "");
+  if (p && n) {
+    return hawbPart ? `${p}-${n}/${hawbPart}` : `${p}-${n}`;
+  }
   if (p) return p;
   if (n) return n;
   return "";
@@ -211,11 +214,19 @@ const composeAwb = (prefix, number) => {
 
 const splitAwb = (awb) => {
   const clean = String(awb || "").trim();
-  const match = clean.match(/^(\d{3})-(\d{1,10})$/);
+  const slashIndex = clean.indexOf("/");
+  const baseAwb = slashIndex >= 0 ? clean.slice(0, slashIndex).trim() : clean;
+  const hawb = slashIndex >= 0 ? clean.slice(slashIndex + 1).trim() : "";
+  const match = baseAwb.match(/^(\d{3})-(\d{1,10})$/);
   if (match) {
-    return { awbPrefix: match[1], awbNumber: match[2] };
+    return { awbPrefix: match[1], awbNumber: match[2], hasHawb: Boolean(hawb), hawb };
   }
-  return { awbPrefix: "", awbNumber: clean.replace(/\D/g, "").slice(0, 10) };
+  return {
+    awbPrefix: "",
+    awbNumber: baseAwb.replace(/\D/g, "").slice(0, 10),
+    hasHawb: Boolean(hawb),
+    hawb,
+  };
 };
 
 const defaultPowerOfAttorneyRegistry = {
@@ -473,6 +484,8 @@ const App = () => {
     awb: "",
     awbPrefix: "",
     awbNumber: "",
+    hasHawb: false,
+    hawb: "",
     quantity: "",
     weight: "",
     customsCode: "",
@@ -488,6 +501,7 @@ const App = () => {
     screenshotId: "",
     screenshotUrl: "",
   });
+  const [isTripPrintLoading, setIsTripPrintLoading] = React.useState(false);
   const awbCheckAbortRef = React.useRef(null);
   const [editingOrderId, setEditingOrderId] = React.useState(null);
   const [editingTripId, setEditingTripId] = React.useState(null);
@@ -795,8 +809,9 @@ const App = () => {
 
     const awbText = String(order?.awb || "").trim();
     const awbParts = splitAwb(awbText);
+    const primaryAwb = composeAwb(awbParts.awbPrefix, awbParts.awbNumber);
     await runAwbStatusCheck({
-      awb: awbText,
+      awb: primaryAwb || awbText,
       awbPrefix: awbParts.awbPrefix,
       awbNumber: awbParts.awbNumber,
       shipmentAirport: String(order?.shipmentAirport || ""),
@@ -869,7 +884,7 @@ const App = () => {
   };
 
   const handleFieldChange = (field) => (event) => {
-    const value = event.target.value;
+    const value = event.target.type === "checkbox" ? event.target.checked : event.target.value;
     setFormData((prev) => {
       const next = { ...prev, [field]: value };
       if (field === "recipient") {
@@ -882,10 +897,14 @@ const App = () => {
       if (field === "shipmentAirport") {
         next.shipmentTerminal = SHEREMETYEVO_VALUES.has(value) ? DEFAULT_SHEREMETYEVO_TERMINAL : "";
       }
-      if (field === "awbPrefix" || field === "awbNumber") {
+      if (field === "hasHawb" && !value) {
+        next.hawb = "";
+      }
+      if (field === "awbPrefix" || field === "awbNumber" || field === "hasHawb" || field === "hawb") {
         next.awb = composeAwb(
-          field === "awbPrefix" ? value : prev.awbPrefix,
-          field === "awbNumber" ? value : prev.awbNumber,
+          field === "awbPrefix" ? value : next.awbPrefix,
+          field === "awbNumber" ? value : next.awbNumber,
+          next.hasHawb ? (field === "hawb" ? value : next.hawb) : "",
         );
       }
       return next;
@@ -895,6 +914,8 @@ const App = () => {
       field === "awb" ||
       field === "awbPrefix" ||
       field === "awbNumber" ||
+      field === "hasHawb" ||
+      field === "hawb" ||
       field === "shipmentAirport" ||
       field === "shipmentTerminal"
     ) {
@@ -917,7 +938,12 @@ const App = () => {
       shipmentTerminal: formData.shipmentTerminal.trim(),
       name: formData.orderName.trim(),
       recipient: formData.recipient.trim(),
-      awb: composeAwb(formData.awbPrefix, formData.awbNumber) || formData.awb.trim(),
+      awb:
+        composeAwb(
+          formData.awbPrefix,
+          formData.awbNumber,
+          formData.hasHawb ? formData.hawb : "",
+        ) || formData.awb.trim(),
       quantity: formData.quantity.trim(),
       weight: formData.weight.trim(),
       customsCode: formData.customsCode.trim(),
@@ -951,6 +977,8 @@ const App = () => {
       awb: "",
       awbPrefix: "",
       awbNumber: "",
+      hasHawb: false,
+      hawb: "",
       quantity: "",
       weight: "",
       customsCode: "",
@@ -1039,13 +1067,16 @@ const App = () => {
     setTripsScreenMode("create");
   };
 
-  const handleTripSubmit = (event) => {
-    event.preventDefault();
+  const saveTripFromForm = () => {
     const allowedOrderIds = new Set(availableOrdersForTrip.map((order) => order.id));
     const selectedOrderIds = tripFormData.orderIds.filter((orderId) => allowedOrderIds.has(orderId));
+    if (!tripFormData.tripNumber.trim() || !tripFormData.carNumber || !tripFormData.driverName) {
+      alert("Заполните обязательные поля рейса.");
+      return null;
+    }
     if (selectedOrderIds.length === 0) {
       alert("Выберите хотя бы один заказ для рейса.");
-      return;
+      return null;
     }
 
     const selectedOrders = orders.filter((order) => selectedOrderIds.includes(order.id));
@@ -1106,6 +1137,105 @@ const App = () => {
       }),
     );
     closeCreateTripForm();
+    return { trip, selectedOrders };
+  };
+
+  const printTripApplication = async (trip, selectedOrders) => {
+    if (typeof window === "undefined") return;
+    setIsTripPrintLoading(true);
+    try {
+      const response = await fetch(resolveCargoApiUrl("/trip-application/pdf"), {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          trip: {
+            tripNumber: trip.tripNumber,
+            tripDate: trip.tripDate,
+            carNumber: trip.carNumber,
+            driverName: trip.driverName,
+          },
+          orders: selectedOrders.map((order) => ({
+            name: order.name,
+            awb: order.awb,
+            recipient: order.recipient,
+            shipmentAirport: order.shipmentAirport,
+            customsName: order.customsName,
+            customsCode: order.customsCode,
+            quantity: order.quantity,
+            weight: order.weight,
+          })),
+        }),
+      });
+      if (!response.ok) {
+        let details = "";
+        try {
+          const contentType = response.headers.get("content-type") || "";
+          if (contentType.includes("application/json")) {
+            const data = await response.json();
+            details = data?.details || data?.error || "";
+          } else {
+            const text = await response.text();
+            details = text.slice(0, 240);
+          }
+        } catch (_) {
+          // ignore parse errors
+        }
+        throw new Error(`PDF generation failed: ${response.status}${details ? ` (${details})` : ""}`);
+      }
+
+      const pdfBlob = await response.blob();
+      const pdfUrl = URL.createObjectURL(pdfBlob);
+      const printWindow = window.open(pdfUrl, "_blank");
+      if (!printWindow) {
+        URL.revokeObjectURL(pdfUrl);
+        alert("Разрешите всплывающие окна, чтобы открыть печатную форму.");
+        return;
+      }
+      const tryPrint = () => {
+        try {
+          printWindow.focus();
+          printWindow.print();
+        } catch (_) {
+          // Browser PDF viewers may block auto-print; keep file opened for manual print.
+        }
+      };
+      setTimeout(tryPrint, 600);
+      printWindow.addEventListener(
+        "beforeunload",
+        () => {
+          URL.revokeObjectURL(pdfUrl);
+        },
+        { once: true },
+      );
+    } catch (error) {
+      alert(`Не удалось сформировать PDF заявки: ${error?.message || "неизвестная ошибка"}`);
+    } finally {
+      setIsTripPrintLoading(false);
+    }
+  };
+
+  const handleTripSubmit = (event) => {
+    event.preventDefault();
+    saveTripFromForm();
+  };
+
+  const handleTripPrint = async () => {
+    const result = saveTripFromForm();
+    if (!result) return;
+    await printTripApplication(result.trip, result.selectedOrders);
+  };
+
+  const handlePrintTripCard = async (trip) => {
+    if (!trip) return;
+    const selectedOrderIds = Array.isArray(trip.orderIds) ? trip.orderIds : [];
+    const selectedOrders = orders.filter((order) => selectedOrderIds.includes(order.id));
+    if (selectedOrders.length === 0) {
+      alert("В рейсе нет заказов для печати заявки.");
+      return;
+    }
+    await printTripApplication(trip, selectedOrders);
   };
 
   const handleSelectView = (view) => {
@@ -1613,9 +1743,9 @@ const App = () => {
     closeDeleteCardModal();
   };
 
-  const handleEditClick = (order) => {
+  const createOrderFormDataFromOrder = (order) => {
     const awbParts = splitAwb(order.awb);
-    setFormData({
+    return {
       shipmentAirport: order.shipmentAirport || "",
       shipmentTerminal: order.shipmentTerminal || "",
       recipient: order.recipient || "",
@@ -1623,12 +1753,28 @@ const App = () => {
       awb: order.awb || "",
       awbPrefix: awbParts.awbPrefix,
       awbNumber: awbParts.awbNumber,
+      hasHawb: awbParts.hasHawb,
+      hawb: awbParts.hawb || "",
       quantity: order.quantity || "",
       weight: order.weight || "",
       customsCode: order.customsCode || "",
       notes: order.notes || "",
-    });
+    };
+  };
+
+  const handleEditClick = (order) => {
+    setFormData(createOrderFormDataFromOrder(order));
     setEditingOrderId(order.id);
+    setOrdersScreenMode("create");
+  };
+  const handleCopyOrderClick = (order) => {
+    setFormData(createOrderFormDataFromOrder(order));
+    setEditingOrderId(null);
+    setAwbStatusCheck({
+      loading: false,
+      error: "",
+      data: null,
+    });
     setOrdersScreenMode("create");
   };
   const handleEditOrderFromTripClick = (order) => {
@@ -1661,6 +1807,8 @@ const App = () => {
       awb: "",
       awbPrefix: "",
       awbNumber: "",
+      hasHawb: false,
+      hawb: "",
       quantity: "",
       weight: "",
       customsCode: "",
@@ -1719,12 +1867,15 @@ const App = () => {
                           <button type="button" className="workflow-card__icon-btn" title="Редактировать" onClick={() => handleEditClick(order)} aria-label="Редактировать">
                             <span aria-hidden="true">&#9998;</span>
                           </button>
+                          <button type="button" className="workflow-card__icon-btn" title="Копировать" onClick={() => handleCopyOrderClick(order)} aria-label="Копировать">
+                            <span aria-hidden="true">&#128203;</span>
+                          </button>
                           <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title="Удалить" onClick={() => openDeleteOrderConfirm(order)} aria-label="Удалить">
                             <span aria-hidden="true">&#128465;</span>
                           </button>
                         </div>
                         <div className="workflow-card__title">{order.name || "Без названия"}</div>
-                        <div className="workflow-card__meta">
+                        <div className="workflow-card__meta workflow-card__meta--awb">
                           {order.shipmentAirport || "—"} - {order.customsName || order.customsCode || "—"}
                         </div>
                         <div className="workflow-card__meta">
@@ -1813,6 +1964,16 @@ const App = () => {
                             <button type="button" className="workflow-card__icon-btn" title="Редактировать" onClick={() => handleEditTripClick(trip)} aria-label="Редактировать">
                               <span aria-hidden="true">&#9998;</span>
                             </button>
+                            <button
+                              type="button"
+                              className="workflow-card__icon-btn"
+                              title="Печать заявки"
+                              onClick={() => handlePrintTripCard(trip)}
+                              aria-label="Печать заявки"
+                              disabled={isTripPrintLoading}
+                            >
+                              <span aria-hidden="true">&#128424;</span>
+                            </button>
                             <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title="Удалить" onClick={() => openDeleteTripConfirm(trip)} aria-label="Удалить">
                               <span aria-hidden="true">&#128465;</span>
                             </button>
@@ -1858,11 +2019,13 @@ const App = () => {
                     onFieldChange={handleTripFieldChange}
                     onToggleOrder={handleToggleTripOrder}
                     onSubmit={handleTripSubmit}
+                    onPrint={handleTripPrint}
                     onCancel={closeCreateTripForm}
                     submitLabel="Сохранить"
                     orders={availableOrdersForTrip}
                     carNumbers={TRIP_CAR_NUMBERS}
                     driverNames={TRIP_DRIVER_NAMES}
+                    isPrintLoading={isTripPrintLoading}
                     embedded
                   />
                 </WorkPanel>
@@ -1923,10 +2086,19 @@ const App = () => {
               title="Прервать проверку"
               onClick={cancelAwbStatusCheck}
             >
-              ?
+              &times;
             </button>
             <div className="loader-overlay__spinner" />
             <div className="loader-overlay__text">Проверяем накладную...</div>
+          </div>
+        </div>
+      )}
+
+      {isTripPrintLoading && (
+        <div className="loader-overlay" role="status" aria-live="polite" aria-label="Подготовка печати">
+          <div className="loader-overlay__content">
+            <div className="loader-overlay__spinner" />
+            <div className="loader-overlay__text">Готовим заявку к печати...</div>
           </div>
         </div>
       )}
