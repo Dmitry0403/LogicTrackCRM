@@ -252,6 +252,7 @@ const generateTripPdfFromWordTemplate = async ({ templatePath, trip, orders }) =
       places: 'мест',
       kg: 'кг',
       customsPrefix: 'Таможня назначения -',
+      notePrefix: 'Примечание:',
     },
     orders: orders.map((order) => ({
       name: String(order.name || order.recipient || 'Без названия').trim(),
@@ -260,6 +261,7 @@ const generateTripPdfFromWordTemplate = async ({ templatePath, trip, orders }) =
       weight: String(order.weight || '').trim(),
       customsName: String(order.customsName || order.customsCode || '').trim(),
       customsCode: String(order.customsCode || '').trim(),
+      notes: String(order.notes || '').trim(),
     })),
   };
 
@@ -330,6 +332,9 @@ try {
     foreach ($order in $payload.orders) {
       $lines.Add(("{0}.{1} {2} {3} - {4} {5} / {6} {7}," -f $index, $order.name, $payload.labels.awbPrefix, $order.awb, $order.quantity, $payload.labels.places, $order.weight, $payload.labels.kg))
       $lines.Add(("{0} {1} / {2}" -f $payload.labels.customsPrefix, $order.customsName, $order.customsCode))
+      if (-not [string]::IsNullOrWhiteSpace([string]$order.notes)) {
+        $lines.Add(("{0} {1}" -f $payload.labels.notePrefix, $order.notes))
+      }
       $index++
     }
     $insertedText = if ($lines.Count -gt 0) { ($lines -join [Environment]::NewLine) + [Environment]::NewLine } else { '' }
@@ -339,14 +344,14 @@ try {
     $endPara.Range.Text = ''
 
     $ordersRange = $targetRange.Duplicate
-    $visibleLineIndex = 0
     $orderIdx = 0
     foreach ($p in $ordersRange.Paragraphs) {
       $lineText = ($p.Range.Text -replace '[\\r\\a]','').Trim()
       if (-not $lineText) { continue }
-      $visibleLineIndex++
+      $isCustomsLine = $lineText.StartsWith([string]$payload.labels.customsPrefix, [System.StringComparison]::OrdinalIgnoreCase)
+      $isNoteLine = $lineText.StartsWith([string]$payload.labels.notePrefix, [System.StringComparison]::OrdinalIgnoreCase)
 
-      if (($visibleLineIndex % 2) -eq 1 -and $orderIdx -lt $payload.orders.Count) {
+      if (-not $isCustomsLine -and -not $isNoteLine -and $orderIdx -lt $payload.orders.Count) {
         $nameValue = [string]$payload.orders[$orderIdx].name
         $orderIdx++
         if ([string]::IsNullOrWhiteSpace($nameValue)) { continue }
@@ -362,7 +367,11 @@ try {
         }
       }
 
-      if (($visibleLineIndex % 2) -eq 0 -and $lineText -like ($payload.labels.customsPrefix + '*')) {
+      if ($isCustomsLine) {
+        $p.Range.ParagraphFormat.LeftIndent = 32
+        $p.Range.ParagraphFormat.FirstLineIndent = 0
+        $p.Range.ParagraphFormat.SpaceAfter = 2
+      } elseif ($isNoteLine) {
         $p.Range.ParagraphFormat.LeftIndent = 32
         $p.Range.ParagraphFormat.FirstLineIndent = 0
         $p.Range.ParagraphFormat.SpaceAfter = 8
@@ -2069,6 +2078,8 @@ app.post('/trip-application/pdf', async (req, res) => {
       tripDate: String(tripRaw.tripDate || '').trim(),
       carNumber: String(tripRaw.carNumber || '').trim(),
       driverName: String(tripRaw.driverName || '').trim(),
+      signerRole: String(tripRaw.signerRole || '').trim(),
+      signerName: String(tripRaw.signerName || '').trim(),
     };
 
     if (!trip.tripNumber || !trip.carNumber || !trip.driverName) {
@@ -2087,6 +2098,7 @@ app.post('/trip-application/pdf', async (req, res) => {
       customsCode: String(order?.customsCode || '').trim(),
       quantity: String(order?.quantity || '').trim(),
       weight: String(order?.weight || '').trim(),
+      notes: String(order?.notes || '').trim(),
     }));
 
     const pdfBuffer = await generateTripPdfFromWordTemplate({

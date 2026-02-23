@@ -317,7 +317,11 @@ export function OrderFormCard({
   );
 }
 
-export function SettingsModal({ isOpen, settingsSections, onClose }) {
+export function SettingsModal({
+  isOpen,
+  settingsSections,
+  onClose,
+}) {
   if (!isOpen) return null;
 
   return (
@@ -338,6 +342,48 @@ export function SettingsModal({ isOpen, settingsSections, onClose }) {
             </button>
           </div>
         ))}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
+          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
+            Закрыть
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function SignatureSettingsModal({
+  isOpen,
+  printSignerSettings,
+  onPrintSignerChange,
+  onClose,
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
+        <h2>Подпись печатной формы</h2>
+        <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.9rem" }}>
+          <label style={{ display: "grid", gap: "0.35rem" }}>
+            <span style={{ fontWeight: 600 }}>Должность</span>
+            <input
+              type="text"
+              value={printSignerSettings?.signerRole || ""}
+              onChange={(event) => onPrintSignerChange?.("signerRole", event.target.value)}
+              placeholder="Менеджер"
+            />
+          </label>
+          <label style={{ display: "grid", gap: "0.35rem" }}>
+            <span style={{ fontWeight: 600 }}>ФИО</span>
+            <input
+              type="text"
+              value={printSignerSettings?.signerName || ""}
+              onChange={(event) => onPrintSignerChange?.("signerName", event.target.value)}
+              placeholder="Косенко Д.В."
+            />
+          </label>
+        </div>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
           <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
             Закрыть

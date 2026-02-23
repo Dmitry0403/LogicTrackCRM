@@ -3,6 +3,7 @@ import {
   OrderFormCard,
   SettingsModal,
   DriveSettingsModal,
+  SignatureSettingsModal,
 } from './components/ui';
 import {
   HeaderNavigation,
@@ -141,6 +142,11 @@ const POWER_OF_ATTORNEY_REGISTRY_URL = "http://localhost:3001/poa/registry";
 const POWER_OF_ATTORNEY_FALLBACK_URL = "/power-of-attorney-registry.json";
 const CARGO_STATUS_URL = "http://localhost:3001/cargo/status";
 const CARGO_API_BASE_URL = "http://localhost:3001";
+const PRINT_SIGNER_STORAGE_KEY = "logictrack_print_signer";
+const DEFAULT_PRINT_SIGNER_SETTINGS = {
+  signerRole: "Менеджер",
+  signerName: "Косенко Д.В.",
+};
 const TRIP_CAR_NUMBERS = [
   "AC 7769-5",
   "AM 1019-5",
@@ -431,6 +437,19 @@ const saveStages = (key, stages) => {
   localStorage.setItem(key, JSON.stringify(stages));
 };
 
+const loadPrintSignerSettings = () => {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(PRINT_SIGNER_STORAGE_KEY) || "null");
+    if (!parsed || typeof parsed !== "object") return DEFAULT_PRINT_SIGNER_SETTINGS;
+    return {
+      signerRole: String(parsed.signerRole || DEFAULT_PRINT_SIGNER_SETTINGS.signerRole).trim(),
+      signerName: String(parsed.signerName || DEFAULT_PRINT_SIGNER_SETTINGS.signerName).trim(),
+    };
+  } catch (_) {
+    return DEFAULT_PRINT_SIGNER_SETTINGS;
+  }
+};
+
 const createStage = (prefix, name) => ({
   id: `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
   name,
@@ -526,6 +545,8 @@ const App = () => {
   });
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [showDriveSettingsModal, setShowDriveSettingsModal] = React.useState(false);
+  const [showSignatureSettingsModal, setShowSignatureSettingsModal] = React.useState(false);
+  const [printSignerSettings, setPrintSignerSettings] = React.useState(loadPrintSignerSettings);
   const [tripFormData, setTripFormData] = React.useState({
     tripNumber: "",
     tripDate: getTodayIsoDate(),
@@ -551,6 +572,10 @@ const App = () => {
   React.useEffect(() => {
     saveTrips(trips);
   }, [trips]);
+
+  React.useEffect(() => {
+    localStorage.setItem(PRINT_SIGNER_STORAGE_KEY, JSON.stringify(printSignerSettings));
+  }, [printSignerSettings]);
 
   React.useEffect(() => {
     const fallbackStageId = orderStages[0]?.id;
@@ -1189,6 +1214,8 @@ const App = () => {
             tripDate: trip.tripDate,
             carNumber: trip.carNumber,
             driverName: trip.driverName,
+            signerRole: String(printSignerSettings.signerRole || "").trim(),
+            signerName: String(printSignerSettings.signerName || "").trim(),
           },
           orders: selectedOrders.map((order) => ({
             name: order.name,
@@ -1199,6 +1226,7 @@ const App = () => {
             customsCode: order.customsCode,
             quantity: order.quantity,
             weight: order.weight,
+            notes: order.notes,
           })),
         }),
       });
@@ -2001,6 +2029,14 @@ const App = () => {
     setOrdersScreenMode("list");
   };
 
+  const handlePrintSignerChange = (field, value) => {
+    if (field !== "signerRole" && field !== "signerName") return;
+    setPrintSignerSettings((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
   const settingsSections = [
     {
       id: 'google-drive',
@@ -2010,6 +2046,16 @@ const App = () => {
       onOpen: () => {
         setShowSettingsModal(false);
         setShowDriveSettingsModal(true);
+      },
+    },
+    {
+      id: 'print-signature',
+      title: 'Изменение подписи',
+      status: `${printSignerSettings.signerRole || "—"} · ${printSignerSettings.signerName || "—"}`,
+      actionLabel: 'Открыть',
+      onOpen: () => {
+        setShowSettingsModal(false);
+        setShowSignatureSettingsModal(true);
       },
     },
   ];
@@ -2235,6 +2281,13 @@ const App = () => {
         onSelectDriveFolder={selectDriveFolder}
         onDisconnectGoogleDrive={handleDisconnectGoogleDrive}
         onClose={() => setShowDriveSettingsModal(false)}
+      />
+
+      <SignatureSettingsModal
+        isOpen={showSignatureSettingsModal}
+        printSignerSettings={printSignerSettings}
+        onPrintSignerChange={handlePrintSignerChange}
+        onClose={() => setShowSignatureSettingsModal(false)}
       />
 
       {deleteCardModal.isOpen && (
