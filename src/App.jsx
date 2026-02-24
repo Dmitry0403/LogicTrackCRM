@@ -4,6 +4,7 @@ import {
   SettingsModal,
   DriveSettingsModal,
   SignatureSettingsModal,
+  AccountSettingsModal,
 } from './components/ui';
 import {
   HeaderNavigation,
@@ -11,6 +12,12 @@ import {
   WorkflowBoard,
   TripFormCard,
 } from './components/workspace';
+import {
+  supabase,
+  isSupabaseConfigured,
+  SUPABASE_WORKSPACE_KEY,
+  supabaseDebugInfo,
+} from "./lib/supabase";
 
 const DRIVE_CONFIG = {
   CLIENT_ID: "389372481906-pfjepgeg2odfqmfdopdbsn2t890uoahe.apps.googleusercontent.com",
@@ -143,6 +150,8 @@ const POWER_OF_ATTORNEY_FALLBACK_URL = "/power-of-attorney-registry.json";
 const CARGO_STATUS_URL = "http://localhost:3001/cargo/status";
 const CARGO_API_BASE_URL = "http://localhost:3001";
 const PRINT_SIGNER_STORAGE_KEY = "logictrack_print_signer";
+const ORDER_STAGES_STORAGE_KEY = "logictrack_order_stages";
+const TRIP_STAGES_STORAGE_KEY = "logictrack_trip_stages";
 const DEFAULT_PRINT_SIGNER_SETTINGS = {
   signerRole: "Менеджер",
   signerName: "Косенко Д.В.",
@@ -170,23 +179,32 @@ const TRIP_DRIVER_NAMES = [
 ];
 const TRAILER_NUMBER = "А 1482 Е-5";
 const DEFAULT_ORDER_STAGES = [
-  { id: "order-stage-plan", name: "План" },
-  { id: "order-stage-warehouse", name: "На складе" },
-  { id: "order-stage-in-car", name: "В машине" },
-  { id: "order-stage-delivered", name: "Доставлено" },
+  { id: "order-stage-plan", code: "plan", name: "План" },
+  { id: "order-stage-warehouse", code: "warehouse", name: "На складе" },
+  { id: "order-stage-in-car", code: "in_car", name: "В машине" },
+  { id: "order-stage-delivered", code: "delivered", name: "Доставлено" },
 ];
 const DEFAULT_TRIP_STAGES = [
-  { id: "trip-stage-plan", name: "План" },
-  { id: "trip-stage-in-route", name: "В рейсе" },
-  { id: "trip-stage-completed", name: "Завершено" },
+  { id: "trip-stage-plan", code: "plan", name: "План" },
+  { id: "trip-stage-in-route", code: "in_route", name: "В рейсе" },
+  { id: "trip-stage-completed", code: "completed", name: "Завершено" },
 ];
 const ORDER_STAGE_PLAN_ID = "order-stage-plan";
 const ORDER_STAGE_WAREHOUSE_ID = "order-stage-warehouse";
 const ORDER_STAGE_IN_CAR_ID = "order-stage-in-car";
 const ORDER_STAGE_DELIVERED_ID = "order-stage-delivered";
 const TRIP_STAGE_COMPLETED_ID = "trip-stage-completed";
-const DEFAULT_ORDER_STAGE_IDS = new Set(DEFAULT_ORDER_STAGES.map((stage) => stage.id));
-const DEFAULT_TRIP_STAGE_IDS = new Set(DEFAULT_TRIP_STAGES.map((stage) => stage.id));
+const ORDER_STAGE_CODES = {
+  PLAN: "plan",
+  WAREHOUSE: "warehouse",
+  IN_CAR: "in_car",
+  DELIVERED: "delivered",
+};
+const TRIP_STAGE_CODES = {
+  PLAN: "plan",
+  IN_ROUTE: "in_route",
+  COMPLETED: "completed",
+};
 
 const resolveCargoApiUrl = (urlPath) => {
   if (!urlPath) return "";
@@ -267,6 +285,71 @@ const normalizeText = (value) =>
     .replace(/ё/g, "е")
     .replace(/\s+/g, " ")
     .trim();
+
+const DEFAULT_ORDER_STAGE_CODES = new Set(Object.values(ORDER_STAGE_CODES));
+const DEFAULT_TRIP_STAGE_CODES = new Set(Object.values(TRIP_STAGE_CODES));
+
+const resolveOrderStageCode = (stage) => {
+  const rawCode = String(stage?.code || "").trim();
+  if (DEFAULT_ORDER_STAGE_CODES.has(rawCode)) return rawCode;
+
+  const byLegacyId = new Map([
+    [ORDER_STAGE_PLAN_ID, ORDER_STAGE_CODES.PLAN],
+    [ORDER_STAGE_WAREHOUSE_ID, ORDER_STAGE_CODES.WAREHOUSE],
+    [ORDER_STAGE_IN_CAR_ID, ORDER_STAGE_CODES.IN_CAR],
+    [ORDER_STAGE_DELIVERED_ID, ORDER_STAGE_CODES.DELIVERED],
+  ]);
+  const legacyIdCode = byLegacyId.get(String(stage?.id || "").trim());
+  if (legacyIdCode) return legacyIdCode;
+
+  const normalizedName = normalizeText(stage?.name || "");
+  if (normalizedName === normalizeText("План")) return ORDER_STAGE_CODES.PLAN;
+  if (normalizedName === normalizeText("На складе")) return ORDER_STAGE_CODES.WAREHOUSE;
+  if (normalizedName === normalizeText("В машине")) return ORDER_STAGE_CODES.IN_CAR;
+  if (
+    normalizedName === normalizeText("Доставлено") ||
+    normalizedName === normalizeText("Доставлен")
+  ) {
+    return ORDER_STAGE_CODES.DELIVERED;
+  }
+  return "";
+};
+
+const resolveTripStageCode = (stage) => {
+  const rawCode = String(stage?.code || "").trim();
+  if (DEFAULT_TRIP_STAGE_CODES.has(rawCode)) return rawCode;
+
+  const byLegacyId = new Map([
+    ["trip-stage-plan", TRIP_STAGE_CODES.PLAN],
+    ["trip-stage-in-route", TRIP_STAGE_CODES.IN_ROUTE],
+    [TRIP_STAGE_COMPLETED_ID, TRIP_STAGE_CODES.COMPLETED],
+  ]);
+  const legacyIdCode = byLegacyId.get(String(stage?.id || "").trim());
+  if (legacyIdCode) return legacyIdCode;
+
+  const normalizedName = normalizeText(stage?.name || "");
+  if (normalizedName === normalizeText("План")) return TRIP_STAGE_CODES.PLAN;
+  if (normalizedName === normalizeText("В рейсе")) return TRIP_STAGE_CODES.IN_ROUTE;
+  if (
+    normalizedName === normalizeText("Завершено") ||
+    normalizedName === normalizeText("Завершен")
+  ) {
+    return TRIP_STAGE_CODES.COMPLETED;
+  }
+  return "";
+};
+
+const normalizeOrderStages = (stages) =>
+  (Array.isArray(stages) ? stages : []).map((stage) => {
+    const code = resolveOrderStageCode(stage);
+    return code ? { ...stage, code } : { ...stage };
+  });
+
+const normalizeTripStages = (stages) =>
+  (Array.isArray(stages) ? stages : []).map((stage) => {
+    const code = resolveTripStageCode(stage);
+    return code ? { ...stage, code } : { ...stage };
+  });
 
 const normalizeAirport = (airport) => AIRPORT_ALIASES.get(airport) || airport;
 
@@ -495,8 +578,12 @@ const App = () => {
 
   const [orders, setOrders] = React.useState(loadOrders);
   const [trips, setTrips] = React.useState(loadTrips);
-  const [orderStages, setOrderStages] = React.useState(DEFAULT_ORDER_STAGES);
-  const [tripStages, setTripStages] = React.useState(DEFAULT_TRIP_STAGES);
+  const [orderStages, setOrderStages] = React.useState(() =>
+    normalizeOrderStages(loadStages(ORDER_STAGES_STORAGE_KEY, DEFAULT_ORDER_STAGES))
+  );
+  const [tripStages, setTripStages] = React.useState(() =>
+    normalizeTripStages(loadStages(TRIP_STAGES_STORAGE_KEY, DEFAULT_TRIP_STAGES))
+  );
   const [activeView, setActiveView] = React.useState("orders");
   const [ordersScreenMode, setOrdersScreenMode] = React.useState("list");
   const [tripsScreenMode, setTripsScreenMode] = React.useState("list");
@@ -546,7 +633,24 @@ const App = () => {
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [showDriveSettingsModal, setShowDriveSettingsModal] = React.useState(false);
   const [showSignatureSettingsModal, setShowSignatureSettingsModal] = React.useState(false);
+  const [showAccountSettingsModal, setShowAccountSettingsModal] = React.useState(false);
   const [printSignerSettings, setPrintSignerSettings] = React.useState(loadPrintSignerSettings);
+  const [isCloudStateReady, setIsCloudStateReady] = React.useState(!isSupabaseConfigured);
+  const [authReady, setAuthReady] = React.useState(!isSupabaseConfigured);
+  const [currentUser, setCurrentUser] = React.useState(null);
+  const [authForm, setAuthForm] = React.useState({ email: "", password: "" });
+  const [authScreen, setAuthScreen] = React.useState("login");
+  const [isAuthSubmitting, setIsAuthSubmitting] = React.useState(false);
+  const [authError, setAuthError] = React.useState("");
+  const [authInfo, setAuthInfo] = React.useState("");
+  const [isChangePasswordScreenOpen, setIsChangePasswordScreenOpen] = React.useState(false);
+  const [changePasswordForm, setChangePasswordForm] = React.useState({
+    password: "",
+    confirmPassword: "",
+  });
+  const [isChangePasswordSubmitting, setIsChangePasswordSubmitting] = React.useState(false);
+  const [changePasswordError, setChangePasswordError] = React.useState("");
+  const [changePasswordInfo, setChangePasswordInfo] = React.useState("");
   const [tripFormData, setTripFormData] = React.useState({
     tripNumber: "",
     tripDate: getTodayIsoDate(),
@@ -564,6 +668,91 @@ const App = () => {
       return null;
     }
   });
+  const cloudSaveTimeoutRef = React.useRef(null);
+  const cloudSkipReasonRef = React.useRef("");
+  const userScopedAppStateId = React.useMemo(
+    () => (currentUser?.id ? `${currentUser.id}:${SUPABASE_WORKSPACE_KEY}` : ""),
+    [currentUser],
+  );
+  const findOrderStageIdByCode = React.useCallback(
+    (stageCode, fallbackId) => {
+      const byCode = orderStages.find((stage) => stage.code === stageCode);
+      if (byCode?.id) return byCode.id;
+      const byDefaultId = orderStages.find((stage) => stage.id === fallbackId);
+      return byDefaultId?.id || fallbackId;
+    },
+    [orderStages],
+  );
+  const findTripStageIdByCode = React.useCallback(
+    (stageCode, fallbackId) => {
+      const byCode = tripStages.find((stage) => stage.code === stageCode);
+      if (byCode?.id) return byCode.id;
+      const byDefaultId = tripStages.find((stage) => stage.id === fallbackId);
+      return byDefaultId?.id || fallbackId;
+    },
+    [tripStages],
+  );
+  const planStageId = React.useMemo(
+    () => findOrderStageIdByCode(ORDER_STAGE_CODES.PLAN, ORDER_STAGE_PLAN_ID),
+    [findOrderStageIdByCode],
+  );
+  const warehouseStageId = React.useMemo(() => {
+    return findOrderStageIdByCode(ORDER_STAGE_CODES.WAREHOUSE, ORDER_STAGE_WAREHOUSE_ID);
+  }, [findOrderStageIdByCode]);
+  const inCarStageId = React.useMemo(
+    () => findOrderStageIdByCode(ORDER_STAGE_CODES.IN_CAR, ORDER_STAGE_IN_CAR_ID),
+    [findOrderStageIdByCode],
+  );
+  const deliveredStageId = React.useMemo(
+    () => findOrderStageIdByCode(ORDER_STAGE_CODES.DELIVERED, ORDER_STAGE_DELIVERED_ID),
+    [findOrderStageIdByCode],
+  );
+  const completedTripStageId = React.useMemo(() => {
+    return findTripStageIdByCode(TRIP_STAGE_CODES.COMPLETED, TRIP_STAGE_COMPLETED_ID);
+  }, [findTripStageIdByCode]);
+
+  React.useEffect(() => {
+    if (isSupabaseConfigured) {
+      console.info("supabase_config_ok", supabaseDebugInfo);
+      return;
+    }
+    console.warn("supabase_not_configured", supabaseDebugInfo);
+  }, []);
+
+  React.useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return undefined;
+    let mounted = true;
+
+    const initAuth = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+        if (!mounted) return;
+        setCurrentUser(data.session?.user || null);
+      } catch (error) {
+        console.error("supabase_auth_init_failed", error);
+      } finally {
+        if (mounted) setAuthReady(true);
+      }
+    };
+
+    void initAuth();
+
+    const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+      setCurrentUser(session?.user || null);
+      if (event === "PASSWORD_RECOVERY") {
+        setIsChangePasswordScreenOpen(true);
+        setChangePasswordError("");
+        setChangePasswordInfo("Введите новый пароль.");
+      }
+      setAuthReady(true);
+    });
+
+    return () => {
+      mounted = false;
+      authListener?.subscription?.unsubscribe();
+    };
+  }, []);
 
   React.useEffect(() => {
     saveOrders(orders);
@@ -574,8 +763,157 @@ const App = () => {
   }, [trips]);
 
   React.useEffect(() => {
+    saveStages(ORDER_STAGES_STORAGE_KEY, orderStages);
+  }, [orderStages]);
+
+  React.useEffect(() => {
+    saveStages(TRIP_STAGES_STORAGE_KEY, tripStages);
+  }, [tripStages]);
+
+  React.useEffect(() => {
     localStorage.setItem(PRINT_SIGNER_STORAGE_KEY, JSON.stringify(printSignerSettings));
   }, [printSignerSettings]);
+
+  React.useEffect(() => {
+    if (!isSupabaseConfigured) return;
+    setIsCloudStateReady(Boolean(authReady && currentUser?.id));
+  }, [authReady, currentUser]);
+
+  React.useEffect(() => {
+    if (!isSupabaseConfigured || !supabase || !authReady || !currentUser?.id) return undefined;
+    let cancelled = false;
+    console.info("supabase_bootstrap_start", {
+      workspace: SUPABASE_WORKSPACE_KEY,
+      userId: currentUser.id,
+    });
+
+    const bootstrapCloudState = async () => {
+      try {
+        const { data, error } = await supabase
+          .from("app_state")
+          .select("*")
+          .eq("id", userScopedAppStateId)
+          .maybeSingle();
+
+        if (error) throw error;
+        if (cancelled) return;
+
+        if (!data) {
+          const payload = {
+            id: userScopedAppStateId,
+            owner_user_id: currentUser.id,
+            orders,
+            trips,
+            order_stages: orderStages,
+            trip_stages: tripStages,
+            print_signer: printSignerSettings,
+          };
+          const { error: insertError } = await supabase.from("app_state").upsert(payload);
+          if (insertError) throw insertError;
+          if (cancelled) return;
+          console.info("supabase_bootstrap_done", { source: "local_migrated" });
+          setIsCloudStateReady(true);
+          return;
+        }
+
+        const cloudOrders = Array.isArray(data.orders) ? data.orders : [];
+        const cloudTrips = Array.isArray(data.trips) ? data.trips : [];
+        const cloudOrderStages = Array.isArray(data.order_stages) && data.order_stages.length > 0
+          ? normalizeOrderStages(data.order_stages)
+          : DEFAULT_ORDER_STAGES;
+        const cloudTripStages = Array.isArray(data.trip_stages) && data.trip_stages.length > 0
+          ? normalizeTripStages(data.trip_stages)
+          : DEFAULT_TRIP_STAGES;
+        const cloudPrintSigner = data.print_signer && typeof data.print_signer === "object"
+          ? {
+              signerRole: String(data.print_signer.signerRole || DEFAULT_PRINT_SIGNER_SETTINGS.signerRole).trim(),
+              signerName: String(data.print_signer.signerName || DEFAULT_PRINT_SIGNER_SETTINGS.signerName).trim(),
+            }
+          : DEFAULT_PRINT_SIGNER_SETTINGS;
+
+        setOrders(cloudOrders);
+        setTrips(cloudTrips);
+        setOrderStages(cloudOrderStages);
+        setTripStages(cloudTripStages);
+        setPrintSignerSettings(cloudPrintSigner);
+        console.info("supabase_bootstrap_done", { source: "cloud_loaded" });
+        setIsCloudStateReady(true);
+      } catch (cloudError) {
+        console.error("supabase_state_bootstrap_failed", cloudError);
+        setIsCloudStateReady(true);
+      }
+    };
+
+    void bootstrapCloudState();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isSupabaseConfigured, authReady, currentUser, userScopedAppStateId]);
+
+  React.useEffect(() => {
+    if (!isSupabaseConfigured || !supabase || !authReady || !currentUser?.id || !isCloudStateReady) {
+      const reason = !isSupabaseConfigured
+        ? "not_configured"
+        : !supabase
+          ? "no_client"
+          : !authReady
+            ? "auth_not_ready"
+            : !currentUser?.id
+              ? "not_authenticated"
+          : "bootstrap_not_ready";
+      if (cloudSkipReasonRef.current !== reason) {
+        cloudSkipReasonRef.current = reason;
+        console.warn("supabase_save_skipped", { reason });
+      }
+      return undefined;
+    }
+    if (cloudSkipReasonRef.current) {
+      cloudSkipReasonRef.current = "";
+      console.info("supabase_save_resumed");
+    }
+    if (cloudSaveTimeoutRef.current) {
+      clearTimeout(cloudSaveTimeoutRef.current);
+    }
+
+    cloudSaveTimeoutRef.current = setTimeout(() => {
+      console.info("supabase_save_upsert_start", {
+        workspace: SUPABASE_WORKSPACE_KEY,
+        userId: currentUser.id,
+      });
+      void supabase.from("app_state").upsert({
+        id: userScopedAppStateId,
+        owner_user_id: currentUser.id,
+        orders,
+        trips,
+        order_stages: orderStages,
+        trip_stages: tripStages,
+        print_signer: printSignerSettings,
+      }).then(({ error }) => {
+        if (error) {
+          console.error("supabase_state_save_failed", error);
+          return;
+        }
+        console.info("supabase_save_upsert_ok");
+      });
+    }, 700);
+
+    return () => {
+      if (cloudSaveTimeoutRef.current) {
+        clearTimeout(cloudSaveTimeoutRef.current);
+      }
+    };
+  }, [
+    isCloudStateReady,
+    authReady,
+    currentUser,
+    userScopedAppStateId,
+    orders,
+    trips,
+    orderStages,
+    tripStages,
+    printSignerSettings,
+  ]);
 
   React.useEffect(() => {
     const fallbackStageId = orderStages[0]?.id;
@@ -1040,23 +1378,15 @@ const App = () => {
     () => trips.find((trip) => trip.id === editingTripId) || null,
     [trips, editingTripId],
   );
-  const occupiedOrderIdsByOtherTrips = React.useMemo(() => {
-    const ids = new Set();
-    trips.forEach((trip) => {
-      if (trip.id === editingTripId) return;
-      (trip.orderIds || []).forEach((orderId) => ids.add(orderId));
-    });
-    return ids;
-  }, [trips, editingTripId]);
   const availableOrdersForTrip = React.useMemo(() => {
     const editingOrderIds = new Set(editingTrip?.orderIds || []);
     return orders.filter((order) => {
       if (editingOrderIds.has(order.id)) return true;
-      const isWarehouse = order.stageId === ORDER_STAGE_WAREHOUSE_ID;
-      const isFree = !occupiedOrderIdsByOtherTrips.has(order.id);
-      return isWarehouse && isFree;
+      const isWarehouse = order.stageId === warehouseStageId;
+      // Warehouse status is the source of truth; stale trip links should not hide orders.
+      return isWarehouse;
     });
-  }, [orders, occupiedOrderIdsByOtherTrips, editingTrip]);
+  }, [orders, editingTrip, warehouseStageId]);
 
   React.useEffect(() => {
     const allowedOrderIds = new Set(availableOrdersForTrip.map((order) => order.id));
@@ -1174,15 +1504,15 @@ const App = () => {
     setOrders((prev) =>
       prev.map((order) => {
         if (selectedOrderIdsSet.has(order.id)) {
-          return { ...order, stageId: ORDER_STAGE_IN_CAR_ID };
+          return { ...order, stageId: inCarStageId };
         }
         if (
           editingTripId &&
           previousOrderIds.has(order.id) &&
           !occupiedByOtherTrips.has(order.id) &&
-          order.stageId === ORDER_STAGE_IN_CAR_ID
+          order.stageId === inCarStageId
         ) {
-          return { ...order, stageId: ORDER_STAGE_WAREHOUSE_ID };
+          return { ...order, stageId: warehouseStageId };
         }
         return order;
       }),
@@ -1322,7 +1652,7 @@ const App = () => {
   };
 
   const shouldRemoveOrderFromTrip = (stageId) =>
-    stageId === ORDER_STAGE_PLAN_ID || stageId === ORDER_STAGE_WAREHOUSE_ID;
+    stageId === planStageId || stageId === warehouseStageId;
   const buildTripOrdersSummary = (orderIds, sourceOrders) => {
     const selectedOrders = sourceOrders.filter((order) => orderIds.includes(order.id));
     const summaryHead = selectedOrders
@@ -1406,26 +1736,26 @@ const App = () => {
         return { ...trip, stageId: nextStageId };
       });
 
-      if (movedTrip && nextStageId === TRIP_STAGE_COMPLETED_ID) {
+      if (movedTrip && nextStageId === completedTripStageId) {
         const movedOrderIds = new Set(movedTrip.orderIds || []);
         setOrders((prevOrders) =>
           prevOrders.map((order) =>
             movedOrderIds.has(order.id)
-              ? { ...order, stageId: ORDER_STAGE_DELIVERED_ID }
+              ? { ...order, stageId: deliveredStageId }
               : order,
           ),
         );
       }
       if (
         movedTrip &&
-        previousStageId === TRIP_STAGE_COMPLETED_ID &&
-        nextStageId !== TRIP_STAGE_COMPLETED_ID
+        previousStageId === completedTripStageId &&
+        nextStageId !== completedTripStageId
       ) {
         const movedOrderIds = new Set(movedTrip.orderIds || []);
         setOrders((prevOrders) =>
           prevOrders.map((order) =>
             movedOrderIds.has(order.id)
-              ? { ...order, stageId: ORDER_STAGE_IN_CAR_ID }
+              ? { ...order, stageId: inCarStageId }
               : order,
           ),
         );
@@ -1446,26 +1776,26 @@ const App = () => {
         return { ...trip, stageId };
       });
 
-      if (movedTrip && stageId === TRIP_STAGE_COMPLETED_ID) {
+      if (movedTrip && stageId === completedTripStageId) {
         const movedOrderIds = new Set(movedTrip.orderIds || []);
         setOrders((prevOrders) =>
           prevOrders.map((order) =>
             movedOrderIds.has(order.id)
-              ? { ...order, stageId: ORDER_STAGE_DELIVERED_ID }
+              ? { ...order, stageId: deliveredStageId }
               : order,
           ),
         );
       }
       if (
         movedTrip &&
-        previousStageId === TRIP_STAGE_COMPLETED_ID &&
-        stageId !== TRIP_STAGE_COMPLETED_ID
+        previousStageId === completedTripStageId &&
+        stageId !== completedTripStageId
       ) {
         const movedOrderIds = new Set(movedTrip.orderIds || []);
         setOrders((prevOrders) =>
           prevOrders.map((order) =>
             movedOrderIds.has(order.id)
-              ? { ...order, stageId: ORDER_STAGE_IN_CAR_ID }
+              ? { ...order, stageId: inCarStageId }
               : order,
           ),
         );
@@ -1513,6 +1843,8 @@ const App = () => {
 
   const handleDeleteOrderStage = (stageId) => {
     if (orderStages.length <= 1) return;
+    const targetStage = orderStages.find((stage) => stage.id === stageId);
+    if (DEFAULT_ORDER_STAGE_CODES.has(String(targetStage?.code || ""))) return;
     const remaining = orderStages.filter((stage) => stage.id !== stageId);
     const fallbackStageId = remaining[0]?.id;
     setOrderStages(remaining);
@@ -1525,6 +1857,8 @@ const App = () => {
 
   const handleDeleteTripStage = (stageId) => {
     if (tripStages.length <= 1) return;
+    const targetStage = tripStages.find((stage) => stage.id === stageId);
+    if (DEFAULT_TRIP_STAGE_CODES.has(String(targetStage?.code || ""))) return;
     const remaining = tripStages.filter((stage) => stage.id !== stageId);
     const fallbackStageId = remaining[0]?.id;
     setTripStages(remaining);
@@ -1912,7 +2246,7 @@ const App = () => {
       if (type === "trip") {
         const tripToDelete = trips.find((trip) => trip.id === id);
         const tripOrderIds = new Set(tripToDelete?.orderIds || []);
-        if (tripToDelete?.stageId === TRIP_STAGE_COMPLETED_ID) {
+      if (tripToDelete?.stageId === completedTripStageId) {
           const ordersToDelete = orders.filter((order) => tripOrderIds.has(order.id));
           for (const order of ordersToDelete) {
             if (order?.driveFolderId) {
@@ -1931,8 +2265,8 @@ const App = () => {
           }
           setOrders((prevOrders) =>
             prevOrders.map((order) =>
-              tripOrderIds.has(order.id)
-                ? { ...order, stageId: ORDER_STAGE_WAREHOUSE_ID }
+            tripOrderIds.has(order.id)
+                ? { ...order, stageId: warehouseStageId }
                 : order,
             ),
           );
@@ -2037,6 +2371,108 @@ const App = () => {
     }));
   };
 
+  const handleAuthFieldChange = (field) => (event) => {
+    const value = String(event.target.value || "");
+    setAuthForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleSignIn = async () => {
+    if (!supabase) return;
+    setAuthError("");
+    setAuthInfo("");
+    setIsAuthSubmitting(true);
+    try {
+      const email = String(authForm.email || "").trim();
+      const password = String(authForm.password || "");
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+    } catch (error) {
+      setAuthError(error?.message || "Не удалось войти.");
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  const handleSignUp = async () => {
+    if (!supabase) return;
+    setAuthError("");
+    setAuthInfo("");
+    setIsAuthSubmitting(true);
+    try {
+      const email = String(authForm.email || "").trim();
+      const password = String(authForm.password || "");
+      const { error } = await supabase.auth.signUp({ email, password });
+      if (error) throw error;
+      setAuthInfo("Проверьте email: подтвердите регистрацию по ссылке.");
+    } catch (error) {
+      setAuthError(error?.message || "Не удалось зарегистрироваться.");
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  const handleRequestPasswordReset = async () => {
+    if (!supabase) return;
+    setAuthError("");
+    setAuthInfo("");
+    setIsAuthSubmitting(true);
+    try {
+      const email = String(authForm.email || "").trim();
+      if (!email) {
+        throw new Error("Введите email для восстановления.");
+      }
+      const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
+      if (error) throw error;
+      setAuthInfo("Ссылка для восстановления отправлена на email.");
+    } catch (error) {
+      setAuthError(error?.message || "Не удалось отправить ссылку восстановления.");
+    } finally {
+      setIsAuthSubmitting(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    if (!supabase) return;
+    setAuthError("");
+    setAuthInfo("");
+    setIsChangePasswordScreenOpen(false);
+    setChangePasswordError("");
+    setChangePasswordInfo("");
+    setChangePasswordForm({ password: "", confirmPassword: "" });
+    await supabase.auth.signOut();
+  };
+
+  const handleChangePasswordField = (field) => (event) => {
+    const value = String(event.target.value || "");
+    setChangePasswordForm((prev) => ({ ...prev, [field]: value }));
+  };
+
+  const handleChangePasswordSubmit = async () => {
+    if (!supabase) return;
+    setChangePasswordError("");
+    setChangePasswordInfo("");
+    setIsChangePasswordSubmitting(true);
+    try {
+      const password = String(changePasswordForm.password || "");
+      const confirmPassword = String(changePasswordForm.confirmPassword || "");
+      if (password.length < 6) {
+        throw new Error("Пароль должен быть не короче 6 символов.");
+      }
+      if (password !== confirmPassword) {
+        throw new Error("Пароли не совпадают.");
+      }
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) throw error;
+      setChangePasswordInfo("Пароль успешно изменен.");
+      setChangePasswordForm({ password: "", confirmPassword: "" });
+    } catch (error) {
+      setChangePasswordError(error?.message || "Не удалось изменить пароль.");
+    } finally {
+      setIsChangePasswordSubmitting(false);
+    }
+  };
+
   const settingsSections = [
     {
       id: 'google-drive',
@@ -2058,7 +2494,164 @@ const App = () => {
         setShowSignatureSettingsModal(true);
       },
     },
+    {
+      id: 'account',
+      title: 'Аккаунт',
+      status: currentUser?.email || 'Вход выполнен',
+      actionLabel: 'Открыть',
+      onOpen: () => {
+        setShowSettingsModal(false);
+        setShowAccountSettingsModal(true);
+      },
+    },
   ];
+  const isDefaultOrderStage = React.useCallback(
+    (stage) => DEFAULT_ORDER_STAGE_CODES.has(String(stage?.code || "")),
+    [],
+  );
+  const isDefaultTripStage = React.useCallback(
+    (stage) => DEFAULT_TRIP_STAGE_CODES.has(String(stage?.code || "")),
+    [],
+  );
+
+  if (isSupabaseConfigured && !authReady) {
+    return (
+      <div className="app">
+        <main className="workspace">
+          <section className="card panel-section">
+            <h2>Авторизация</h2>
+            <p>Проверяем сессию Supabase...</p>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (isSupabaseConfigured && !currentUser) {
+    return (
+      <div className="app">
+        <main className="workspace">
+          <section className="card panel-section" style={{ maxWidth: "520px", margin: "0 auto" }}>
+            <h2>{authScreen === "recover" ? "Восстановление пароля" : "Вход в систему"}</h2>
+            <div style={{ display: "grid", gap: "0.75rem", marginTop: "1rem" }}>
+              <label style={{ display: "grid", gap: "0.35rem" }}>
+                <span>Email</span>
+                <input
+                  type="email"
+                  value={authForm.email}
+                  onChange={handleAuthFieldChange("email")}
+                  placeholder="you@company.com"
+                />
+              </label>
+              <label style={{ display: "grid", gap: "0.35rem" }}>
+                <span>Пароль</span>
+                <input
+                  type="password"
+                  value={authForm.password}
+                  onChange={handleAuthFieldChange("password")}
+                  placeholder="Минимум 6 символов"
+                  disabled={authScreen === "recover"}
+                />
+              </label>
+              {authError && <small style={{ color: "#b91c1c" }}>{authError}</small>}
+              {authInfo && <small style={{ color: "#0f5132" }}>{authInfo}</small>}
+              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                {authScreen === "recover" ? (
+                  <>
+                    <button type="button" className="primary" onClick={handleRequestPasswordReset} disabled={isAuthSubmitting}>
+                      {isAuthSubmitting ? "Выполняем..." : "Отправить ссылку"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthScreen("login");
+                        setAuthError("");
+                        setAuthInfo("");
+                      }}
+                      disabled={isAuthSubmitting}
+                    >
+                      Назад к входу
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" className="primary" onClick={handleSignIn} disabled={isAuthSubmitting}>
+                      {isAuthSubmitting ? "Выполняем..." : "Войти"}
+                    </button>
+                    <button type="button" onClick={handleSignUp} disabled={isAuthSubmitting}>
+                      {isAuthSubmitting ? "Выполняем..." : "Зарегистрироваться"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAuthScreen("recover");
+                        setAuthError("");
+                        setAuthInfo("");
+                      }}
+                      disabled={isAuthSubmitting}
+                    >
+                      Восстановить пароль по email
+                    </button>
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (isSupabaseConfigured && currentUser && isChangePasswordScreenOpen) {
+    return (
+      <div className="app">
+        <main className="workspace">
+          <section className="card panel-section" style={{ maxWidth: "520px", margin: "0 auto" }}>
+            <h2>Сменить пароль</h2>
+            <div style={{ display: "grid", gap: "0.75rem", marginTop: "1rem" }}>
+              <label style={{ display: "grid", gap: "0.35rem" }}>
+                <span>Новый пароль</span>
+                <input
+                  type="password"
+                  value={changePasswordForm.password}
+                  onChange={handleChangePasswordField("password")}
+                  placeholder="Минимум 6 символов"
+                />
+              </label>
+              <label style={{ display: "grid", gap: "0.35rem" }}>
+                <span>Повторите пароль</span>
+                <input
+                  type="password"
+                  value={changePasswordForm.confirmPassword}
+                  onChange={handleChangePasswordField("confirmPassword")}
+                  placeholder="Повторите пароль"
+                />
+              </label>
+              {changePasswordError && <small style={{ color: "#b91c1c" }}>{changePasswordError}</small>}
+              {changePasswordInfo && <small style={{ color: "#0f5132" }}>{changePasswordInfo}</small>}
+              <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
+                <button type="button" className="primary" onClick={handleChangePasswordSubmit} disabled={isChangePasswordSubmitting}>
+                  {isChangePasswordSubmitting ? "Сохраняем..." : "Сохранить пароль"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsChangePasswordScreenOpen(false);
+                    setChangePasswordError("");
+                    setChangePasswordInfo("");
+                    setChangePasswordForm({ password: "", confirmPassword: "" });
+                  }}
+                  disabled={isChangePasswordSubmitting}
+                >
+                  Назад
+                </button>
+              </div>
+            </div>
+          </section>
+        </main>
+      </div>
+    );
+  }
 
   return (
     <div className="app">
@@ -2090,7 +2683,7 @@ const App = () => {
                     onRenameStage={handleRenameOrderStage}
                     onDeleteStage={handleDeleteOrderStage}
                     allowStageManagement
-                    isStageDefault={(stage) => DEFAULT_ORDER_STAGE_IDS.has(stage.id)}
+                    isStageDefault={isDefaultOrderStage}
                     renderItemCard={(order) => (
                       <div className="workflow-card">
                         <div className="workflow-card__top-actions">
@@ -2181,7 +2774,7 @@ const App = () => {
                     onRenameStage={handleRenameTripStage}
                     onDeleteStage={handleDeleteTripStage}
                     allowStageManagement
-                    isStageDefault={(stage) => DEFAULT_TRIP_STAGE_IDS.has(stage.id)}
+                    isStageDefault={isDefaultTripStage}
                     renderItemCard={(trip) => {
                       const tripOrders = orders.filter((order) => (trip.orderIds || []).includes(order.id));
                       const totalTripWeight = tripOrders.reduce((sum, order) => {
@@ -2270,6 +2863,20 @@ const App = () => {
         isOpen={showSettingsModal}
         settingsSections={settingsSections}
         onClose={() => setShowSettingsModal(false)}
+      />
+
+      <AccountSettingsModal
+        isOpen={showAccountSettingsModal}
+        accountEmail={currentUser?.email || ""}
+        onOpenChangePassword={() => {
+          setShowAccountSettingsModal(false);
+          setIsChangePasswordScreenOpen(true);
+        }}
+        onSignOut={() => {
+          setShowAccountSettingsModal(false);
+          void handleSignOut();
+        }}
+        onClose={() => setShowAccountSettingsModal(false)}
       />
 
       <DriveSettingsModal

@@ -1,4 +1,6 @@
-﻿export function AppHeader({ driveConnected, onOpenSettings }) {
+import React from "react";
+
+export function AppHeader({ driveConnected, onOpenSettings }) {
   return (
     <header className="app__header">
       <div>
@@ -323,6 +325,7 @@ export function SettingsModal({
   onClose,
 }) {
   if (!isOpen) return null;
+  const [hoveredSectionId, setHoveredSectionId] = React.useState("");
 
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
@@ -330,18 +333,72 @@ export function SettingsModal({
         <h2>Настройки</h2>
         <p>Выберите раздел настроек.</p>
         {settingsSections.map((section) => (
-          <div key={section.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "1rem", padding: "1rem", border: "1px solid #d7deea", borderRadius: "8px" }}>
+          <div
+            key={section.id}
+            role="button"
+            tabIndex={0}
+            onClick={section.onOpen}
+            onMouseEnter={() => setHoveredSectionId(section.id)}
+            onMouseLeave={() => setHoveredSectionId("")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                section.onOpen?.();
+              }
+            }}
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              gap: "1rem",
+              padding: "1rem",
+              border: "1px solid #d7deea",
+              borderRadius: "8px",
+              cursor: "pointer",
+              backgroundColor: hoveredSectionId === section.id ? "#eef2f7" : "#fff",
+              transition: "background-color 0.15s ease",
+            }}
+          >
             <div>
               <strong>{section.title}</strong>
               <div style={{ marginTop: "0.35rem", color: "#4f617e" }}>
                 Статус: {section.status}
               </div>
             </div>
-            <button type="button" className="primary" onClick={section.onOpen}>
-              {section.actionLabel}
-            </button>
           </div>
         ))}
+        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
+          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
+            Закрыть
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function AccountSettingsModal({
+  isOpen,
+  accountEmail,
+  onOpenChangePassword,
+  onSignOut,
+  onClose,
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+      <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
+        <h2>Аккаунт</h2>
+        <p>Текущий пользователь: <strong>{accountEmail || "—"}</strong></p>
+        <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.9rem" }}>
+          <button type="button" className="primary" onClick={onOpenChangePassword}>
+            Изменить пароль
+          </button>
+          <button type="button" onClick={onSignOut}>
+            Выйти
+          </button>
+        </div>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
           <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
             Закрыть
@@ -385,9 +442,7 @@ export function SignatureSettingsModal({
           </label>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
-          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
-            Закрыть
-          </button>
+          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>Сохранить</button>
         </div>
       </div>
     </div>

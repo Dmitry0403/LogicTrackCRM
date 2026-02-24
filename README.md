@@ -108,3 +108,19 @@ POA_XLSX_URL=https://example.com/power-of-attorney.xlsx
 POA_SHEET_TABS_JSON={"Шереметьево":"Шереметьево","Внуково":"Внуково","Домодедово":"Домодедово","Жуковский":"Жуковский"}
 POA_SYNC_TTL_MS=300000
 ```
+
+## Supabase Cloud State (Minimal)
+
+This project can store shared app state in Supabase (instead of only localStorage).
+
+1. In Supabase SQL editor run: `supabase/schema.sql`.
+2. Create frontend `.env` from `.env.example` and fill:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+   - `VITE_SUPABASE_WORKSPACE_ID` (default is `default`)
+3. Restart frontend dev server.
+
+Behavior:
+- On first launch with Supabase enabled, local state is migrated to cloud if cloud row does not exist.
+- If cloud row exists, app loads state from cloud.
+- Then app auto-saves `orders`, `trips`, stages, and print signature settings to cloud.

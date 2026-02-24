@@ -105,7 +105,16 @@ export function WorkflowBoard({
     return Number.isFinite(parsed) ? parsed : 0;
   }, []);
 
-  const isStageManageable = React.useCallback(
+  const isStageRenamable = React.useCallback(
+    (stage) => {
+      if (!allowStageManagement) return false;
+      if (!stage) return false;
+      return true;
+    },
+    [allowStageManagement],
+  );
+
+  const isStageDeletable = React.useCallback(
     (stage) => {
       if (!allowStageManagement) return false;
       if (!stage) return false;
@@ -115,7 +124,7 @@ export function WorkflowBoard({
   );
 
   const openRenameModal = (stage) => {
-    if (!isStageManageable(stage)) return;
+    if (!isStageRenamable(stage)) return;
     setActiveStageId(stage.id);
     setEditingStageId(stage.id);
     setEditingStageName(stage.name);
@@ -142,7 +151,7 @@ export function WorkflowBoard({
 
   const openDeleteModal = (stageId) => {
     const stage = stages.find((item) => item.id === stageId);
-    if (!isStageManageable(stage)) return;
+    if (!isStageDeletable(stage)) return;
     setDeleteStageId(stageId);
   };
 
@@ -229,7 +238,8 @@ export function WorkflowBoard({
             0,
           );
           const stageIsDefault = Boolean(isStageDefault && isStageDefault(stage));
-          const stageCanManage = isStageManageable(stage);
+          const stageCanRename = isStageRenamable(stage);
+          const stageCanDelete = isStageDeletable(stage);
           return (
             <section
               className={`workflow-column ${dragOverStageId === stage.id ? "workflow-column--drop-target" : ""}`}
@@ -266,8 +276,8 @@ export function WorkflowBoard({
                     </div>
                   </div>
                 )}
-                {stageCanManage &&
-                  (activeStageId === stage.id ? (
+                {stageCanRename &&
+                  (activeStageId === stage.id && stageCanDelete ? (
                     <button
                       type="button"
                       className="workflow-column__icon-btn workflow-column__icon-btn--delete"
