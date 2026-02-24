@@ -16,14 +16,19 @@ import {
   supabase,
   isSupabaseConfigured,
   SUPABASE_WORKSPACE_KEY,
-  supabaseDebugInfo,
 } from "./lib/supabase";
 
+const normalizeEnvValue = (rawValue) =>
+  String(rawValue || "")
+    .trim()
+    .replace(/^"(.*)"$/, "$1")
+    .replace(/^'(.*)'$/, "$1");
+
 const DRIVE_CONFIG = {
-  CLIENT_ID: "389372481906-pfjepgeg2odfqmfdopdbsn2t890uoahe.apps.googleusercontent.com",
-  API_KEY: "AIzaSyCU3YTk2rpt38Kyrz96Cz3Qh_xsMWOHMeA",
-  REDIRECT_URI: "http://localhost:5173/",
-  SCOPE: "https://www.googleapis.com/auth/drive.file",
+  CLIENT_ID: normalizeEnvValue(import.meta.env.VITE_GOOGLE_CLIENT_ID),
+  API_KEY: normalizeEnvValue(import.meta.env.VITE_GOOGLE_API_KEY),
+  REDIRECT_URI: normalizeEnvValue(import.meta.env.VITE_GOOGLE_REDIRECT_URI || "http://localhost:5173/"),
+  SCOPE: normalizeEnvValue(import.meta.env.VITE_GOOGLE_DRIVE_SCOPE || "https://www.googleapis.com/auth/drive.file"),
 };
 
 let pickerApiLoadPromise = null;
@@ -591,7 +596,7 @@ const App = () => {
   const [powerOfAttorneyRegistry, setPowerOfAttorneyRegistry] = React.useState(defaultPowerOfAttorneyRegistry);
   const [isPowerOfAttorneySyncLoading, setIsPowerOfAttorneySyncLoading] = React.useState(false);
   const [driveHint, setDriveHint] = React.useState(
-    "Чтобы активировать синхронизацию, укажите CLIENT_ID и API_KEY в app.jsx."
+    "Чтобы активировать синхронизацию, укажите VITE_GOOGLE_CLIENT_ID и VITE_GOOGLE_API_KEY в .env."
   );
 
   const [formData, setFormData] = React.useState({
@@ -669,7 +674,6 @@ const App = () => {
     }
   });
   const cloudSaveTimeoutRef = React.useRef(null);
-  const cloudSkipReasonRef = React.useRef("");
   const userScopedAppStateId = React.useMemo(
     () => (currentUser?.id ? `${currentUser.id}:${SUPABASE_WORKSPACE_KEY}` : ""),
     [currentUser],
@@ -712,14 +716,6 @@ const App = () => {
   }, [findTripStageIdByCode]);
 
   React.useEffect(() => {
-    if (isSupabaseConfigured) {
-      console.info("supabase_config_ok", supabaseDebugInfo);
-      return;
-    }
-    console.warn("supabase_not_configured", supabaseDebugInfo);
-  }, []);
-
-  React.useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return undefined;
     let mounted = true;
 
@@ -730,7 +726,7 @@ const App = () => {
         if (!mounted) return;
         setCurrentUser(data.session?.user || null);
       } catch (error) {
-        console.error("supabase_auth_init_failed", error);
+        console.error("Не удалось инициализировать сессию Supabase:", error);
       } finally {
         if (mounted) setAuthReady(true);
       }
@@ -782,10 +778,6 @@ const App = () => {
   React.useEffect(() => {
     if (!isSupabaseConfigured || !supabase || !authReady || !currentUser?.id) return undefined;
     let cancelled = false;
-    console.info("supabase_bootstrap_start", {
-      workspace: SUPABASE_WORKSPACE_KEY,
-      userId: currentUser.id,
-    });
 
     const bootstrapCloudState = async () => {
       try {
@@ -811,7 +803,6 @@ const App = () => {
           const { error: insertError } = await supabase.from("app_state").upsert(payload);
           if (insertError) throw insertError;
           if (cancelled) return;
-          console.info("supabase_bootstrap_done", { source: "local_migrated" });
           setIsCloudStateReady(true);
           return;
         }
@@ -836,10 +827,9 @@ const App = () => {
         setOrderStages(cloudOrderStages);
         setTripStages(cloudTripStages);
         setPrintSignerSettings(cloudPrintSigner);
-        console.info("supabase_bootstrap_done", { source: "cloud_loaded" });
         setIsCloudStateReady(true);
       } catch (cloudError) {
-        console.error("supabase_state_bootstrap_failed", cloudError);
+        console.error("Не удалось загрузить состояние из Supabase:", cloudError);
         setIsCloudStateReady(true);
       }
     };
@@ -853,34 +843,13 @@ const App = () => {
 
   React.useEffect(() => {
     if (!isSupabaseConfigured || !supabase || !authReady || !currentUser?.id || !isCloudStateReady) {
-      const reason = !isSupabaseConfigured
-        ? "not_configured"
-        : !supabase
-          ? "no_client"
-          : !authReady
-            ? "auth_not_ready"
-            : !currentUser?.id
-              ? "not_authenticated"
-          : "bootstrap_not_ready";
-      if (cloudSkipReasonRef.current !== reason) {
-        cloudSkipReasonRef.current = reason;
-        console.warn("supabase_save_skipped", { reason });
-      }
       return undefined;
-    }
-    if (cloudSkipReasonRef.current) {
-      cloudSkipReasonRef.current = "";
-      console.info("supabase_save_resumed");
     }
     if (cloudSaveTimeoutRef.current) {
       clearTimeout(cloudSaveTimeoutRef.current);
     }
 
     cloudSaveTimeoutRef.current = setTimeout(() => {
-      console.info("supabase_save_upsert_start", {
-        workspace: SUPABASE_WORKSPACE_KEY,
-        userId: currentUser.id,
-      });
       void supabase.from("app_state").upsert({
         id: userScopedAppStateId,
         owner_user_id: currentUser.id,
@@ -891,10 +860,8 @@ const App = () => {
         print_signer: printSignerSettings,
       }).then(({ error }) => {
         if (error) {
-          console.error("supabase_state_save_failed", error);
-          return;
+          console.error("Не удалось сохранить состояние в Supabase:", error);
         }
-        console.info("supabase_save_upsert_ok");
       });
     }, 700);
 
@@ -1871,7 +1838,7 @@ const App = () => {
 
   const connectGoogleDrive = async () => {
     if (!DRIVE_CONFIG.CLIENT_ID) {
-      setDriveHint('Нужен CLIENT_ID. Добавьте его в app.jsx для подключения.');
+      setDriveHint('Нужен VITE_GOOGLE_CLIENT_ID. Добавьте его в .env для подключения.');
       return;
     }
 
@@ -2144,7 +2111,7 @@ const App = () => {
       
       // Проверить, загружена ли Google Picker API
       if (!DRIVE_CONFIG.API_KEY) {
-        setDriveHint('Укажите API_KEY в DRIVE_CONFIG, чтобы открыть выбор папки.');
+        setDriveHint('Укажите VITE_GOOGLE_API_KEY в .env, чтобы открыть выбор папки.');
         return;
       }
 

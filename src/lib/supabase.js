@@ -23,9 +23,3 @@ export const supabase = isSupabaseConfigured
   : null;
 
 export const SUPABASE_WORKSPACE_KEY = SUPABASE_WORKSPACE_ID;
-export const supabaseDebugInfo = {
-  configured: isSupabaseConfigured,
-  hasUrl: Boolean(SUPABASE_URL),
-  hasKey: Boolean(SUPABASE_ANON_KEY),
-  workspace: SUPABASE_WORKSPACE_ID,
-};
