@@ -31,6 +31,8 @@ const DRIVE_CONFIG = {
   SCOPE: normalizeEnvValue(import.meta.env.VITE_GOOGLE_DRIVE_SCOPE || "https://www.googleapis.com/auth/drive.file"),
 };
 
+const API_BASE_URL = normalizeEnvValue(import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/+$/, "");
+
 let pickerApiLoadPromise = null;
 
 const loadGooglePickerApi = () => {
@@ -150,10 +152,10 @@ const getCustomsSuggestions = (typedValue) => {
     }));
 };
 
-const POWER_OF_ATTORNEY_REGISTRY_URL = "http://localhost:3001/poa/registry";
+const POWER_OF_ATTORNEY_REGISTRY_URL = `${API_BASE_URL}/poa/registry`;
 const POWER_OF_ATTORNEY_FALLBACK_URL = "/power-of-attorney-registry.json";
-const CARGO_STATUS_URL = "http://localhost:3001/cargo/status";
-const CARGO_API_BASE_URL = "http://localhost:3001";
+const CARGO_STATUS_URL = `${API_BASE_URL}/cargo/status`;
+const CARGO_API_BASE_URL = API_BASE_URL;
 const PRINT_SIGNER_STORAGE_KEY = "logictrack_print_signer";
 const ORDER_STAGES_STORAGE_KEY = "logictrack_order_stages";
 const TRIP_STAGES_STORAGE_KEY = "logictrack_trip_stages";
@@ -963,7 +965,7 @@ const App = () => {
       if (toks && toks.refresh_token) {
         try {
           setDriveHint('Обновляю токен доступа...');
-          const res = await fetch('http://localhost:3001/oauth/token', {
+          const res = await fetch(`${API_BASE_URL}/oauth/token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ refresh_token: toks.refresh_token, grant_type: 'refresh_token' }),
@@ -993,7 +995,7 @@ const App = () => {
 
       try {
         setDriveHint('Обмениваю код авторизации на токен (через локальный прокси)...');
-        const res = await fetch('http://localhost:3001/oauth/token', {
+        const res = await fetch(`${API_BASE_URL}/oauth/token`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ code }),
@@ -1885,7 +1887,7 @@ const App = () => {
     // Fallback: try refresh token (server flow)
     if (toks && toks.refresh_token) {
       try {
-        const res = await fetch('http://localhost:3001/oauth/token', {
+        const res = await fetch(`${API_BASE_URL}/oauth/token`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ refresh_token: toks.refresh_token, grant_type: 'refresh_token' }),

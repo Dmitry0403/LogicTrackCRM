@@ -26,10 +26,11 @@ const defaultOrigins = [
 ];
 
 const corsOrigins = allowedOrigins.length > 0 ? allowedOrigins : defaultOrigins;
+const allowAllOrigins = corsOrigins.includes('*');
 
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || corsOrigins.includes(origin)) {
+    if (!origin || allowAllOrigins || corsOrigins.includes(origin)) {
       callback(null, true);
       return;
     }
@@ -1832,11 +1833,15 @@ app.post('/oauth/token', async (req, res) => {
   try {
     const { code, refresh_token } = req.body;
     const params = new URLSearchParams();
+    const redirectUri = String(process.env.REDIRECT_URI || '').trim();
 
     if (code) {
+      if (!redirectUri) {
+        return res.status(500).json({ error: 'missing_redirect_uri' });
+      }
       params.set('code', code);
       params.set('grant_type', 'authorization_code');
-      params.set('redirect_uri', process.env.REDIRECT_URI || 'http://localhost:5173/');
+      params.set('redirect_uri', redirectUri);
     } else if (refresh_token) {
       params.set('grant_type', 'refresh_token');
       params.set('refresh_token', refresh_token);
@@ -2068,6 +2073,14 @@ app.get('/poa/registry', async (req, res) => {
   }
 });
 
+app.get('/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'logictrack-oauth-proxy',
+    timestamp: new Date().toISOString(),
+  });
+});
+
 app.post('/trip-application/pdf', async (req, res) => {
   try {
     const tripRaw = req.body?.trip || {};
@@ -2125,7 +2138,7 @@ app.post('/trip-application/pdf', async (req, res) => {
 });
 
 const port = process.env.PORT || 3000;
-app.listen(port, () => console.log(`OAuth proxy listening on http://localhost:${port}`));
+app.listen(port, () => console.log(`OAuth proxy listening on 0.0.0.0:${port}; CORS_ORIGIN=${allowAllOrigins ? '*' : corsOrigins.join(',')}`));
 
 
 
