@@ -31,7 +31,9 @@ const DRIVE_CONFIG = {
   SCOPE: normalizeEnvValue(import.meta.env.VITE_GOOGLE_DRIVE_SCOPE || "https://www.googleapis.com/auth/drive.file"),
 };
 
-const API_BASE_URL = normalizeEnvValue(import.meta.env.VITE_API_BASE_URL || "http://localhost:3001").replace(/\/+$/, "");
+const API_BASE_URL = normalizeEnvValue(
+  import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:3001" : ""),
+).replace(/\/+$/, "");
 
 let pickerApiLoadPromise = null;
 
@@ -2955,7 +2957,6 @@ const App = () => {
   );
 };
 export default App;
-
 
 
 
