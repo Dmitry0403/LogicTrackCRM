@@ -104,6 +104,39 @@ const setStoredTokens = (tokens) => {
   localStorage.setItem('gdrive_tokens', JSON.stringify(tokens));
 };
 
+const getStoredDriveAccount = () => {
+  try {
+    return JSON.parse(localStorage.getItem('gdrive_account') || 'null');
+  } catch (e) {
+    return null;
+  }
+};
+
+const setStoredDriveAccount = (account) => {
+  if (!account) {
+    localStorage.removeItem('gdrive_account');
+    return;
+  }
+  localStorage.setItem('gdrive_account', JSON.stringify(account));
+};
+
+const fetchGoogleDriveAccount = async (accessToken) => {
+  if (!accessToken) return null;
+  const res = await fetch('https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)', {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const data = await res.json();
+  if (!res.ok || data.error) {
+    throw new Error(data?.error?.message || `Drive about request failed: ${res.status}`);
+  }
+  const email = String(data?.user?.emailAddress || '').trim();
+  const name = String(data?.user?.displayName || '').trim();
+  if (!email && !name) return null;
+  return { email, name };
+};
+
 
 const customsCodeMap = {
   "06536": "ПТО Аэропорт Минск",
@@ -600,7 +633,7 @@ const App = () => {
   const [powerOfAttorneyRegistry, setPowerOfAttorneyRegistry] = React.useState(defaultPowerOfAttorneyRegistry);
   const [isPowerOfAttorneySyncLoading, setIsPowerOfAttorneySyncLoading] = React.useState(false);
   const [driveHint, setDriveHint] = React.useState(
-    "Чтобы активировать синхронизацию, укажите VITE_GOOGLE_CLIENT_ID и VITE_GOOGLE_API_KEY в .env."
+    "Чтобы активировать синхронизацию, подключите Google Drive."
   );
 
   const [formData, setFormData] = React.useState({
@@ -677,6 +710,7 @@ const App = () => {
       return null;
     }
   });
+  const [driveAccount, setDriveAccount] = React.useState(() => getStoredDriveAccount());
   const backendWarmupAtRef = React.useRef(0);
   const cloudSaveTimeoutRef = React.useRef(null);
   const userScopedAppStateId = React.useMemo(
@@ -990,14 +1024,21 @@ const App = () => {
       const toks = getStoredTokens();
       if (toks && toks.access_token && toks.expires_at && Date.now() < toks.expires_at - 60000) {
         setDriveConnected(true);
-        setDriveHint('Google Drive: подключено (токен в localStorage).');
+        setDriveHint('Google Drive подключен.');
+        try {
+          const account = await fetchGoogleDriveAccount(toks.access_token);
+          setDriveAccount(account);
+          setStoredDriveAccount(account);
+        } catch (err) {
+          console.warn('Не удалось получить данные аккаунта Google Drive:', err);
+        }
         return; 
       }
 
       
       if (toks && toks.refresh_token) {
         try {
-          setDriveHint('Обновляю токен доступа...');
+          setDriveHint('Проверяем подключение к Google Drive...');
           const res = await fetch(`${API_BASE_URL}/oauth/token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1013,7 +1054,14 @@ const App = () => {
           };
           setStoredTokens(newTokens);
           setDriveConnected(true);
-          setDriveHint('Google Drive: переподключено (обновлён токен).');
+          setDriveHint('Google Drive подключен.');
+          try {
+            const account = await fetchGoogleDriveAccount(newTokens.access_token);
+            setDriveAccount(account);
+            setStoredDriveAccount(account);
+          } catch (err) {
+            console.warn('Не удалось получить данные аккаунта Google Drive:', err);
+          }
           return;
         } catch (err) {
           console.warn('Не удалось обновить токен:', err.message);
@@ -1027,7 +1075,7 @@ const App = () => {
       if (!code) return;
 
       try {
-        setDriveHint('Обмениваю код авторизации на токен (через локальный прокси)...');
+        setDriveHint('Подключаем Google Drive...');
         const res = await fetch(`${API_BASE_URL}/oauth/token`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1043,7 +1091,14 @@ const App = () => {
         };
         setStoredTokens(tokens);
         setDriveConnected(true);
-        setDriveHint('Успешно подключено к Google Drive (через сервер).');
+        setDriveHint('Google Drive успешно подключен.');
+        try {
+          const account = await fetchGoogleDriveAccount(tokens.access_token);
+          setDriveAccount(account);
+          setStoredDriveAccount(account);
+        } catch (fetchAccountError) {
+          console.warn('Не удалось получить данные аккаунта Google Drive:', fetchAccountError);
+        }
 
         // Remove code from URL
         const url = new URL(window.location);
@@ -1051,7 +1106,7 @@ const App = () => {
         window.history.replaceState({}, document.title, url.toString());
       } catch (err) {
         console.error(err);
-        setDriveHint('Ошибка при получении токена: ' + (err.message || err));
+        setDriveHint('Не удалось подключить Google Drive. Попробуйте еще раз.');
       }
     })();
   }, []);
@@ -1857,9 +1912,28 @@ const App = () => {
     );
   };
 
+  const clearGoogleDriveSession = React.useCallback(({ notify = false } = {}) => {
+    localStorage.removeItem('gdrive_tokens');
+    localStorage.removeItem('gdrive_selected_folder');
+    localStorage.removeItem('gdrive_account');
+    setDriveConnected(false);
+    setSelectedDriveFolder(null);
+    setDriveAccount(null);
+    if (notify) {
+      setDriveHint('Google Drive отключен. Нажмите "Подключить Google Drive", чтобы включить синхронизацию.');
+    }
+  }, []);
+
   const connectGoogleDrive = async () => {
+    const currentTokens = getStoredTokens();
+    const hasSavedSession = Boolean(currentTokens?.access_token || currentTokens?.refresh_token);
+    if (driveConnected || selectedDriveFolder || hasSavedSession) {
+      clearGoogleDriveSession();
+      setDriveHint('Отключаю текущее подключение и запускаю новую авторизацию Google Drive...');
+    }
+
     if (!DRIVE_CONFIG.CLIENT_ID) {
-      setDriveHint('Нужен VITE_GOOGLE_CLIENT_ID. Добавьте его в .env для подключения.');
+      setDriveHint('Подключение временно недоступно. Обратитесь к администратору.');
       return;
     }
 
@@ -1878,7 +1952,7 @@ const App = () => {
       window.location = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
     } catch (err) {
       console.error(err);
-      setDriveHint('Ошибка инициации авторизации: ' + (err.message || err));
+      setDriveHint('Не удалось начать подключение. Попробуйте еще раз.');
     }
   };
 
@@ -2132,12 +2206,12 @@ const App = () => {
       
       // Проверить, загружена ли Google Picker API
       if (!DRIVE_CONFIG.API_KEY) {
-        setDriveHint('Укажите VITE_GOOGLE_API_KEY в .env, чтобы открыть выбор папки.');
+        setDriveHint('Сейчас нельзя открыть выбор папки. Обратитесь к администратору.');
         return;
       }
 
       if (typeof google === 'undefined' || typeof google.picker === 'undefined') {
-        setDriveHint('Google Picker API ещё не загружена. Попробуйте через секунду.');
+        setDriveHint('Выбор папки пока недоступен. Повторите через пару секунд.');
         return;
       }
 
@@ -2172,16 +2246,12 @@ const App = () => {
       picker.setVisible(true);
     } catch (err) {
       console.error(err);
-      setDriveHint('Ошибка открытия выбора папки: ' + (err.message || err));
+      setDriveHint('Не удалось открыть выбор папки. Попробуйте еще раз.');
     }
   };
 
   const handleDisconnectGoogleDrive = () => {
-    localStorage.removeItem('gdrive_tokens');
-    localStorage.removeItem('gdrive_selected_folder');
-    setDriveConnected(false);
-    setSelectedDriveFolder(null);
-    setDriveHint('Токены очищены. Нажмите "Подключить Google Drive" заново.');
+    clearGoogleDriveSession({ notify: true });
   };
 
   const openDeleteOrderConfirm = (order) => {
@@ -2465,7 +2535,11 @@ const App = () => {
     {
       id: 'google-drive',
       title: 'Google Drive',
-      status: driveConnected ? 'подключен' : 'не подключен',
+      status: driveConnected
+        ? driveAccount?.email
+          ? `подключен: ${driveAccount.email}`
+          : 'подключен (аккаунт не определен)'
+        : 'не подключен',
       actionLabel: 'Открыть',
       onOpen: () => {
         setShowSettingsModal(false);
@@ -2974,5 +3048,3 @@ const App = () => {
   );
 };
 export default App;
-
-
