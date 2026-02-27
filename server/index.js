@@ -499,31 +499,42 @@ const buildOrderTokenMap = (order, index) => {
   ]);
 };
 
-const findParagraphByToken = (xml, token) => {
-  const pattern = new RegExp(`<w:p[\\s\\S]*?${escapeRegExp(token)}[\\s\\S]*?<\\/w:p>`);
-  return pattern.exec(xml);
+const getParagraphEntries = (xml) => {
+  const entries = [];
+  const regex = /<w:p[\s\S]*?<\/w:p>/g;
+  let match = regex.exec(xml);
+  while (match) {
+    entries.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      xml: match[0],
+    });
+    match = regex.exec(xml);
+  }
+  return entries;
 };
 
+const findParagraphEntryByToken = (entries, token, fromIndex = 0) =>
+  entries.find((entry) => entry.start >= fromIndex && entry.xml.includes(token)) || null;
+
 const expandOrderTemplateParagraph = (xml, orders) => {
-  const mainMatch = /<w:p[\s\S]*?\{\{N\}\}[\s\S]*?\{\{RECIPIENT\}\}[\s\S]*?<\/w:p>/.exec(xml);
-  if (!mainMatch) return xml;
+  const entries = getParagraphEntries(xml);
+  const mainEntry = entries.find((entry) => entry.xml.includes('{{N}}') && entry.xml.includes('{{RECIPIENT}}'));
+  if (!mainEntry) return xml;
 
-  const mainStart = mainMatch.index;
-  const mainEnd = mainMatch.index + mainMatch[0].length;
+  const customsEntry = findParagraphEntryByToken(entries, '{{CUSTOMS_NAME}}', mainEntry.start);
+  const noteEntry = findParagraphEntryByToken(entries, '{{NOTE}}', mainEntry.start);
 
-  const customsMatch = findParagraphByToken(xml, '{{CUSTOMS_NAME}}');
-  const noteMatch = findParagraphByToken(xml, '{{NOTE}}');
+  const blockTemplates = [mainEntry.xml];
+  let blockEnd = mainEntry.end;
 
-  const blockTemplates = [mainMatch[0]];
-  let blockEnd = mainEnd;
-
-  if (customsMatch && customsMatch.index >= mainStart) {
-    blockTemplates.push(customsMatch[0]);
-    blockEnd = Math.max(blockEnd, customsMatch.index + customsMatch[0].length);
+  if (customsEntry) {
+    blockTemplates.push(customsEntry.xml);
+    blockEnd = Math.max(blockEnd, customsEntry.end);
   }
-  if (noteMatch && noteMatch.index >= mainStart) {
-    blockTemplates.push(noteMatch[0]);
-    blockEnd = Math.max(blockEnd, noteMatch.index + noteMatch[0].length);
+  if (noteEntry) {
+    blockTemplates.push(noteEntry.xml);
+    blockEnd = Math.max(blockEnd, noteEntry.end);
   }
 
   const generatedBlocks = orders.map((order, index) => {
@@ -543,7 +554,7 @@ const expandOrderTemplateParagraph = (xml, orders) => {
       .join('');
   });
 
-  return `${xml.slice(0, mainStart)}${generatedBlocks.join('')}${xml.slice(blockEnd)}`;
+  return `${xml.slice(0, mainEntry.start)}${generatedBlocks.join('')}${xml.slice(blockEnd)}`;
 };
 
 const generateTripDocxFromTemplate = async ({ templatePath, trip, orders }) => {
