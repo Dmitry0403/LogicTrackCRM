@@ -554,7 +554,12 @@ const expandOrderTemplateParagraph = (xml, orders) => {
       .join('');
   });
 
-  return `${xml.slice(0, mainEntry.start)}${generatedBlocks.join('')}${xml.slice(blockEnd)}`;
+  const spacerParagraph = '<w:p><w:r><w:t xml:space="preserve"> </w:t></w:r></w:p>';
+  const withSpacing = generatedBlocks
+    .map((block, index) => (index < generatedBlocks.length - 1 ? `${block}${spacerParagraph}` : block))
+    .join('');
+
+  return `${xml.slice(0, mainEntry.start)}${withSpacing}${xml.slice(blockEnd)}`;
 };
 
 const generateTripDocxFromTemplate = async ({ templatePath, trip, orders }) => {
