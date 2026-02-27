@@ -448,6 +448,9 @@ const escapeXmlText = (value) =>
 
 const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
+const normalizeSplitPlaceholdersInXml = (xml) =>
+  String(xml || '').replace(/\{\{[\s\S]*?\}\}/g, (segment) => segment.replace(/<[^>]+>/g, ''));
+
 const findParagraphRangeByToken = (xml, token) => {
   const pattern = new RegExp(`<w:p[\\s\\S]*?${escapeRegExp(token)}[\\s\\S]*?<\\/w:p>`);
   const match = pattern.exec(xml);
@@ -476,6 +479,43 @@ const buildOrdersDocxParagraphs = (orders) => {
     .join('');
 };
 
+const buildOrderTokenMap = (order, index) => {
+  const recipient = String(order.name || order.recipient || 'Без названия').trim();
+  const awb = String(order.awb || '').trim();
+  const places = String(order.quantity || '').trim();
+  const weight = String(order.weight || '').trim();
+  const customsName = String(order.customsName || '').trim();
+  const customsCode = String(order.customsCode || '').trim();
+  const note = String(order.notes || '').trim();
+  return new Map([
+    ['{{N}}', String(index + 1)],
+    ['{{RECIPIENT}}', recipient],
+    ['{{AWB}}', awb],
+    ['{{PLACES}}', places],
+    ['{{WEIGHT}}', weight],
+    ['{{CUSTOMS_NAME}}', customsName],
+    ['{{CUSTOMS_CODE}}', customsCode],
+    ['{{NOTE}}', note],
+  ]);
+};
+
+const expandOrderTemplateParagraph = (xml, orders) => {
+  const paragraphPattern = /<w:p[\s\S]*?\{\{N\}\}[\s\S]*?\{\{RECIPIENT\}\}[\s\S]*?<\/w:p>/;
+  const match = paragraphPattern.exec(xml);
+  if (!match) return xml;
+
+  const templateParagraph = match[0];
+  const paragraphs = orders.map((order, index) => {
+    let current = templateParagraph;
+    buildOrderTokenMap(order, index).forEach((value, token) => {
+      current = current.replace(new RegExp(escapeRegExp(token), 'g'), escapeXmlText(value));
+    });
+    return current;
+  });
+
+  return `${xml.slice(0, match.index)}${paragraphs.join('')}${xml.slice(match.index + templateParagraph.length)}`;
+};
+
 const generateTripDocxFromTemplate = async ({ templatePath, trip, orders }) => {
   const templateBuffer = await fs.readFile(templatePath);
   const zip = await JSZip.loadAsync(templateBuffer);
@@ -485,6 +525,7 @@ const generateTripDocxFromTemplate = async ({ templatePath, trip, orders }) => {
   }
 
   let xml = await documentXmlFile.async('string');
+  xml = normalizeSplitPlaceholdersInXml(xml);
   const replacements = new Map([
     ['{{TRIP_NUMBER}}', String(trip.tripNumber || '').trim()],
     ['{{TRIP_DATE}}', formatTripDateRu(trip.tripDate)],
@@ -507,12 +548,21 @@ const generateTripDocxFromTemplate = async ({ templatePath, trip, orders }) => {
   if (startRange && endRange && startRange.start < endRange.start) {
     xml = `${xml.slice(0, startRange.start)}${ordersParagraphs}${xml.slice(endRange.end)}`;
   } else {
+    xml = expandOrderTemplateParagraph(xml, orders);
     xml = xml.replace(new RegExp(escapeRegExp('{{ORDERS_TEXT}}'), 'g'), escapeXmlText(orders.map((o) => o.name || o.recipient || '').join(', ')));
   }
 
   xml = xml
     .replace(new RegExp(escapeRegExp('{{ORDERS_START}}'), 'g'), '')
-    .replace(new RegExp(escapeRegExp('{{ORDERS_END}}'), 'g'), '');
+    .replace(new RegExp(escapeRegExp('{{ORDERS_END}}'), 'g'), '')
+    .replace(new RegExp(escapeRegExp('{{N}}'), 'g'), '')
+    .replace(new RegExp(escapeRegExp('{{RECIPIENT}}'), 'g'), '')
+    .replace(new RegExp(escapeRegExp('{{AWB}}'), 'g'), '')
+    .replace(new RegExp(escapeRegExp('{{PLACES}}'), 'g'), '')
+    .replace(new RegExp(escapeRegExp('{{WEIGHT}}'), 'g'), '')
+    .replace(new RegExp(escapeRegExp('{{CUSTOMS_NAME}}'), 'g'), '')
+    .replace(new RegExp(escapeRegExp('{{CUSTOMS_CODE}}'), 'g'), '')
+    .replace(new RegExp(escapeRegExp('{{NOTE}}'), 'g'), '');
 
   zip.file('word/document.xml', xml);
   return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
