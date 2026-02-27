@@ -45,6 +45,7 @@ const POA_XLSX_PATH = process.env.POA_XLSX_PATH || '';
 const CARGO_STATUS_TTL_MS = Number(process.env.CARGO_STATUS_TTL_MS || 300000);
 const CARGO_CHECK_TIMEOUT_MS = Number(process.env.CARGO_CHECK_TIMEOUT_MS || 45000);
 const CARGO_SCREENSHOTS_ENABLED = String(process.env.CARGO_SCREENSHOTS_ENABLED || 'true').toLowerCase() === 'true';
+const TRIP_PDF_ENGINE = String(process.env.TRIP_PDF_ENGINE || '').trim().toLowerCase();
 const TRIP_APPLICATION_TEMPLATE_PATH = (() => {
   const rawPath = String(process.env.TRIP_APPLICATION_TEMPLATE_PATH || './templates/STS order.docx').trim();
   if (!rawPath) {
@@ -414,6 +415,26 @@ finally {
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }
+};
+
+const resolveTripPdfEngine = () => {
+  if (TRIP_PDF_ENGINE === 'word' || TRIP_PDF_ENGINE === 'html') {
+    return TRIP_PDF_ENGINE;
+  }
+  return process.platform === 'win32' ? 'word' : 'html';
+};
+
+const generateTripPdf = async ({ trip, orders }) => {
+  const engine = resolveTripPdfEngine();
+  if (engine === 'word') {
+    return generateTripPdfFromWordTemplate({
+      templatePath: TRIP_APPLICATION_TEMPLATE_PATH,
+      trip,
+      orders,
+    });
+  }
+  const html = buildTripApplicationPdfHtml({ trip, orders });
+  return generatePdfFromHtml(html);
 };
 
 const getCargoCacheKey = ({ terminal, awb }) => `${normalizeText(terminal)}::${normalizeAwb(awb)}`;
@@ -2114,11 +2135,7 @@ app.post('/trip-application/pdf', async (req, res) => {
       notes: String(order?.notes || '').trim(),
     }));
 
-    const pdfBuffer = await generateTripPdfFromWordTemplate({
-      templatePath: TRIP_APPLICATION_TEMPLATE_PATH,
-      trip,
-      orders,
-    });
+    const pdfBuffer = await generateTripPdf({ trip, orders });
     const safeTripNumber = (trip.tripNumber || 'trip').replace(/[^0-9A-Za-z_-]+/g, '_');
 
     res.setHeader('Content-Type', 'application/pdf');
@@ -2128,6 +2145,7 @@ app.post('/trip-application/pdf', async (req, res) => {
     console.error('trip_pdf_generation_failed', {
       message: error.message,
       stack: error.stack,
+      engine: resolveTripPdfEngine(),
       templatePath: TRIP_APPLICATION_TEMPLATE_PATH,
     });
     return res.status(500).json({
