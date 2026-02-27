@@ -677,6 +677,7 @@ const App = () => {
       return null;
     }
   });
+  const backendWarmupAtRef = React.useRef(0);
   const cloudSaveTimeoutRef = React.useRef(null);
   const userScopedAppStateId = React.useMemo(
     () => (currentUser?.id ? `${currentUser.id}:${SUPABASE_WORKSPACE_KEY}` : ""),
@@ -719,6 +720,26 @@ const App = () => {
     return findTripStageIdByCode(TRIP_STAGE_CODES.COMPLETED, TRIP_STAGE_COMPLETED_ID);
   }, [findTripStageIdByCode]);
 
+  const warmupBackend = React.useCallback(() => {
+    if (typeof window === "undefined") return;
+    const now = Date.now();
+    if (now - backendWarmupAtRef.current < 60000) return;
+    backendWarmupAtRef.current = now;
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), 7000);
+    void fetch(`${CARGO_API_BASE_URL}/health`, {
+      method: "GET",
+      cache: "no-store",
+      signal: abortController.signal,
+    })
+      .catch(() => {
+        // Warmup request is best-effort.
+      })
+      .finally(() => {
+        clearTimeout(timeoutId);
+      });
+  }, []);
+
   React.useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return undefined;
     let mounted = true;
@@ -753,6 +774,16 @@ const App = () => {
       authListener?.subscription?.unsubscribe();
     };
   }, []);
+
+  React.useEffect(() => {
+    warmupBackend();
+  }, [warmupBackend]);
+
+  React.useEffect(() => {
+    if (activeView === "orders" && ordersScreenMode === "create") {
+      warmupBackend();
+    }
+  }, [activeView, ordersScreenMode, warmupBackend]);
 
   React.useEffect(() => {
     saveOrders(orders);
@@ -2943,6 +2974,5 @@ const App = () => {
   );
 };
 export default App;
-
 
 
