@@ -1504,7 +1504,7 @@ const App = () => {
     if (typeof window === "undefined") return;
     setIsTripPrintLoading(true);
     try {
-      const response = await fetch(resolveCargoApiUrl("/trip-application/pdf"), {
+      const response = await fetch(resolveCargoApiUrl("/trip-application/docx"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1545,35 +1545,21 @@ const App = () => {
         } catch (_) {
           // ignore parse errors
         }
-        throw new Error(`PDF generation failed: ${response.status}${details ? ` (${details})` : ""}`);
+        throw new Error(`DOCX generation failed: ${response.status}${details ? ` (${details})` : ""}`);
       }
 
-      const pdfBlob = await response.blob();
-      const pdfUrl = URL.createObjectURL(pdfBlob);
-      const printWindow = window.open(pdfUrl, "_blank");
-      if (!printWindow) {
-        URL.revokeObjectURL(pdfUrl);
-        alert("Разрешите всплывающие окна, чтобы открыть печатную форму.");
-        return;
-      }
-      const tryPrint = () => {
-        try {
-          printWindow.focus();
-          printWindow.print();
-        } catch (_) {
-          // Browser PDF viewers may block auto-print; keep file opened for manual print.
-        }
-      };
-      setTimeout(tryPrint, 600);
-      printWindow.addEventListener(
-        "beforeunload",
-        () => {
-          URL.revokeObjectURL(pdfUrl);
-        },
-        { once: true },
-      );
+      const docxBlob = await response.blob();
+      const docxUrl = URL.createObjectURL(docxBlob);
+      const suggestedName = `trip-application-${String(trip.tripNumber || "trip").replace(/[^0-9A-Za-z_-]+/g, "_")}.docx`;
+      const downloadLink = document.createElement("a");
+      downloadLink.href = docxUrl;
+      downloadLink.download = suggestedName;
+      document.body.appendChild(downloadLink);
+      downloadLink.click();
+      downloadLink.remove();
+      URL.revokeObjectURL(docxUrl);
     } catch (error) {
-      alert(`Не удалось сформировать PDF заявки: ${error?.message || "неизвестная ошибка"}`);
+      alert(`Не удалось сформировать DOCX заявки: ${error?.message || "неизвестная ошибка"}`);
     } finally {
       setIsTripPrintLoading(false);
     }
@@ -2957,7 +2943,6 @@ const App = () => {
   );
 };
 export default App;
-
 
 
 

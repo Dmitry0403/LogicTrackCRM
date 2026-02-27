@@ -7,6 +7,7 @@ const path = require('path');
 const os = require('os');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
+const JSZip = require('jszip');
 const { PNG } = require('pngjs');
 const XLSX = require('xlsx');
 const execFileAsync = promisify(execFile);
@@ -435,6 +436,86 @@ const generateTripPdf = async ({ trip, orders }) => {
   }
   const html = buildTripApplicationPdfHtml({ trip, orders });
   return generatePdfFromHtml(html);
+};
+
+const escapeXmlText = (value) =>
+  String(value == null ? '' : value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+const findParagraphRangeByToken = (xml, token) => {
+  const pattern = new RegExp(`<w:p[\\s\\S]*?${escapeRegExp(token)}[\\s\\S]*?<\\/w:p>`);
+  const match = pattern.exec(xml);
+  if (!match) return null;
+  return { start: match.index, end: match.index + match[0].length };
+};
+
+const buildOrdersDocxParagraphs = (orders) => {
+  const lines = [];
+  orders.forEach((order, index) => {
+    const name = String(order.name || order.recipient || 'Без названия').trim();
+    const awb = String(order.awb || '').trim();
+    const quantity = String(order.quantity || '').trim();
+    const weight = String(order.weight || '').trim();
+    const customsName = String(order.customsName || '').trim();
+    const customsCode = String(order.customsCode || '').trim();
+    const notes = String(order.notes || '').trim();
+    lines.push(`${index + 1}. ${name} -авианакладная № ${awb} - ${quantity} мест / ${weight} кг,`);
+    lines.push(`Таможня назначения - ${customsName} / ${customsCode}`);
+    if (notes) {
+      lines.push(`Примечание: ${notes}`);
+    }
+  });
+  return lines
+    .map((line) => `<w:p><w:r><w:t xml:space="preserve">${escapeXmlText(line)}</w:t></w:r></w:p>`)
+    .join('');
+};
+
+const generateTripDocxFromTemplate = async ({ templatePath, trip, orders }) => {
+  const templateBuffer = await fs.readFile(templatePath);
+  const zip = await JSZip.loadAsync(templateBuffer);
+  const documentXmlFile = zip.file('word/document.xml');
+  if (!documentXmlFile) {
+    throw new Error('template_invalid_missing_document_xml');
+  }
+
+  let xml = await documentXmlFile.async('string');
+  const replacements = new Map([
+    ['{{TRIP_NUMBER}}', String(trip.tripNumber || '').trim()],
+    ['{{TRIP_DATE}}', formatTripDateRu(trip.tripDate)],
+    ['{{AIRPORT}}', String(orders[0]?.shipmentAirport || '').trim()],
+    ['{{CAR_NUMBER}}', String(trip.carNumber || '').trim()],
+    ['{{DRIVER_NAME}}', String(trip.driverName || '').trim()],
+    ['{{SIGNER_ROLE}}', String(trip.signerRole || 'Менеджер').trim()],
+    ['{{SIGNER_NAME}}', String(trip.signerName || 'Косенко Д.В.').trim()],
+    ['{{SIGNER_ROLE|Менеджер}}', String(trip.signerRole || 'Менеджер').trim()],
+    ['{{SIGNER_NAME|Косенко Д.В.}}', String(trip.signerName || 'Косенко Д.В.').trim()],
+  ]);
+
+  replacements.forEach((value, token) => {
+    xml = xml.replace(new RegExp(escapeRegExp(token), 'g'), escapeXmlText(value));
+  });
+
+  const startRange = findParagraphRangeByToken(xml, '{{ORDERS_START}}');
+  const endRange = findParagraphRangeByToken(xml, '{{ORDERS_END}}');
+  const ordersParagraphs = buildOrdersDocxParagraphs(orders);
+  if (startRange && endRange && startRange.start < endRange.start) {
+    xml = `${xml.slice(0, startRange.start)}${ordersParagraphs}${xml.slice(endRange.end)}`;
+  } else {
+    xml = xml.replace(new RegExp(escapeRegExp('{{ORDERS_TEXT}}'), 'g'), escapeXmlText(orders.map((o) => o.name || o.recipient || '').join(', ')));
+  }
+
+  xml = xml
+    .replace(new RegExp(escapeRegExp('{{ORDERS_START}}'), 'g'), '')
+    .replace(new RegExp(escapeRegExp('{{ORDERS_END}}'), 'g'), '');
+
+  zip.file('word/document.xml', xml);
+  return zip.generateAsync({ type: 'nodebuffer', compression: 'DEFLATE' });
 };
 
 const getCargoCacheKey = ({ terminal, awb }) => `${normalizeText(terminal)}::${normalizeAwb(awb)}`;
@@ -2150,6 +2231,62 @@ app.post('/trip-application/pdf', async (req, res) => {
     });
     return res.status(500).json({
       error: 'trip_pdf_generation_failed',
+      details: error.message,
+    });
+  }
+});
+
+app.post('/trip-application/docx', async (req, res) => {
+  try {
+    const tripRaw = req.body?.trip || {};
+    const ordersRaw = Array.isArray(req.body?.orders) ? req.body.orders : [];
+
+    const trip = {
+      tripNumber: String(tripRaw.tripNumber || '').trim(),
+      tripDate: String(tripRaw.tripDate || '').trim(),
+      carNumber: String(tripRaw.carNumber || '').trim(),
+      driverName: String(tripRaw.driverName || '').trim(),
+      signerRole: String(tripRaw.signerRole || '').trim(),
+      signerName: String(tripRaw.signerName || '').trim(),
+    };
+
+    if (!trip.tripNumber || !trip.carNumber || !trip.driverName) {
+      return res.status(400).json({ error: 'trip_fields_required' });
+    }
+    if (ordersRaw.length === 0) {
+      return res.status(400).json({ error: 'orders_required' });
+    }
+
+    const orders = ordersRaw.map((order) => ({
+      name: String(order?.name || '').trim(),
+      awb: String(order?.awb || '').trim(),
+      recipient: String(order?.recipient || '').trim(),
+      shipmentAirport: String(order?.shipmentAirport || '').trim(),
+      customsName: String(order?.customsName || '').trim(),
+      customsCode: String(order?.customsCode || '').trim(),
+      quantity: String(order?.quantity || '').trim(),
+      weight: String(order?.weight || '').trim(),
+      notes: String(order?.notes || '').trim(),
+    }));
+
+    const docxBuffer = await generateTripDocxFromTemplate({
+      templatePath: TRIP_APPLICATION_TEMPLATE_PATH,
+      trip,
+      orders,
+    });
+    const safeTripNumber = (trip.tripNumber || 'trip').replace(/[^0-9A-Za-z_-]+/g, '_');
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="trip-application-${safeTripNumber}.docx"`);
+    return res.send(docxBuffer);
+  } catch (error) {
+    console.error('trip_docx_generation_failed', {
+      message: error.message,
+      stack: error.stack,
+      templatePath: TRIP_APPLICATION_TEMPLATE_PATH,
+    });
+    return res.status(500).json({
+      error: 'trip_docx_generation_failed',
       details: error.message,
     });
   }
