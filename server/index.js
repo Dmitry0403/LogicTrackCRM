@@ -499,21 +499,51 @@ const buildOrderTokenMap = (order, index) => {
   ]);
 };
 
-const expandOrderTemplateParagraph = (xml, orders) => {
-  const paragraphPattern = /<w:p[\s\S]*?\{\{N\}\}[\s\S]*?\{\{RECIPIENT\}\}[\s\S]*?<\/w:p>/;
-  const match = paragraphPattern.exec(xml);
-  if (!match) return xml;
+const findParagraphByToken = (xml, token) => {
+  const pattern = new RegExp(`<w:p[\\s\\S]*?${escapeRegExp(token)}[\\s\\S]*?<\\/w:p>`);
+  return pattern.exec(xml);
+};
 
-  const templateParagraph = match[0];
-  const paragraphs = orders.map((order, index) => {
-    let current = templateParagraph;
-    buildOrderTokenMap(order, index).forEach((value, token) => {
-      current = current.replace(new RegExp(escapeRegExp(token), 'g'), escapeXmlText(value));
-    });
-    return current;
+const expandOrderTemplateParagraph = (xml, orders) => {
+  const mainMatch = /<w:p[\s\S]*?\{\{N\}\}[\s\S]*?\{\{RECIPIENT\}\}[\s\S]*?<\/w:p>/.exec(xml);
+  if (!mainMatch) return xml;
+
+  const mainStart = mainMatch.index;
+  const mainEnd = mainMatch.index + mainMatch[0].length;
+
+  const customsMatch = findParagraphByToken(xml, '{{CUSTOMS_NAME}}');
+  const noteMatch = findParagraphByToken(xml, '{{NOTE}}');
+
+  const blockTemplates = [mainMatch[0]];
+  let blockEnd = mainEnd;
+
+  if (customsMatch && customsMatch.index >= mainStart) {
+    blockTemplates.push(customsMatch[0]);
+    blockEnd = Math.max(blockEnd, customsMatch.index + customsMatch[0].length);
+  }
+  if (noteMatch && noteMatch.index >= mainStart) {
+    blockTemplates.push(noteMatch[0]);
+    blockEnd = Math.max(blockEnd, noteMatch.index + noteMatch[0].length);
+  }
+
+  const generatedBlocks = orders.map((order, index) => {
+    const tokenMap = buildOrderTokenMap(order, index);
+    return blockTemplates
+      .map((templateParagraph) => {
+        if (templateParagraph.includes('{{NOTE}}') && !String(order.notes || '').trim()) {
+          return '';
+        }
+        let current = templateParagraph;
+        tokenMap.forEach((value, token) => {
+          current = current.replace(new RegExp(escapeRegExp(token), 'g'), escapeXmlText(value));
+        });
+        return current;
+      })
+      .filter(Boolean)
+      .join('');
   });
 
-  return `${xml.slice(0, match.index)}${paragraphs.join('')}${xml.slice(match.index + templateParagraph.length)}`;
+  return `${xml.slice(0, mainStart)}${generatedBlocks.join('')}${xml.slice(blockEnd)}`;
 };
 
 const generateTripDocxFromTemplate = async ({ templatePath, trip, orders }) => {
