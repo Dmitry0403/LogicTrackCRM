@@ -1551,13 +1551,40 @@ const App = () => {
       const docxBlob = await response.blob();
       const docxUrl = URL.createObjectURL(docxBlob);
       const suggestedName = `trip-application-${String(trip.tripNumber || "trip").replace(/[^0-9A-Za-z_-]+/g, "_")}.docx`;
-      const downloadLink = document.createElement("a");
-      downloadLink.href = docxUrl;
-      downloadLink.download = suggestedName;
-      document.body.appendChild(downloadLink);
-      downloadLink.click();
-      downloadLink.remove();
-      URL.revokeObjectURL(docxUrl);
+      let opened = false;
+
+      try {
+        const viewWindow = window.open(docxUrl, "_blank", "noopener,noreferrer");
+        opened = Boolean(viewWindow);
+      } catch (_) {
+        opened = false;
+      }
+
+      if (opened) {
+        try {
+          const wordDeepLink = `ms-word:ofe|u|${encodeURIComponent(docxUrl)}`;
+          const protocolFrame = document.createElement("iframe");
+          protocolFrame.style.display = "none";
+          protocolFrame.src = wordDeepLink;
+          document.body.appendChild(protocolFrame);
+          setTimeout(() => {
+            protocolFrame.remove();
+          }, 1500);
+        } catch (_) {
+          // If protocol handler is unavailable, opened tab remains fallback.
+        }
+      } else {
+        const downloadLink = document.createElement("a");
+        downloadLink.href = docxUrl;
+        downloadLink.download = suggestedName;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        downloadLink.remove();
+      }
+
+      setTimeout(() => {
+        URL.revokeObjectURL(docxUrl);
+      }, 30000);
     } catch (error) {
       alert(`Не удалось сформировать DOCX заявки: ${error?.message || "неизвестная ошибка"}`);
     } finally {
@@ -2943,7 +2970,6 @@ const App = () => {
   );
 };
 export default App;
-
 
 
 
