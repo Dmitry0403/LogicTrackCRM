@@ -1523,8 +1523,8 @@ const App = () => {
             awb: order.awb,
             recipient: order.recipient,
             shipmentAirport: order.shipmentAirport,
-            customsName: order.customsName,
-            customsCode: order.customsCode,
+            customsName: String(order.customsName || "").trim() || getCustomsName(String(order.customsCode || "").trim()),
+            customsCode: String(order.customsCode || "").trim(),
             quantity: order.quantity,
             weight: order.weight,
             notes: order.notes,
@@ -2943,7 +2943,6 @@ const App = () => {
   );
 };
 export default App;
-
 
 
 
