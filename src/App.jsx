@@ -137,6 +137,37 @@ const fetchGoogleDriveAccount = async (accessToken) => {
   return { email, name };
 };
 
+const localizeAuthErrorMessage = (error, fallbackMessage) => {
+  const rawMessage = String(error?.message || "").trim();
+  if (!rawMessage) return fallbackMessage;
+
+  const normalized = rawMessage.toLowerCase();
+
+  if (normalized.includes("invalid login credentials")) {
+    return "Неверный email или пароль.";
+  }
+  if (normalized.includes("email not confirmed")) {
+    return "Подтвердите email по ссылке из письма и попробуйте снова.";
+  }
+  if (normalized.includes("user already registered")) {
+    return "Пользователь с таким email уже зарегистрирован.";
+  }
+  if (normalized.includes("password should be at least")) {
+    return "Пароль слишком короткий. Используйте не менее 6 символов.";
+  }
+  if (normalized.includes("unable to validate email address")) {
+    return "Проверьте корректность email.";
+  }
+  if (normalized.includes("too many requests")) {
+    return "Слишком много попыток. Попробуйте позже.";
+  }
+  if (normalized.includes("network request failed") || normalized.includes("failed to fetch")) {
+    return "Не удалось связаться с сервером. Проверьте интернет-соединение.";
+  }
+
+  return fallbackMessage;
+};
+
 
 const customsCodeMap = {
   "06536": "ПТО Аэропорт Минск",
@@ -194,6 +225,7 @@ const CARGO_API_BASE_URL = API_BASE_URL;
 const PRINT_SIGNER_STORAGE_KEY = "logictrack_print_signer";
 const ORDER_STAGES_STORAGE_KEY = "logictrack_order_stages";
 const TRIP_STAGES_STORAGE_KEY = "logictrack_trip_stages";
+const DRIVE_MODAL_RESTORE_STORAGE_KEY = "logictrack_restore_drive_modal";
 const DEFAULT_PRINT_SIGNER_SETTINGS = {
   signerRole: "Менеджер",
   signerName: "Косенко Д.В.",
@@ -1020,6 +1052,15 @@ const App = () => {
   // On app load: handle OAuth redirect, check stored tokens and refresh if needed
   React.useEffect(() => {
     (async () => {
+      const shouldRestoreDriveModal =
+        localStorage.getItem(DRIVE_MODAL_RESTORE_STORAGE_KEY) === "1";
+      const restoreDriveModalIfNeeded = () => {
+        if (!shouldRestoreDriveModal) return;
+        localStorage.removeItem(DRIVE_MODAL_RESTORE_STORAGE_KEY);
+        setShowSettingsModal(false);
+        setShowDriveSettingsModal(true);
+      };
+
       // If tokens exist and not expired, mark connected
       const toks = getStoredTokens();
       if (toks && toks.access_token && toks.expires_at && Date.now() < toks.expires_at - 60000) {
@@ -1032,6 +1073,7 @@ const App = () => {
         } catch (err) {
           console.warn('Не удалось получить данные аккаунта Google Drive:', err);
         }
+        restoreDriveModalIfNeeded();
         return; 
       }
 
@@ -1062,6 +1104,7 @@ const App = () => {
           } catch (err) {
             console.warn('Не удалось получить данные аккаунта Google Drive:', err);
           }
+          restoreDriveModalIfNeeded();
           return;
         } catch (err) {
           console.warn('Не удалось обновить токен:', err.message);
@@ -1072,7 +1115,10 @@ const App = () => {
       // Проверить, пришел ли код авторизации после редиректа
       const params = new URLSearchParams(window.location.search);
       const code = params.get('code');
-      if (!code) return;
+      if (!code) {
+        restoreDriveModalIfNeeded();
+        return;
+      }
 
       try {
         setDriveHint('Подключаем Google Drive...');
@@ -1108,6 +1154,7 @@ const App = () => {
         console.error(err);
         setDriveHint('Не удалось подключить Google Drive. Попробуйте еще раз.');
       }
+      restoreDriveModalIfNeeded();
     })();
   }, []);
 
@@ -1948,6 +1995,7 @@ const App = () => {
         prompt: 'consent',
       });
 
+      localStorage.setItem(DRIVE_MODAL_RESTORE_STORAGE_KEY, "1");
       // Redirect to Google OAuth 2.0 authorization endpoint (server-side code exchange)
       window.location = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
     } catch (err) {
@@ -2445,7 +2493,7 @@ const App = () => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
     } catch (error) {
-      setAuthError(error?.message || "Не удалось войти.");
+      setAuthError(localizeAuthErrorMessage(error, "Не удалось войти."));
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -2463,7 +2511,7 @@ const App = () => {
       if (error) throw error;
       setAuthInfo("Проверьте email: подтвердите регистрацию по ссылке.");
     } catch (error) {
-      setAuthError(error?.message || "Не удалось зарегистрироваться.");
+      setAuthError(localizeAuthErrorMessage(error, "Не удалось зарегистрироваться."));
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -2484,7 +2532,7 @@ const App = () => {
       if (error) throw error;
       setAuthInfo("Ссылка для восстановления отправлена на email.");
     } catch (error) {
-      setAuthError(error?.message || "Не удалось отправить ссылку восстановления.");
+      setAuthError(localizeAuthErrorMessage(error, "Не удалось отправить ссылку восстановления."));
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -2525,7 +2573,7 @@ const App = () => {
       setChangePasswordInfo("Пароль успешно изменен.");
       setChangePasswordForm({ password: "", confirmPassword: "" });
     } catch (error) {
-      setChangePasswordError(error?.message || "Не удалось изменить пароль.");
+      setChangePasswordError(localizeAuthErrorMessage(error, "Не удалось изменить пароль."));
     } finally {
       setIsChangePasswordSubmitting(false);
     }
@@ -2938,7 +2986,10 @@ const App = () => {
           setShowAccountSettingsModal(false);
           void handleSignOut();
         }}
-        onClose={() => setShowAccountSettingsModal(false)}
+        onClose={() => {
+          setShowAccountSettingsModal(false);
+          setShowSettingsModal(true);
+        }}
       />
 
       <DriveSettingsModal
@@ -2949,14 +3000,20 @@ const App = () => {
         onConnectGoogleDrive={connectGoogleDrive}
         onSelectDriveFolder={selectDriveFolder}
         onDisconnectGoogleDrive={handleDisconnectGoogleDrive}
-        onClose={() => setShowDriveSettingsModal(false)}
+        onClose={() => {
+          setShowDriveSettingsModal(false);
+          setShowSettingsModal(true);
+        }}
       />
 
       <SignatureSettingsModal
         isOpen={showSignatureSettingsModal}
         printSignerSettings={printSignerSettings}
         onPrintSignerChange={handlePrintSignerChange}
-        onClose={() => setShowSignatureSettingsModal(false)}
+        onClose={() => {
+          setShowSignatureSettingsModal(false);
+          setShowSettingsModal(true);
+        }}
       />
 
       {deleteCardModal.isOpen && (

@@ -145,7 +145,7 @@ export function OrderFormCard({
       </div>
       <div className="field order-form__left">
         <label htmlFor="awb-prefix">Номер авианакладной *</label>
-        <div style={{ display: "flex", gap: "0.6rem", alignItems: "center" }}>
+        <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
           <input
             id="awb-prefix"
             name="awbPrefix"
@@ -171,7 +171,7 @@ export function OrderFormCard({
             inputMode="numeric"
             autoComplete="off"
             maxLength={10}
-            style={{ flex: 1 }}
+            style={{ flex: "1 1 160px", minWidth: "140px" }}
           />
           <button
             type="button"
@@ -546,4 +546,3 @@ export function OrdersTable({ orders, onEditClick, onDelete, onCreateOrder, embe
     </section>
   );
 }
-
