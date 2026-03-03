@@ -62,40 +62,11 @@ const loadGooglePickerApi = () => {
   return pickerApiLoadPromise;
 };
 
-// --- PKCE helpers ---
-const base64url = (input) => {
-  // input: ArrayBuffer or Uint8Array
-  let str = '';
-  const bytes = new Uint8Array(input);
-  for (let i = 0; i < bytes.byteLength; i++) {
-    str += String.fromCharCode(bytes[i]);
-  }
-  return btoa(str).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-};
-
-const generateCodeVerifier = () => {
-  const array = new Uint8Array(64);
-  crypto.getRandomValues(array);
-  return base64url(array);
-};
-
-const sha256 = async (plain) => {
-  const encoder = new TextEncoder();
-  const data = encoder.encode(plain);
-  const hash = await crypto.subtle.digest('SHA-256', data);
-  return hash;
-};
-
-const generateCodeChallenge = async (verifier) => {
-  const hashed = await sha256(verifier);
-  return base64url(hashed);
-};
-
 // Helpers to store tokens
 const getStoredTokens = () => {
   try {
     return JSON.parse(localStorage.getItem('gdrive_tokens') || '{}');
-  } catch (e) {
+  } catch (_error) {
     return {};
   }
 };
@@ -107,7 +78,7 @@ const setStoredTokens = (tokens) => {
 const getStoredDriveAccount = () => {
   try {
     return JSON.parse(localStorage.getItem('gdrive_account') || 'null');
-  } catch (e) {
+  } catch (_error) {
     return null;
   }
 };
@@ -222,6 +193,7 @@ const POWER_OF_ATTORNEY_REGISTRY_URL = `${API_BASE_URL}/poa/registry`;
 const POWER_OF_ATTORNEY_FALLBACK_URL = "/power-of-attorney-registry.json";
 const CARGO_STATUS_URL = `${API_BASE_URL}/cargo/status`;
 const CARGO_API_BASE_URL = API_BASE_URL;
+const RENDER_KEEPALIVE_INTERVAL_MS = 14 * 60 * 1000;
 const PRINT_SIGNER_STORAGE_KEY = "logictrack_print_signer";
 const ORDER_STAGES_STORAGE_KEY = "logictrack_order_stages";
 const TRIP_STAGES_STORAGE_KEY = "logictrack_trip_stages";
@@ -602,7 +574,7 @@ const loadPrintSignerSettings = () => {
       signerRole: String(parsed.signerRole || DEFAULT_PRINT_SIGNER_SETTINGS.signerRole).trim(),
       signerName: String(parsed.signerName || DEFAULT_PRINT_SIGNER_SETTINGS.signerName).trim(),
     };
-  } catch (_) {
+  } catch (_error) {
     return DEFAULT_PRINT_SIGNER_SETTINGS;
   }
 };
@@ -738,7 +710,7 @@ const App = () => {
   const [selectedDriveFolder, setSelectedDriveFolder] = React.useState(() => {
     try {
       return JSON.parse(localStorage.getItem('gdrive_selected_folder') || 'null');
-    } catch (e) {
+    } catch (_error) {
       return null;
     }
   });
@@ -850,6 +822,13 @@ const App = () => {
       warmupBackend();
     }
   }, [activeView, ordersScreenMode, warmupBackend]);
+
+  React.useEffect(() => {
+    const intervalId = setInterval(() => {
+      warmupBackend();
+    }, RENDER_KEEPALIVE_INTERVAL_MS);
+    return () => clearInterval(intervalId);
+  }, [warmupBackend]);
 
   React.useEffect(() => {
     saveOrders(orders);
@@ -1354,7 +1333,7 @@ const App = () => {
     if (awbNumber) {
       try {
         await navigator.clipboard.writeText(awbNumber);
-      } catch (error) {
+      } catch (_error) {
         // Clipboard can be blocked by browser policy.
       }
     }
@@ -1675,7 +1654,7 @@ const App = () => {
             const text = await response.text();
             details = text.slice(0, 240);
           }
-        } catch (_) {
+        } catch (_error) {
           // ignore parse errors
         }
         throw new Error(`DOCX generation failed: ${response.status}${details ? ` (${details})` : ""}`);
@@ -1734,13 +1713,6 @@ const App = () => {
     }
   };
 
-  const moveItemByDirection = (stages, currentStageId, direction) => {
-    const index = stages.findIndex((stage) => stage.id === currentStageId);
-    if (index < 0) return currentStageId;
-    const nextIndex = Math.min(Math.max(index + direction, 0), stages.length - 1);
-    return stages[nextIndex]?.id || currentStageId;
-  };
-
   const shouldRemoveOrderFromTrip = (stageId) =>
     stageId === planStageId || stageId === warehouseStageId;
   const buildTripOrdersSummary = (orderIds, sourceOrders) => {
@@ -1785,23 +1757,6 @@ const App = () => {
     removeOrderIdsFromTrips([orderId], sourceOrders, excludedTripId);
   };
 
-  const handleMoveOrder = (orderId, direction) => {
-    const orderToMove = orders.find((order) => order.id === orderId);
-    const nextStageId = orderToMove
-      ? moveItemByDirection(orderStages, orderToMove.stageId, direction)
-      : "";
-    setOrders((prev) =>
-      prev.map((order) =>
-        order.id === orderId
-          ? { ...order, stageId: moveItemByDirection(orderStages, order.stageId, direction) }
-          : order,
-      ),
-    );
-    if (shouldRemoveOrderFromTrip(nextStageId)) {
-      removeOrderFromTrips(orderId);
-    }
-  };
-
   const handleMoveOrderToStage = (orderId, stageId) => {
     setOrders((prev) =>
       prev.map((order) =>
@@ -1811,48 +1766,6 @@ const App = () => {
     if (shouldRemoveOrderFromTrip(stageId)) {
       removeOrderFromTrips(orderId);
     }
-  };
-
-  const handleMoveTrip = (tripId, direction) => {
-    setTrips((prev) => {
-      let movedTrip = null;
-      let previousStageId = "";
-      let nextStageId = "";
-      const nextTrips = prev.map((trip) => {
-        if (trip.id !== tripId) return trip;
-        movedTrip = trip;
-        previousStageId = trip.stageId;
-        nextStageId = moveItemByDirection(tripStages, trip.stageId, direction);
-        return { ...trip, stageId: nextStageId };
-      });
-
-      if (movedTrip && nextStageId === completedTripStageId) {
-        const movedOrderIds = new Set(movedTrip.orderIds || []);
-        setOrders((prevOrders) =>
-          prevOrders.map((order) =>
-            movedOrderIds.has(order.id)
-              ? { ...order, stageId: deliveredStageId }
-              : order,
-          ),
-        );
-      }
-      if (
-        movedTrip &&
-        previousStageId === completedTripStageId &&
-        nextStageId !== completedTripStageId
-      ) {
-        const movedOrderIds = new Set(movedTrip.orderIds || []);
-        setOrders((prevOrders) =>
-          prevOrders.map((order) =>
-            movedOrderIds.has(order.id)
-              ? { ...order, stageId: inCarStageId }
-              : order,
-          ),
-        );
-      }
-
-      return nextTrips;
-    });
   };
 
   const handleMoveTripToStage = (tripId, stageId) => {
@@ -2010,21 +1923,6 @@ const App = () => {
       return toks.access_token;
     }
 
-    // Try GIS token client first (no client_secret required)
-    if (typeof gisTokenClient !== 'undefined' && gisTokenClient) {
-      try {
-        const token = await new Promise((resolve, reject) => {
-          gisPendingResolver = { resolve, reject };
-          // If user already consented, prompt can be empty, otherwise 'consent' will show screen
-          gisTokenClient.requestAccessToken({ prompt: '' });
-        });
-        return token;
-      } catch (err) {
-        console.error('GIS token request failed', err);
-        // fall through to try refresh_token if available
-      }
-    }
-
     // Fallback: try refresh token (server flow)
     if (toks && toks.refresh_token) {
       try {
@@ -2151,11 +2049,6 @@ const App = () => {
       console.error('Ошибка перемещения папки:', err);
       return false;
     }
-  };
-
-  const moveOrderFolderToTrip = async (order, tripFolderId) => {
-    if (!order?.driveFolderId || !tripFolderId) return;
-    await moveDriveFolderToParent(order.driveFolderId, tripFolderId);
   };
 
   const moveOrderFolderToBase = async (order) => {
@@ -2588,7 +2481,6 @@ const App = () => {
           ? `подключен: ${driveAccount.email}`
           : 'подключен (аккаунт не определен)'
         : 'не подключен',
-      actionLabel: 'Открыть',
       onOpen: () => {
         setShowSettingsModal(false);
         setShowDriveSettingsModal(true);
@@ -2598,7 +2490,6 @@ const App = () => {
       id: 'print-signature',
       title: 'Изменение подписи',
       status: `${printSignerSettings.signerRole || "—"} · ${printSignerSettings.signerName || "—"}`,
-      actionLabel: 'Открыть',
       onOpen: () => {
         setShowSettingsModal(false);
         setShowSignatureSettingsModal(true);
@@ -2608,7 +2499,6 @@ const App = () => {
       id: 'account',
       title: 'Аккаунт',
       status: currentUser?.email || 'Вход выполнен',
-      actionLabel: 'Открыть',
       onOpen: () => {
         setShowSettingsModal(false);
         setShowAccountSettingsModal(true);
