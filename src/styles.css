@@ -815,6 +815,10 @@ small {
   color: #0f172a;
 }
 
+.workflow-card__title--danger {
+  color: #b91c1c;
+}
+
 .workflow-card__meta {
   font-size: 15px;
   color: #475569;

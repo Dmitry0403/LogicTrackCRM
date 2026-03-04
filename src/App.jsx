@@ -2684,7 +2684,18 @@ const App = () => {
                     onDeleteStage={handleDeleteOrderStage}
                     allowStageManagement
                     isStageDefault={isDefaultOrderStage}
-                    renderItemCard={(order) => (
+                    renderItemCard={(order) => {
+                      const orderPowerOfAttorneyStatus = getPowerOfAttorneyStatus({
+                        shipmentAirport: order.shipmentAirport,
+                        shipmentTerminal: order.shipmentTerminal,
+                        recipient: order.recipient,
+                        registry: powerOfAttorneyRegistry,
+                      });
+                      const isOrderWithoutPowerOfAttorney = orderPowerOfAttorneyStatus?.type === "danger";
+                      const assignedTrip = trips.find((trip) => (trip.orderIds || []).includes(order.id));
+                      const assignedCarNumber = String(assignedTrip?.carNumber || "").trim();
+
+                      return (
                       <div className="workflow-card">
                         <div className="workflow-card__top-actions">
                           <button type="button" className="workflow-card__icon-btn" title="Редактировать" onClick={() => handleEditClick(order)} aria-label="Редактировать">
@@ -2697,7 +2708,9 @@ const App = () => {
                             <span aria-hidden="true">&#128465;</span>
                           </button>
                         </div>
-                        <div className="workflow-card__title">{order.name || "Без названия"}</div>
+                        <div className={`workflow-card__title ${isOrderWithoutPowerOfAttorney ? "workflow-card__title--danger" : ""}`}>
+                          {order.name || "Без названия"}
+                        </div>
                         <div className="workflow-card__meta workflow-card__meta--awb">
                           {order.shipmentAirport || "—"} - {order.customsName || order.customsCode || "—"}
                         </div>
@@ -2717,9 +2730,13 @@ const App = () => {
                             "—"
                           )}
                         </div>
-                        <div className="workflow-card__meta">{order.quantity || "—"} мест / {order.weight || "—"} кг</div>
+                        <div className="workflow-card__meta">
+                          {order.quantity || "—"} мест / {order.weight || "—"} кг
+                          {assignedTrip ? ` / ${assignedCarNumber || "—"}` : ""}
+                        </div>
                       </div>
-                    )}
+                      );
+                    }}
                   />
                 </WorkPanel>
               ) : (
