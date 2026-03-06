@@ -33,6 +33,7 @@ export function OrderFormCard({
   isPowerOfAttorneySyncLoading,
   onCheckAwbStatus,
   onOpenManualCheck,
+  onOpenCargoTerminalFromError,
   onRefreshPowerOfAttorneyRegistry,
   onFieldChange,
   onSubmit,
@@ -218,7 +219,12 @@ export function OrderFormCard({
         {!isAwbCheckAvailable && (
           <small className="hint">Выберите аэропорт и терминал, затем нажмите "Проверить".</small>
         )}
-        {awbStatusCheck?.error && <small style={{ color: "#c0392b" }}>{awbStatusCheck.error}</small>}
+        {awbStatusCheck?.error && (
+          <div style={{ marginTop: "8px", display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
+            <small style={{ color: "#c0392b" }}>{awbStatusCheck.error}</small>
+            <button type="button" onClick={onOpenCargoTerminalFromError}>{"\u041f\u0435\u0440\u0435\u0439\u0442\u0438 \u043d\u0430 \u0441\u0430\u0439\u0442"}</button>
+          </div>
+        )}
         {awbStatusCheck?.data?.manualRequired && (
           <div style={{ marginTop: "8px", display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
             <small style={{ color: "#c0392b", fontWeight: 700 }}>

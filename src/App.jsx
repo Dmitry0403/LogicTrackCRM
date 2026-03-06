@@ -1,4 +1,4 @@
-﻿import React from 'react';
+import React from 'react';
 import {
   OrderFormCard,
   SettingsModal,
@@ -198,6 +198,9 @@ const PRINT_SIGNER_STORAGE_KEY = "logictrack_print_signer";
 const ORDER_STAGES_STORAGE_KEY = "logictrack_order_stages";
 const TRIP_STAGES_STORAGE_KEY = "logictrack_trip_stages";
 const DRIVE_MODAL_RESTORE_STORAGE_KEY = "logictrack_restore_drive_modal";
+const DRIVE_OPS_QUEUE_STORAGE_KEY = "logictrack_drive_ops_queue";
+const DRIVE_OP_RETRY_BASE_MS = 1500;
+const DRIVE_OP_RETRY_MAX_MS = 60000;
 const DEFAULT_PRINT_SIGNER_SETTINGS = {
   signerRole: "Менеджер",
   signerName: "Косенко Д.В.",
@@ -257,6 +260,18 @@ const resolveCargoApiUrl = (urlPath) => {
   if (/^https?:\/\//i.test(urlPath)) return urlPath;
   return `${CARGO_API_BASE_URL}${urlPath.startsWith("/") ? "" : "/"}${urlPath}`;
 };
+
+const CARGO_TERMINAL_URLS = {
+  svo_moscow: "https://www.moscow-cargo.com/",
+  svo_sher: "https://www.shercargo.ru/it/free/",
+  vko: "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/",
+  dme: "https://business.dme.ru/cargo/",
+  zia: "https://www.aero-grad.ru/aircargo/info/ac_07.pub_info.main?p_lang=R",
+};
+const stripAnsiCodes = (value) =>
+  // eslint-disable-next-line no-control-regex
+  String(value || "").replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-ntqry=><~]))/g, "");
+
 
 const resolveCargoTerminalKey = ({ shipmentAirport, shipmentTerminal }) => {
   if (shipmentAirport === "Шереметьево") {
@@ -715,6 +730,16 @@ const App = () => {
     }
   });
   const [driveAccount, setDriveAccount] = React.useState(() => getStoredDriveAccount());
+  const [driveOpsQueue, setDriveOpsQueue] = React.useState(() => {
+    try {
+      const raw = JSON.parse(localStorage.getItem(DRIVE_OPS_QUEUE_STORAGE_KEY) || "[]");
+      return Array.isArray(raw) ? raw : [];
+    } catch (_error) {
+      return [];
+    }
+  });
+  const driveOpsQueueRef = React.useRef(driveOpsQueue);
+  const driveOpsProcessingRef = React.useRef(false);
   const backendWarmupAtRef = React.useRef(0);
   const cloudSaveTimeoutRef = React.useRef(null);
   const userScopedAppStateId = React.useMemo(
@@ -1028,6 +1053,11 @@ const App = () => {
     }
   }, [selectedDriveFolder]);
 
+  React.useEffect(() => {
+    driveOpsQueueRef.current = driveOpsQueue;
+    localStorage.setItem(DRIVE_OPS_QUEUE_STORAGE_KEY, JSON.stringify(driveOpsQueue));
+  }, [driveOpsQueue]);
+
   // On app load: handle OAuth redirect, check stored tokens and refresh if needed
   React.useEffect(() => {
     (async () => {
@@ -1196,7 +1226,15 @@ const App = () => {
       });
       const payload = await response.json();
       if (!response.ok) {
-        throw new Error(payload?.details || payload?.error || "Ошибка проверки статуса");
+        const serverErrorCode = String(payload?.error || "").trim();
+        const serverDetails = stripAnsiCodes(payload?.details || "");
+        if (serverErrorCode === "cargo_status_failed") {
+          if (serverDetails) {
+            console.error("[cargo/status] cargo_status_failed:", serverDetails);
+          }
+          throw new Error("Не удалось проверить статус груза. Попробуйте еще раз.");
+        }
+        throw new Error(serverDetails || serverErrorCode || "Ошибка проверки статуса");
       }
 
       setAwbStatusCheck({
@@ -1342,16 +1380,29 @@ const App = () => {
     window.open(baseUrl, "_blank", "noopener,noreferrer");
   };
 
+  const openCargoTerminalFromError = async () => {
+    const terminalKey = resolveCargoTerminalKey({
+      shipmentAirport: formData.shipmentAirport,
+      shipmentTerminal: formData.shipmentTerminal,
+    });
+    const awbNumberOnly = String(formData.awbNumber || "").replace(/\D/g, "").slice(0, 10);
+    if (awbNumberOnly) {
+      try {
+        await navigator.clipboard.writeText(awbNumberOnly);
+      } catch (_error) {
+        // Clipboard can be blocked by browser policy.
+      }
+    }
+    const terminalUrl = CARGO_TERMINAL_URLS[terminalKey] || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/";
+    window.open(terminalUrl, "_blank", "noopener,noreferrer");
+  };
+
   const handleFieldChange = (field) => (event) => {
     const value = event.target.type === "checkbox" ? event.target.checked : event.target.value;
     setFormData((prev) => {
       const next = { ...prev, [field]: value };
       if (field === "recipient") {
-        const previousOrderName = String(prev.orderName || "").trim();
-        const previousRecipient = String(prev.recipient || "").trim();
-        if (!previousOrderName || previousOrderName === previousRecipient) {
-          next.orderName = value.trim();
-        }
+        next.orderName = value.trim();
       }
       if (field === "shipmentAirport") {
         next.shipmentTerminal = SHEREMETYEVO_VALUES.has(value) ? DEFAULT_SHEREMETYEVO_TERMINAL : "";
@@ -1917,77 +1968,265 @@ const App = () => {
     }
   };
 
-  const ensureAccessToken = async () => {
+  const getDriveRetryDelayMs = (attempt) => Math.min(DRIVE_OP_RETRY_MAX_MS, DRIVE_OP_RETRY_BASE_MS * (2 ** attempt));
+
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const escapeDriveQueryValue = (value) =>
+    String(value || "")
+      .replace(/\\/g, "\\\\")
+      .replace(/'/g, "\\'");
+
+  const createDriveOpKey = (type, payload) => {
+    if (!payload || typeof payload !== "object") return type;
+    if (type === "create_order_folder") return `${type}:${payload.orderId || ""}`;
+    if (type === "create_trip_folder") return `${type}:${payload.tripId || ""}`;
+    if (type === "move_folder") return `${type}:${payload.folderId || ""}:${payload.parentId || "root"}`;
+    if (type === "rename_folder") return `${type}:${payload.folderId || ""}`;
+    if (type === "delete_folder") return `${type}:${payload.folderId || ""}`;
+    return `${type}:${JSON.stringify(payload)}`;
+  };
+
+  const upsertDriveOp = React.useCallback((type, payload, lastError = "") => {
+    const opKey = createDriveOpKey(type, payload);
+    setDriveOpsQueue((prev) => {
+      const existingIndex = prev.findIndex((item) => item.opKey === opKey);
+      const now = Date.now();
+      const nextItem = {
+        id: existingIndex >= 0 ? prev[existingIndex].id : `drive-op-${now}-${Math.random().toString(36).slice(2, 8)}`,
+        opKey,
+        type,
+        payload,
+        attempt: existingIndex >= 0 ? Number(prev[existingIndex].attempt || 0) : 0,
+        nextRunAt: now,
+        createdAt: existingIndex >= 0 ? prev[existingIndex].createdAt : now,
+        lastError: String(lastError || ""),
+      };
+      if (existingIndex >= 0) {
+        const clone = [...prev];
+        clone[existingIndex] = nextItem;
+        return clone;
+      }
+      return [...prev, nextItem];
+    });
+  }, []);
+
+  const removeDriveOpByKey = React.useCallback((type, payload) => {
+    const opKey = createDriveOpKey(type, payload);
+    setDriveOpsQueue((prev) => prev.filter((item) => item.opKey !== opKey));
+  }, []);
+
+  const ensureAccessToken = async ({ forceRefresh = false } = {}) => {
     const toks = getStoredTokens();
-    if (toks && toks.access_token && toks.expires_at && Date.now() < toks.expires_at - 60000) {
+    const hasFreshToken = toks && toks.access_token && toks.expires_at && Date.now() < toks.expires_at - 60000;
+    if (!forceRefresh && hasFreshToken) {
       return toks.access_token;
     }
 
-    // Fallback: try refresh token (server flow)
     if (toks && toks.refresh_token) {
-      try {
-        const res = await fetch(`${API_BASE_URL}/oauth/token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refresh_token: toks.refresh_token, grant_type: 'refresh_token' }),
-        });
-        const data = await res.json();
-        if (data.error) throw new Error(data.error_description || data.error || JSON.stringify(data));
-        const newTokens = {
-          ...toks,
-          access_token: data.access_token,
-          expires_at: Date.now() + (data.expires_in || 3600) * 1000,
-        };
-        setStoredTokens(newTokens);
-        setDriveConnected(true);
-        return newTokens.access_token;
-      } catch (err) {
-        console.error(err);
-        throw err;
-      }
-    }
-
-    throw new Error('Требуется авторизация');
-  };
-
-  const createDriveFolder = async (name, parentId = null) => {
-    try {
-      const accessToken = await ensureAccessToken();
-      const bodyObj = { name, mimeType: 'application/vnd.google-apps.folder' };
-      if (parentId) {
-        bodyObj.parents = [parentId];
-      }
-
-      const res = await fetch('https://www.googleapis.com/drive/v3/files', {
+      const res = await fetch(`${API_BASE_URL}/oauth/token`, {
         method: 'POST',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(bodyObj),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: toks.refresh_token, grant_type: 'refresh_token' }),
       });
       const data = await res.json();
-      if (data.error) throw new Error(data.error.message || JSON.stringify(data.error));
-      return {
-        folderId: data.id,
-        folderUrl: `https://drive.google.com/drive/folders/${data.id}`,
+      if (!res.ok || data.error) {
+        throw new Error(data?.error_description || data?.error || 'refresh_token_failed');
+      }
+      const newTokens = {
+        ...toks,
+        access_token: data.access_token,
+        expires_at: Date.now() + (data.expires_in || 3600) * 1000,
       };
-    } catch (err) {
-      console.error('Ошибка создания папки:', err);
-      return null;
+      setStoredTokens(newTokens);
+      setDriveConnected(true);
+      return newTokens.access_token;
     }
+
+    throw new Error('Drive authorization is required');
   };
 
-  // Создать папку в Google Drive для заказа
-  const createDriveFolderForOrder = async (orderName, orderId) => {
-    const created = await createDriveFolder(orderName, selectedDriveFolder?.id || null);
-    if (!created) return null;
+  const driveRequest = async (url, { method = 'GET', body = null, retries = 2, allow404 = false } = {}) => {
+    let forceRefresh = false;
 
-    setOrders((prev) =>
-      prev.map((o) => (o.id === orderId ? { ...o, driveFolder: created.folderUrl, driveFolderId: created.folderId } : o))
+    for (let attempt = 0; attempt <= retries; attempt += 1) {
+      try {
+        const accessToken = await ensureAccessToken({ forceRefresh });
+        const response = await fetch(url, {
+          method,
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            ...(body ? { 'Content-Type': 'application/json' } : {}),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+
+        if (allow404 && response.status === 404) {
+          return { __notFound: true };
+        }
+
+        const rawText = await response.text();
+        let data = null;
+        if (rawText) {
+          try {
+            data = JSON.parse(rawText);
+          } catch (_error) {
+            data = { message: rawText };
+          }
+        }
+
+        if (response.status === 401 && !forceRefresh) {
+          forceRefresh = true;
+          if (attempt < retries) continue;
+        }
+
+        if (!response.ok) {
+          const details = data?.error?.message || data?.message || `Drive request failed: ${response.status}`;
+          const transient = [408, 409, 425, 429, 500, 502, 503, 504].includes(response.status);
+          if (transient && attempt < retries) {
+            await sleep(getDriveRetryDelayMs(attempt));
+            continue;
+          }
+          const error = new Error(details);
+          error.status = response.status;
+          throw error;
+        }
+
+        return data;
+      } catch (error) {
+        const isTransientNetwork = /network|fetch|timeout|timed out|failed to fetch/i.test(String(error?.message || ""));
+        if ((isTransientNetwork || error?.status >= 500 || error?.status === 429) && attempt < retries) {
+          await sleep(getDriveRetryDelayMs(attempt));
+          continue;
+        }
+        throw error;
+      }
+    }
+
+    throw new Error('Drive request failed');
+  };
+
+  const findDriveFolder = async ({ name, parentId = null, entityType = '', entityId = '' }) => {
+    const qParts = ["mimeType='application/vnd.google-apps.folder'", 'trashed=false'];
+    if (parentId) qParts.push(`'${escapeDriveQueryValue(parentId)}' in parents`);
+    if (entityType && entityId) {
+      qParts.push(`appProperties has { key='lt_entity' and value='${escapeDriveQueryValue(entityType)}' }`);
+      qParts.push(`appProperties has { key='lt_entity_id' and value='${escapeDriveQueryValue(entityId)}' }`);
+    } else if (name) {
+      qParts.push(`name='${escapeDriveQueryValue(name)}'`);
+    }
+
+    const params = new URLSearchParams({
+      q: qParts.join(' and '),
+      fields: 'files(id,name,webViewLink,parents)',
+      pageSize: '1',
+      supportsAllDrives: 'true',
+      includeItemsFromAllDrives: 'true',
+    });
+
+    const data = await driveRequest(`https://www.googleapis.com/drive/v3/files?${params.toString()}`, { method: 'GET' });
+    const first = Array.isArray(data?.files) ? data.files[0] : null;
+    if (!first?.id) return null;
+    return {
+      folderId: first.id,
+      folderUrl: first.webViewLink || `https://drive.google.com/drive/folders/${first.id}`,
+      name: first.name || '',
+      parents: Array.isArray(first.parents) ? first.parents : [],
+    };
+  };
+
+  const createDriveFolderRaw = async ({ name, parentId = null, entityType = '', entityId = '' }) => {
+    const existing = await findDriveFolder({ name, parentId, entityType, entityId });
+    if (existing) return existing;
+
+    const payload = {
+      name,
+      mimeType: 'application/vnd.google-apps.folder',
+      ...(parentId ? { parents: [parentId] } : {}),
+      ...(entityType && entityId
+        ? { appProperties: { lt_entity: entityType, lt_entity_id: entityId } }
+        : {}),
+    };
+
+    const data = await driveRequest('https://www.googleapis.com/drive/v3/files?supportsAllDrives=true', {
+      method: 'POST',
+      body: payload,
+      retries: 3,
+    });
+
+    if (!data?.id) throw new Error('Drive folder create returned empty id');
+
+    return {
+      folderId: data.id,
+      folderUrl: data.webViewLink || `https://drive.google.com/drive/folders/${data.id}`,
+      name,
+    };
+  };
+
+  const moveDriveFolderToParentRaw = async (folderId, parentId = null) => {
+    if (!folderId) return true;
+
+    const meta = await driveRequest(
+      `https://www.googleapis.com/drive/v3/files/${folderId}?fields=parents&supportsAllDrives=true`,
+      { method: 'GET', retries: 2 },
     );
-    console.log('Папка заказа создана:', created.folderUrl);
-    return created;
+
+    const currentParents = Array.isArray(meta?.parents) ? meta.parents : [];
+    const removeParents = currentParents.filter((id) => id !== parentId).join(',');
+    const shouldAddParent = Boolean(parentId) && !currentParents.includes(parentId);
+    if (!removeParents && !shouldAddParent) return true;
+
+    const params = new URLSearchParams({ supportsAllDrives: 'true' });
+    if (removeParents) params.set('removeParents', removeParents);
+    if (shouldAddParent && parentId) params.set('addParents', parentId);
+
+    await driveRequest(`https://www.googleapis.com/drive/v3/files/${folderId}?${params.toString()}`, {
+      method: 'PATCH',
+      body: {},
+      retries: 3,
+    });
+    return true;
+  };
+
+  const updateDriveFolderNameRaw = async (folderId, newName) => {
+    if (!folderId) return true;
+    await driveRequest(`https://www.googleapis.com/drive/v3/files/${folderId}?supportsAllDrives=true`, {
+      method: 'PATCH',
+      body: { name: String(newName || '').trim() },
+      retries: 3,
+    });
+    return true;
+  };
+
+  const deleteDriveFolderRaw = async (folderId) => {
+    if (!folderId) return true;
+    await driveRequest(`https://www.googleapis.com/drive/v3/files/${folderId}?supportsAllDrives=true`, {
+      method: 'DELETE',
+      retries: 3,
+      allow404: true,
+    });
+    return true;
+  };
+
+  const createDriveFolderForOrder = async (orderName, orderId) => {
+    const parentId = selectedDriveFolder?.id || null;
+    try {
+      const created = await createDriveFolderRaw({
+        name: orderName,
+        parentId,
+        entityType: 'order',
+        entityId: String(orderId || ''),
+      });
+      setOrders((prev) =>
+        prev.map((o) => (o.id === orderId ? { ...o, driveFolder: created.folderUrl, driveFolderId: created.folderId } : o)),
+      );
+      removeDriveOpByKey('create_order_folder', { orderId });
+      return created;
+    } catch (err) {
+      console.error('Drive create order folder failed:', err);
+      upsertDriveOp('create_order_folder', { orderId, orderName, parentId }, err?.message || 'create_order_folder_failed');
+      return null;
+    }
   };
 
   const createDriveFolderForTrip = async (trip) => {
@@ -1995,58 +2234,40 @@ const App = () => {
       carNumber: trip.carNumberBase || trip.carNumber,
       driverName: trip.driverName,
     });
-    const created = await createDriveFolder(tripFolderName, selectedDriveFolder?.id || null);
-    if (!created) return null;
+    const parentId = selectedDriveFolder?.id || null;
 
-    setTrips((prev) =>
-      prev.map((item) =>
-        item.id === trip.id
-          ? { ...item, driveFolder: created.folderUrl, driveFolderId: created.folderId }
-          : item
-      )
-    );
-    console.log('Папка рейса создана:', created.folderUrl);
-    return created;
+    try {
+      const created = await createDriveFolderRaw({
+        name: tripFolderName,
+        parentId,
+        entityType: 'trip',
+        entityId: String(trip.id || ''),
+      });
+
+      setTrips((prev) =>
+        prev.map((item) =>
+          item.id === trip.id
+            ? { ...item, driveFolder: created.folderUrl, driveFolderId: created.folderId }
+            : item,
+        ),
+      );
+      removeDriveOpByKey('create_trip_folder', { tripId: trip.id });
+      return created;
+    } catch (err) {
+      console.error('Drive create trip folder failed:', err);
+      upsertDriveOp('create_trip_folder', { tripId: trip.id, parentId, tripFolderName }, err?.message || 'create_trip_folder_failed');
+      return null;
+    }
   };
 
   const moveDriveFolderToParent = async (folderId, parentId = null) => {
-    if (!folderId) return false;
     try {
-      const accessToken = await ensureAccessToken();
-      const metaRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${folderId}?fields=parents`,
-        {
-          headers: { Authorization: `Bearer ${accessToken}` },
-        },
-      );
-      const meta = await metaRes.json();
-      if (meta.error) throw new Error(meta.error.message || JSON.stringify(meta.error));
-
-      const currentParents = Array.isArray(meta.parents) ? meta.parents : [];
-      const removeParents = currentParents.filter((id) => id !== parentId).join(",");
-      const shouldAddParent = Boolean(parentId) && !currentParents.includes(parentId);
-      if (!removeParents && !shouldAddParent) return true;
-
-      const params = new URLSearchParams();
-      if (removeParents) params.set('removeParents', removeParents);
-      if (shouldAddParent && parentId) params.set('addParents', parentId);
-
-      const moveRes = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${folderId}?${params.toString()}`,
-        {
-          method: 'PATCH',
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({}),
-        },
-      );
-      const moved = await moveRes.json();
-      if (moved.error) throw new Error(moved.error.message || JSON.stringify(moved.error));
+      await moveDriveFolderToParentRaw(folderId, parentId);
+      removeDriveOpByKey('move_folder', { folderId, parentId: parentId || null });
       return true;
     } catch (err) {
-      console.error('Ошибка перемещения папки:', err);
+      console.error('Drive move folder failed:', err);
+      upsertDriveOp('move_folder', { folderId, parentId: parentId || null }, err?.message || 'move_folder_failed');
       return false;
     }
   };
@@ -2081,7 +2302,7 @@ const App = () => {
         let orderFolderId = order.driveFolderId || null;
         if (!orderFolderId) {
           const created = await createDriveFolderForOrder(
-            order.name || order.recipient || order.id || "Заказ",
+            order.name || order.recipient || order.id || 'Order',
             order.id,
           );
           orderFolderId = created?.folderId || null;
@@ -2101,39 +2322,119 @@ const App = () => {
     }
   };
 
-  // Переименовать папку в Google Drive
   const updateDriveFolderName = async (folderId, newName) => {
     if (!folderId) return;
     try {
-      const accessToken = await ensureAccessToken();
-      await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}`, {
-        method: 'PATCH',
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ name: newName }),
-      });
-      console.log('Папка переименована в:', newName);
+      await updateDriveFolderNameRaw(folderId, newName);
+      removeDriveOpByKey('rename_folder', { folderId });
     } catch (err) {
-      console.error('Ошибка переименования папки:', err);
+      console.error('Drive rename folder failed:', err);
+      upsertDriveOp('rename_folder', { folderId, newName }, err?.message || 'rename_folder_failed');
     }
   };
 
-  // Удалить папку в Google Drive
   const deleteDriveFolder = async (folderId) => {
-    if (!folderId) return;
+    if (!folderId) return true;
     try {
-      const accessToken = await ensureAccessToken();
-      await fetch(`https://www.googleapis.com/drive/v3/files/${folderId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
-      console.log('Папка удалена:', folderId);
+      await deleteDriveFolderRaw(folderId);
+      removeDriveOpByKey('delete_folder', { folderId });
+      return true;
     } catch (err) {
-      console.error('Ошибка удаления папки:', err);
+      console.error('Drive delete folder failed:', err);
+      upsertDriveOp('delete_folder', { folderId }, err?.message || 'delete_folder_failed');
+      return false;
     }
   };
+
+  const processDriveOpsQueue = React.useCallback(async () => {
+    if (!driveConnected || driveOpsProcessingRef.current) return;
+    driveOpsProcessingRef.current = true;
+
+    try {
+      while (true) {
+        const queue = driveOpsQueueRef.current;
+        const now = Date.now();
+        const dueOp = queue.find((item) => Number(item?.nextRunAt || 0) <= now);
+        if (!dueOp) break;
+
+        try {
+          if (dueOp.type === 'create_order_folder') {
+            const liveOrder = orders.find((item) => item.id === dueOp.payload?.orderId);
+            if (liveOrder) {
+              const created = await createDriveFolderRaw({
+                name: liveOrder.name || liveOrder.recipient || dueOp.payload?.orderName || 'Order',
+                parentId: selectedDriveFolder?.id || dueOp.payload?.parentId || null,
+                entityType: 'order',
+                entityId: String(liveOrder.id || ''),
+              });
+              setOrders((prev) =>
+                prev.map((item) =>
+                  item.id === liveOrder.id
+                    ? { ...item, driveFolder: created.folderUrl, driveFolderId: created.folderId }
+                    : item,
+                ),
+              );
+            }
+          } else if (dueOp.type === 'create_trip_folder') {
+            const liveTrip = trips.find((item) => item.id === dueOp.payload?.tripId);
+            if (liveTrip) {
+              const folderName = buildTripDriveFolderName({
+                carNumber: liveTrip.carNumberBase || liveTrip.carNumber,
+                driverName: liveTrip.driverName,
+              });
+              const created = await createDriveFolderRaw({
+                name: folderName,
+                parentId: selectedDriveFolder?.id || dueOp.payload?.parentId || null,
+                entityType: 'trip',
+                entityId: String(liveTrip.id || ''),
+              });
+              setTrips((prev) =>
+                prev.map((item) =>
+                  item.id === liveTrip.id
+                    ? { ...item, driveFolder: created.folderUrl, driveFolderId: created.folderId }
+                    : item,
+                ),
+              );
+            }
+          } else if (dueOp.type === 'move_folder') {
+            await moveDriveFolderToParentRaw(dueOp.payload?.folderId, dueOp.payload?.parentId || null);
+          } else if (dueOp.type === 'rename_folder') {
+            await updateDriveFolderNameRaw(dueOp.payload?.folderId, dueOp.payload?.newName || '');
+          } else if (dueOp.type === 'delete_folder') {
+            await deleteDriveFolderRaw(dueOp.payload?.folderId);
+          }
+
+          setDriveOpsQueue((prev) => prev.filter((item) => item.id !== dueOp.id));
+        } catch (error) {
+          const nextAttempt = Number(dueOp.attempt || 0) + 1;
+          const nextRunAt = Date.now() + getDriveRetryDelayMs(nextAttempt);
+          setDriveOpsQueue((prev) =>
+            prev.map((item) =>
+              item.id === dueOp.id
+                ? {
+                    ...item,
+                    attempt: nextAttempt,
+                    nextRunAt,
+                    lastError: String(error?.message || 'drive_queue_retry_failed'),
+                  }
+                : item,
+            ),
+          );
+        }
+      }
+    } finally {
+      driveOpsProcessingRef.current = false;
+    }
+  }, [driveConnected, orders, selectedDriveFolder?.id, trips]);
+
+  React.useEffect(() => {
+    if (!driveConnected || driveOpsQueue.length === 0) return undefined;
+    void processDriveOpsQueue();
+    const intervalId = setInterval(() => {
+      void processDriveOpsQueue();
+    }, 30000);
+    return () => clearInterval(intervalId);
+  }, [driveConnected, driveOpsQueue.length, processDriveOpsQueue]);
 
   const selectDriveFolder = async () => {
     if (!driveConnected) {
@@ -2310,6 +2611,11 @@ const App = () => {
   const handleEditClick = (order) => {
     setFormData(createOrderFormDataFromOrder(order));
     setEditingOrderId(order.id);
+    setAwbStatusCheck({
+      loading: false,
+      error: "",
+      data: null,
+    });
     setOrdersScreenMode("create");
   };
   const handleCopyOrderClick = (order) => {
@@ -2344,6 +2650,11 @@ const App = () => {
 
   const cancelOrderForm = () => {
     setEditingOrderId(null);
+    setAwbStatusCheck({
+      loading: false,
+      error: "",
+      data: null,
+    });
     setFormData({
       shipmentAirport: "",
       shipmentTerminal: "",
@@ -2754,6 +3065,7 @@ const App = () => {
                     isPowerOfAttorneySyncLoading={isPowerOfAttorneySyncLoading}
                     onCheckAwbStatus={checkAwbStatus}
                     onOpenManualCheck={openManualCargoCheck}
+                    onOpenCargoTerminalFromError={openCargoTerminalFromError}
                     onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}
                     onFieldChange={handleFieldChange}
                     onSubmit={handleSubmit}
@@ -3012,3 +3324,4 @@ const App = () => {
   );
 };
 export default App;
+

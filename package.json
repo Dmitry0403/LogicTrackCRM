@@ -7,7 +7,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "vite",
-    "lint": "eslint src"
+    "lint": "npm run lint:js && npm run lint:encoding",
+    "lint:js": "eslint src",
+    "lint:encoding": "node scripts/check-mojibake.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",

@@ -45,6 +45,8 @@ const POA_XLSX_URL = process.env.POA_XLSX_URL || '';
 const POA_XLSX_PATH = process.env.POA_XLSX_PATH || '';
 const CARGO_STATUS_TTL_MS = Number(process.env.CARGO_STATUS_TTL_MS || 300000);
 const CARGO_CHECK_TIMEOUT_MS = Number(process.env.CARGO_CHECK_TIMEOUT_MS || 45000);
+const CARGO_NAV_TIMEOUT_MS = Number(process.env.CARGO_NAV_TIMEOUT_MS || Math.max(CARGO_CHECK_TIMEOUT_MS, 65000));
+const CARGO_STATUS_RETRY_COUNT = Number(process.env.CARGO_STATUS_RETRY_COUNT || 1);
 const CARGO_SCREENSHOTS_ENABLED = String(process.env.CARGO_SCREENSHOTS_ENABLED || 'true').toLowerCase() === 'true';
 const TRIP_PDF_ENGINE = String(process.env.TRIP_PDF_ENGINE || '').trim().toLowerCase();
 const TRIP_APPLICATION_TEMPLATE_PATH = (() => {
@@ -117,6 +119,22 @@ const normalizeText = (value) =>
 
 const normalizeAwb = (value) => String(value || '').replace(/\s+/g, '').trim();
 const normalizeAwbPart = (value, maxLen) => String(value || '').replace(/\D/g, '').slice(0, maxLen);
+// eslint-disable-next-line no-control-regex
+const stripAnsi = (value) => String(value || '').replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-ntqry=><~]))/g, '');
+const normalizeCargoErrorDetails = (error) => {
+  const message = stripAnsi(error?.message || '').trim();
+  if (!message) return 'Failed to check cargo status. Try again.';
+  return message.length > 500 ? `${message.slice(0, 500)}...` : message;
+};
+const isCargoTimeoutError = (error) => {
+  const text = normalizeCargoErrorDetails(error).toLowerCase();
+  return (
+    text.includes('timeout') ||
+    text.includes('timed out') ||
+    text.includes('navigation timeout') ||
+    text.includes('page.goto')
+  );
+};
 const escapeHtml = (value) =>
   String(value == null ? '' : value)
     .replace(/&/g, '&amp;')
@@ -1471,7 +1489,7 @@ const scrapeGenericCargoStatus = async ({ awb, awbParts, terminalConfig }) => {
   const checkedAt = Date.now();
 
   try {
-    await page.goto(terminalConfig.url, { waitUntil: 'domcontentloaded', timeout: CARGO_CHECK_TIMEOUT_MS });
+    await page.goto(terminalConfig.url, { waitUntil: 'domcontentloaded', timeout: CARGO_NAV_TIMEOUT_MS });
     await page.waitForTimeout(1200);
 
     let submitted = await runSpecificTerminalSearch({ page, awb, awbParts, terminalConfig });
@@ -1962,7 +1980,7 @@ const scrapeMoscowCargoStatus = async ({ awb, awbParts, terminalLabel }) => {
   const checkedAt = Date.now();
 
   try {
-    await page.goto(MOSCOW_CARGO_URL, { waitUntil: 'domcontentloaded', timeout: CARGO_CHECK_TIMEOUT_MS });
+    await page.goto(MOSCOW_CARGO_URL, { waitUntil: 'domcontentloaded', timeout: CARGO_NAV_TIMEOUT_MS });
 
     const resolvedAwbParts = awbParts || splitAwbParts(awb);
     if (!resolvedAwbParts) {
@@ -2122,9 +2140,26 @@ app.post('/cargo/status', async (req, res) => {
       });
     }
 
-    const data = terminalConfig.mode === 'moscow'
-      ? await scrapeMoscowCargoStatus({ awb, awbParts, terminalLabel: terminalConfig.label })
-      : await scrapeGenericCargoStatus({ awb, awbParts, terminalConfig });
+    let data = null;
+    let lastError = null;
+    for (let attempt = 0; attempt <= CARGO_STATUS_RETRY_COUNT; attempt += 1) {
+      try {
+        data = terminalConfig.mode === 'moscow'
+          ? await scrapeMoscowCargoStatus({ awb, awbParts, terminalLabel: terminalConfig.label })
+          : await scrapeGenericCargoStatus({ awb, awbParts, terminalConfig });
+        lastError = null;
+        break;
+      } catch (error) {
+        lastError = error;
+        const canRetry = attempt < CARGO_STATUS_RETRY_COUNT && isCargoTimeoutError(error);
+        if (canRetry) {
+          console.warn(`[cargo/status] timeout, retry ${attempt + 1}/${CARGO_STATUS_RETRY_COUNT} for ${terminalConfig.key} ${awb}`);
+          continue;
+        }
+        throw error;
+      }
+    }
+    if (!data && lastError) throw lastError;
     const expiresAt = Date.now() + CARGO_STATUS_TTL_MS;
     if (cacheEntry?.data?.screenshotId && cacheEntry.data.screenshotId !== data.screenshotId) {
       await removeCargoScreenshot(cacheEntry.data.screenshotId).catch(() => {});
@@ -2140,7 +2175,7 @@ app.post('/cargo/status', async (req, res) => {
       cacheExpiresAt: expiresAt,
     });
   } catch (error) {
-    const details = error.message || 'cargo_status_failed';
+    const details = normalizeCargoErrorDetails(error);
     const screenshotPath = error.screenshotPath
       ? path.relative(process.cwd(), error.screenshotPath)
       : null;
