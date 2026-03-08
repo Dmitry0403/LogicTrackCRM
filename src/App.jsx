@@ -682,6 +682,7 @@ const App = () => {
   });
   const [isTripPrintLoading, setIsTripPrintLoading] = React.useState(false);
   const [isDeleteCardLoading, setIsDeleteCardLoading] = React.useState(false);
+  const [isOrderCloudSaving, setIsOrderCloudSaving] = React.useState(false);
   const awbCheckAbortRef = React.useRef(null);
   const [editingOrderId, setEditingOrderId] = React.useState(null);
   const [editingTripId, setEditingTripId] = React.useState(null);
@@ -981,6 +982,98 @@ const App = () => {
     parseCloudUpdatedAt,
   ]);
 
+  const saveCloudSnapshotNow = React.useCallback(async (snapshot) => {
+    if (!isSupabaseConfigured || !supabase || !authReady || !currentUser?.id || !isCloudStateReady) {
+      return { skipped: true };
+    }
+
+    try {
+      const { data: remoteMeta, error: remoteMetaError } = await supabase
+        .from("app_state")
+        .select("id, updated_at, orders, trips, order_stages, trip_stages, print_signer")
+        .eq("id", userScopedAppStateId)
+        .maybeSingle();
+
+      if (remoteMetaError) throw remoteMetaError;
+
+      const remoteUpdatedAtMs = parseCloudUpdatedAt(remoteMeta?.updated_at);
+      if (
+        remoteMeta &&
+        lastCloudUpdatedAtRef.current > 0 &&
+        remoteUpdatedAtMs > lastCloudUpdatedAtRef.current + 500
+      ) {
+        console.warn("Cloud conflict detected. Applying newer server snapshot.");
+        applyCloudSnapshot(remoteMeta);
+        lastCloudUpdatedAtRef.current = remoteUpdatedAtMs;
+        return { conflict: true };
+      }
+
+      const payload = {
+        owner_user_id: currentUser.id,
+        orders: snapshot.orders,
+        trips: snapshot.trips,
+        order_stages: snapshot.orderStages,
+        trip_stages: snapshot.tripStages,
+        print_signer: snapshot.printSignerSettings,
+      };
+
+      if (!remoteMeta) {
+        const { data: inserted, error: insertError } = await supabase
+          .from("app_state")
+          .insert({ id: userScopedAppStateId, ...payload })
+          .select("updated_at")
+          .single();
+        if (insertError) throw insertError;
+        lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(inserted?.updated_at);
+        return { saved: true };
+      }
+
+      let updateQuery = supabase
+        .from("app_state")
+        .update(payload)
+        .eq("id", userScopedAppStateId);
+
+      if (remoteMeta.updated_at) {
+        updateQuery = updateQuery.eq("updated_at", remoteMeta.updated_at);
+      }
+
+      const { data: updated, error: updateError } = await updateQuery
+        .select("updated_at")
+        .maybeSingle();
+
+      if (updateError) throw updateError;
+
+      if (!updated) {
+        const { data: freshRemote } = await supabase
+          .from("app_state")
+          .select("id, updated_at, orders, trips, order_stages, trip_stages, print_signer")
+          .eq("id", userScopedAppStateId)
+          .maybeSingle();
+        if (freshRemote) {
+          console.warn("Cloud CAS mismatch. Applying server snapshot.");
+          applyCloudSnapshot(freshRemote);
+          lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(freshRemote.updated_at);
+        }
+        return { conflict: true };
+      }
+
+      lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(updated.updated_at);
+      return { saved: true };
+    } catch (error) {
+      console.error("Failed to save state to Supabase:", error);
+      return { error };
+    }
+  }, [
+    isSupabaseConfigured,
+    supabase,
+    authReady,
+    currentUser,
+    isCloudStateReady,
+    userScopedAppStateId,
+    parseCloudUpdatedAt,
+    applyCloudSnapshot,
+  ]);
+
   React.useEffect(() => {
     if (!isSupabaseConfigured || !supabase || !authReady || !currentUser?.id || !isCloudStateReady) {
       return undefined;
@@ -996,82 +1089,13 @@ const App = () => {
     }
 
     cloudSaveTimeoutRef.current = setTimeout(() => {
-      void (async () => {
-        try {
-          const { data: remoteMeta, error: remoteMetaError } = await supabase
-            .from("app_state")
-            .select("id, updated_at, orders, trips, order_stages, trip_stages, print_signer")
-            .eq("id", userScopedAppStateId)
-            .maybeSingle();
-
-          if (remoteMetaError) throw remoteMetaError;
-
-          const remoteUpdatedAtMs = parseCloudUpdatedAt(remoteMeta?.updated_at);
-          if (
-            remoteMeta &&
-            lastCloudUpdatedAtRef.current > 0 &&
-            remoteUpdatedAtMs > lastCloudUpdatedAtRef.current + 500
-          ) {
-            console.warn("Cloud conflict detected. Applying newer server snapshot.");
-            applyCloudSnapshot(remoteMeta);
-            lastCloudUpdatedAtRef.current = remoteUpdatedAtMs;
-            return;
-          }
-
-          const payload = {
-            owner_user_id: currentUser.id,
-            orders,
-            trips,
-            order_stages: orderStages,
-            trip_stages: tripStages,
-            print_signer: printSignerSettings,
-          };
-
-          if (!remoteMeta) {
-            const { data: inserted, error: insertError } = await supabase
-              .from("app_state")
-              .insert({ id: userScopedAppStateId, ...payload })
-              .select("updated_at")
-              .single();
-            if (insertError) throw insertError;
-            lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(inserted?.updated_at);
-            return;
-          }
-
-          let updateQuery = supabase
-            .from("app_state")
-            .update(payload)
-            .eq("id", userScopedAppStateId);
-
-          if (remoteMeta.updated_at) {
-            updateQuery = updateQuery.eq("updated_at", remoteMeta.updated_at);
-          }
-
-          const { data: updated, error: updateError } = await updateQuery
-            .select("updated_at")
-            .maybeSingle();
-
-          if (updateError) throw updateError;
-
-          if (!updated) {
-            const { data: freshRemote } = await supabase
-              .from("app_state")
-              .select("id, updated_at, orders, trips, order_stages, trip_stages, print_signer")
-              .eq("id", userScopedAppStateId)
-              .maybeSingle();
-            if (freshRemote) {
-              console.warn("Cloud CAS mismatch. Applying server snapshot.");
-              applyCloudSnapshot(freshRemote);
-              lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(freshRemote.updated_at);
-            }
-            return;
-          }
-
-          lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(updated.updated_at);
-        } catch (error) {
-          console.error("Failed to save state to Supabase:", error);
-        }
-      })();
+      void saveCloudSnapshotNow({
+        orders,
+        trips,
+        orderStages,
+        tripStages,
+        printSignerSettings,
+      });
     }, 700);
 
     return () => {
@@ -1543,7 +1567,7 @@ const App = () => {
     }
   };
 
-  const handleSubmit = (event) => {
+  const handleSubmit = async (event) => {
     event.preventDefault();
     const order = {
       id: editingOrderId || `order-${Date.now()}`,
@@ -1571,17 +1595,21 @@ const App = () => {
     const originalOrder = editingOrderId
       ? orders.find((item) => item.id === editingOrderId)
       : null;
+
+    let nextOrders = orders;
     if (originalOrder) {
       order.driveFolder = originalOrder.driveFolder || null;
       order.driveFolderId = originalOrder.driveFolderId || null;
-      setOrders((prev) => prev.map((item) => (item.id === editingOrderId ? order : item)));
+      nextOrders = orders.map((item) => (item.id === editingOrderId ? order : item));
+      setOrders(nextOrders);
       if (originalOrder.name !== order.name && order.driveFolderId) {
-        updateDriveFolderName(order.driveFolderId, order.name);
+        void updateDriveFolderName(order.driveFolderId, order.name);
       }
     } else {
-      setOrders((prev) => [order, ...prev]);
+      nextOrders = [order, ...orders];
+      setOrders(nextOrders);
       if (driveConnected) {
-        createDriveFolderForOrder(order.name, order.id);
+        void createDriveFolderForOrder(order.name, order.id);
       }
     }
 
@@ -1607,6 +1635,21 @@ const App = () => {
       data: null,
     });
     setOrdersScreenMode("list");
+
+    if (isSupabaseConfigured && authReady && currentUser?.id && isCloudStateReady) {
+      setIsOrderCloudSaving(true);
+      try {
+        await saveCloudSnapshotNow({
+          orders: nextOrders,
+          trips,
+          orderStages,
+          tripStages,
+          printSignerSettings,
+        });
+      } finally {
+        setIsOrderCloudSaving(false);
+      }
+    }
   };
 
   const handleTripFieldChange = (field) => (event) => {
@@ -3176,6 +3219,7 @@ const App = () => {
                     onFieldChange={handleFieldChange}
                     onSubmit={handleSubmit}
                     onCancel={cancelOrderForm}
+                    isSaving={isOrderCloudSaving}
                     embedded
                   />
                 </WorkPanel>

@@ -38,6 +38,7 @@ export function OrderFormCard({
   onFieldChange,
   onSubmit,
   onCancel,
+  isSaving = false,
   embedded = false,
 }) {
   const handleAwbPrefixChange = (event) => {
@@ -305,11 +306,11 @@ export function OrderFormCard({
         />
       </div>
       <div className="order-form__actions">
-        <button type="submit" className="primary">
-          Сохранить
+        <button type="submit" className="primary" disabled={isSaving}>
+          {isSaving ? "\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u043c..." : "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c"}
         </button>
-        <button type="button" onClick={() => onCancel?.()}>
-          Отменить
+        <button type="button" onClick={() => onCancel?.()} disabled={isSaving}>
+          {"\u041e\u0442\u043c\u0435\u043d\u0438\u0442\u044c"}
         </button>
       </div>
     </form>

@@ -1,4 +1,4 @@
-﻿require('dotenv').config();
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
@@ -64,41 +64,41 @@ const ZHUKOVSKY_CARGO_URL = 'https://www.aero-grad.ru/aircargo/info/ac_07.pub_in
 const CARGO_TERMINAL_CONFIG = {
   svo_moscow: {
     key: 'svo_moscow',
-    label: 'Москва-карго',
+    label: 'Р В РЎС™Р В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў',
     url: MOSCOW_CARGO_URL,
     mode: 'moscow',
   },
   svo_sher: {
     key: 'svo_sher',
-    label: 'Шереметьево-карго',
+    label: 'Р В Р РѓР В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР Р‰Р В Р’ВµР В Р вЂ Р В РЎвЂў-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў',
     url: SHER_CARGO_URL,
     mode: 'generic',
   },
   vko: {
     key: 'vko',
-    label: 'Внуково',
+    label: 'Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р В РЎвЂў',
     url: VNUKOVO_CARGO_URL,
     mode: 'generic',
   },
   dme: {
     key: 'dme',
-    label: 'Домодедово',
+    label: 'Р В РІР‚СњР В РЎвЂўР В РЎВР В РЎвЂўР В РўвЂР В Р’ВµР В РўвЂР В РЎвЂўР В Р вЂ Р В РЎвЂў',
     url: DOMODEDOVO_CARGO_URL,
     mode: 'generic',
   },
   zia: {
     key: 'zia',
-    label: 'Жуковский',
+    label: 'Р В РІР‚вЂњР РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р РЋР С“Р В РЎвЂќР В РЎвЂР В РІвЂћвЂ“',
     url: ZHUKOVSKY_CARGO_URL,
     mode: 'generic',
   },
 };
 
 const defaultSheetTabs = {
-  'Шереметьево': 'Шереметьево',
-  'Внуково': 'Внуково',
-  'Домодедово': 'Домодедово',
-  'Жуковский': 'Жуковский',
+  'Р В Р РѓР В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР Р‰Р В Р’ВµР В Р вЂ Р В РЎвЂў': 'Р В Р РѓР В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР Р‰Р В Р’ВµР В Р вЂ Р В РЎвЂў',
+  'Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р В РЎвЂў': 'Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р В РЎвЂў',
+  'Р В РІР‚СњР В РЎвЂўР В РЎВР В РЎвЂўР В РўвЂР В Р’ВµР В РўвЂР В РЎвЂўР В Р вЂ Р В РЎвЂў': 'Р В РІР‚СњР В РЎвЂўР В РЎВР В РЎвЂўР В РўвЂР В Р’ВµР В РўвЂР В РЎвЂўР В Р вЂ Р В РЎвЂў',
+  'Р В РІР‚вЂњР РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р РЋР С“Р В РЎвЂќР В РЎвЂР В РІвЂћвЂ“': 'Р В РІР‚вЂњР РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р РЋР С“Р В РЎвЂќР В РЎвЂР В РІвЂћвЂ“',
 };
 
 let poaCache = {
@@ -112,7 +112,7 @@ const cargoScreenshotStore = new Map();
 const normalizeText = (value) =>
   String(value || '')
     .toLowerCase()
-    .replace(/ё/g, 'е')
+    .replace(/Р РЋРІР‚В/g, 'Р В Р’Вµ')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -148,7 +148,7 @@ const buildTripApplicationPdfHtml = ({ trip, orders }) => {
     .map((order, index) => `
       <tr>
         <td>${index + 1}</td>
-        <td>${escapeHtml(order.name || order.recipient || 'Без названия')}</td>
+        <td>${escapeHtml(order.name || order.recipient || 'Р В РІР‚ВР В Р’ВµР В Р’В· Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ')}</td>
         <td>${escapeHtml(order.awb || '-')}</td>
         <td>${escapeHtml(order.recipient || '-')}</td>
         <td>${escapeHtml(order.customsName || order.customsCode || '-')}</td>
@@ -162,7 +162,7 @@ const buildTripApplicationPdfHtml = ({ trip, orders }) => {
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Заявка СТС</title>
+  <title>Р В РІР‚вЂќР В Р’В°Р РЋР РЏР В Р вЂ Р В РЎвЂќР В Р’В° Р В Р Р‹Р В РЎС›Р В Р Р‹</title>
   <style>
     @page { size: A4; margin: 14mm; }
     body { margin: 0; font-family: "Times New Roman", serif; color: #111; font-size: 13px; }
@@ -181,24 +181,24 @@ const buildTripApplicationPdfHtml = ({ trip, orders }) => {
 </head>
 <body>
   <div class="doc">
-    <div class="title">Заявка СТС</div>
+    <div class="title">Р В РІР‚вЂќР В Р’В°Р РЋР РЏР В Р вЂ Р В РЎвЂќР В Р’В° Р В Р Р‹Р В РЎС›Р В Р Р‹</div>
     <div class="meta">
-      <div class="meta-row"><div class="meta-key">Номер рейса:</div><div>${escapeHtml(trip.tripNumber || '-')}</div></div>
-      <div class="meta-row"><div class="meta-key">Дата рейса:</div><div>${escapeHtml(formatTripDateRu(trip.tripDate) || '-')}</div></div>
-      <div class="meta-row"><div class="meta-key">Автомобиль:</div><div>${escapeHtml(trip.carNumber || '-')}</div></div>
-      <div class="meta-row"><div class="meta-key">Водитель:</div><div>${escapeHtml(trip.driverName || '-')}</div></div>
-      <div class="meta-row"><div class="meta-key">Количество заказов:</div><div>${orders.length}</div></div>
+      <div class="meta-row"><div class="meta-key">Р В РЎСљР В РЎвЂўР В РЎВР В Р’ВµР РЋР вЂљ Р РЋР вЂљР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р В Р’В°:</div><div>${escapeHtml(trip.tripNumber || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Р В РІР‚СњР В Р’В°Р РЋРІР‚С™Р В Р’В° Р РЋР вЂљР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р В Р’В°:</div><div>${escapeHtml(formatTripDateRu(trip.tripDate) || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Р В РЎвЂ™Р В Р вЂ Р РЋРІР‚С™Р В РЎвЂўР В РЎВР В РЎвЂўР В Р’В±Р В РЎвЂР В Р’В»Р РЋР Р‰:</div><div>${escapeHtml(trip.carNumber || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Р В РІР‚в„ўР В РЎвЂўР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰:</div><div>${escapeHtml(trip.driverName || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Р В РЎв„ўР В РЎвЂўР В Р’В»Р В РЎвЂР РЋРІР‚РЋР В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂў Р В Р’В·Р В Р’В°Р В РЎвЂќР В Р’В°Р В Р’В·Р В РЎвЂўР В Р вЂ :</div><div>${orders.length}</div></div>
     </div>
     <table>
       <thead>
         <tr>
-          <th style="width: 34px;">№</th>
-          <th>Заказ</th>
+          <th style="width: 34px;">Р Р†РІР‚С›РІР‚вЂњ</th>
+          <th>Р В РІР‚вЂќР В Р’В°Р В РЎвЂќР В Р’В°Р В Р’В·</th>
           <th>AWB</th>
-          <th>Получатель</th>
-          <th>Таможня назначения</th>
-          <th style="width: 70px;">Мест</th>
-          <th style="width: 70px;">Вес, кг</th>
+          <th>Р В РЎСџР В РЎвЂўР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋР В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰</th>
+          <th>Р В РЎС›Р В Р’В°Р В РЎВР В РЎвЂўР В Р’В¶Р В Р вЂ¦Р РЋР РЏ Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ</th>
+          <th style="width: 70px;">Р В РЎС™Р В Р’ВµР РЋР С“Р РЋРІР‚С™</th>
+          <th style="width: 70px;">Р В РІР‚в„ўР В Р’ВµР РЋР С“, Р В РЎвЂќР В РЎвЂ“</th>
         </tr>
       </thead>
       <tbody>
@@ -207,12 +207,12 @@ const buildTripApplicationPdfHtml = ({ trip, orders }) => {
     </table>
     <div class="signatures">
       <div>
-        <div class="sign-box">Подпись ответственного</div>
-        <div class="muted">ФИО, подпись, дата</div>
+        <div class="sign-box">Р В РЎСџР В РЎвЂўР В РўвЂР В РЎвЂ”Р В РЎвЂР РЋР С“Р РЋР Р‰ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В Р’ВµР В Р вЂ¦Р В Р вЂ¦Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў</div>
+        <div class="muted">Р В Р’В¤Р В Р’ВР В РЎвЂє, Р В РЎвЂ”Р В РЎвЂўР В РўвЂР В РЎвЂ”Р В РЎвЂР РЋР С“Р РЋР Р‰, Р В РўвЂР В Р’В°Р РЋРІР‚С™Р В Р’В°</div>
       </div>
       <div>
-        <div class="sign-box">М.П.</div>
-        <div class="muted">Печать</div>
+        <div class="sign-box">Р В РЎС™.Р В РЎСџ.</div>
+        <div class="muted">Р В РЎСџР В Р’ВµР РЋРІР‚РЋР В Р’В°Р РЋРІР‚С™Р РЋР Р‰</div>
       </div>
     </div>
   </div>
@@ -256,17 +256,17 @@ const generateTripPdfFromWordTemplate = async ({ templatePath, trip, orders }) =
     carNumber: String(trip.carNumber || '').trim(),
     driverName: String(trip.driverName || '').trim(),
     airport: String(orders[0]?.shipmentAirport || '').trim(),
-    signerRole: String(trip.signerRole || 'Менеджер').trim(),
-    signerName: String(trip.signerName || 'Косенко Д.В.').trim(),
+    signerRole: String(trip.signerRole || 'Р В РЎС™Р В Р’ВµР В Р вЂ¦Р В Р’ВµР В РўвЂР В Р’В¶Р В Р’ВµР РЋР вЂљ').trim(),
+    signerName: String(trip.signerName || 'Р В РЎв„ўР В РЎвЂўР РЋР С“Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В РЎвЂў Р В РІР‚Сњ.Р В РІР‚в„ў.').trim(),
     labels: {
-      awbPrefix: '-авианакладная №',
-      places: 'мест',
-      kg: 'кг',
-      customsPrefix: 'Таможня назначения -',
-      notePrefix: 'Примечание:',
+      awbPrefix: '-Р В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В°Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂР В Р вЂ¦Р В Р’В°Р РЋР РЏ Р Р†РІР‚С›РІР‚вЂњ',
+      places: 'Р В РЎВР В Р’ВµР РЋР С“Р РЋРІР‚С™',
+      kg: 'Р В РЎвЂќР В РЎвЂ“',
+      customsPrefix: 'Р В РЎС›Р В Р’В°Р В РЎВР В РЎвЂўР В Р’В¶Р В Р вЂ¦Р РЋР РЏ Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ -',
+      notePrefix: 'Р В РЎСџР РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋРІР‚РЋР В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ:',
     },
     orders: orders.map((order) => ({
-      name: String(order.name || order.recipient || 'Без названия').trim(),
+      name: String(order.name || order.recipient || 'Р В РІР‚ВР В Р’ВµР В Р’В· Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ').trim(),
       awb: String(order.awb || '').trim(),
       quantity: String(order.quantity || '').trim(),
       weight: String(order.weight || '').trim(),
@@ -325,8 +325,8 @@ try {
 
   Replace-InRange $fullRange '{{SIGNER_ROLE}}' $payload.signerRole
   Replace-InRange $fullRange '{{SIGNER_NAME}}' $payload.signerName
-  Replace-InRange $fullRange '{{SIGNER_ROLE|Менеджер}}' $payload.signerRole
-  Replace-InRange $fullRange '{{SIGNER_NAME|Косенко Д.В.}}' $payload.signerName
+  Replace-InRange $fullRange '{{SIGNER_ROLE|Р В РЎС™Р В Р’ВµР В Р вЂ¦Р В Р’ВµР В РўвЂР В Р’В¶Р В Р’ВµР РЋР вЂљ}}' $payload.signerRole
+  Replace-InRange $fullRange '{{SIGNER_NAME|Р В РЎв„ўР В РЎвЂўР РЋР С“Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В РЎвЂў Р В РІР‚Сњ.Р В РІР‚в„ў.}}' $payload.signerName
 
   $startPara = $null
   $endPara = $null
@@ -469,17 +469,17 @@ const findParagraphRangeByToken = (xml, token) => {
 const buildOrdersDocxParagraphs = (orders) => {
   const lines = [];
   orders.forEach((order, index) => {
-    const name = String(order.name || order.recipient || 'Без названия').trim();
+    const name = String(order.name || order.recipient || 'Р В РІР‚ВР В Р’ВµР В Р’В· Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ').trim();
     const awb = String(order.awb || '').trim();
     const quantity = String(order.quantity || '').trim();
     const weight = String(order.weight || '').trim();
     const customsName = String(order.customsName || '').trim();
     const customsCode = String(order.customsCode || '').trim();
     const notes = String(order.notes || '').trim();
-    lines.push(`${index + 1}. ${name} -авианакладная № ${awb} - ${quantity} мест / ${weight} кг,`);
-    lines.push(`Таможня назначения - ${customsName} / ${customsCode}`);
+    lines.push(`${index + 1}. ${name} -Р В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В°Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂР В Р вЂ¦Р В Р’В°Р РЋР РЏ Р Р†РІР‚С›РІР‚вЂњ ${awb} - ${quantity} Р В РЎВР В Р’ВµР РЋР С“Р РЋРІР‚С™ / ${weight} Р В РЎвЂќР В РЎвЂ“,`);
+    lines.push(`Р В РЎС›Р В Р’В°Р В РЎВР В РЎвЂўР В Р’В¶Р В Р вЂ¦Р РЋР РЏ Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ - ${customsName} / ${customsCode}`);
     if (notes) {
-      lines.push(`Примечание: ${notes}`);
+      lines.push(`Р В РЎСџР РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋРІР‚РЋР В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ: ${notes}`);
     }
   });
   return lines
@@ -488,7 +488,7 @@ const buildOrdersDocxParagraphs = (orders) => {
 };
 
 const buildOrderTokenMap = (order, index) => {
-  const recipient = String(order.name || order.recipient || 'Без названия').trim();
+  const recipient = String(order.name || order.recipient || 'Р В РІР‚ВР В Р’ВµР В Р’В· Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ').trim();
   const awb = String(order.awb || '').trim();
   const places = String(order.quantity || '').trim();
   const weight = String(order.weight || '').trim();
@@ -586,10 +586,10 @@ const generateTripDocxFromTemplate = async ({ templatePath, trip, orders }) => {
     ['{{AIRPORT}}', String(orders[0]?.shipmentAirport || '').trim()],
     ['{{CAR_NUMBER}}', String(trip.carNumber || '').trim()],
     ['{{DRIVER_NAME}}', String(trip.driverName || '').trim()],
-    ['{{SIGNER_ROLE}}', String(trip.signerRole || 'Менеджер').trim()],
-    ['{{SIGNER_NAME}}', String(trip.signerName || 'Косенко Д.В.').trim()],
-    ['{{SIGNER_ROLE|Менеджер}}', String(trip.signerRole || 'Менеджер').trim()],
-    ['{{SIGNER_NAME|Косенко Д.В.}}', String(trip.signerName || 'Косенко Д.В.').trim()],
+    ['{{SIGNER_ROLE}}', String(trip.signerRole || 'Р В РЎС™Р В Р’ВµР В Р вЂ¦Р В Р’ВµР В РўвЂР В Р’В¶Р В Р’ВµР РЋР вЂљ').trim()],
+    ['{{SIGNER_NAME}}', String(trip.signerName || 'Р В РЎв„ўР В РЎвЂўР РЋР С“Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В РЎвЂў Р В РІР‚Сњ.Р В РІР‚в„ў.').trim()],
+    ['{{SIGNER_ROLE|Р В РЎС™Р В Р’ВµР В Р вЂ¦Р В Р’ВµР В РўвЂР В Р’В¶Р В Р’ВµР РЋР вЂљ}}', String(trip.signerRole || 'Р В РЎС™Р В Р’ВµР В Р вЂ¦Р В Р’ВµР В РўвЂР В Р’В¶Р В Р’ВµР РЋР вЂљ').trim()],
+    ['{{SIGNER_NAME|Р В РЎв„ўР В РЎвЂўР РЋР С“Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В РЎвЂў Р В РІР‚Сњ.Р В РІР‚в„ў.}}', String(trip.signerName || 'Р В РЎв„ўР В РЎвЂўР РЋР С“Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В РЎвЂў Р В РІР‚Сњ.Р В РІР‚в„ў.').trim()],
   ]);
 
   replacements.forEach((value, token) => {
@@ -651,7 +651,7 @@ const headerIncludes = (header, token) => normalizeText(header).includes(token);
 
 const isDateHeader = (header) => {
   const h = normalizeText(header);
-  return h.includes('срок') || h.includes('действ') || h.includes('до') || h.includes('expir');
+  return h.includes('Р РЋР С“Р РЋР вЂљР В РЎвЂўР В РЎвЂќ') || h.includes('Р В РўвЂР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ ') || h.includes('Р В РўвЂР В РЎвЂў') || h.includes('expir');
 };
 
 const makeCargoScreenshotMeta = ({ awb, terminalKey = 'cargo' }) => {
@@ -797,10 +797,10 @@ const captureMoscowCargoResultScreenshot = async ({ page, awb, terminalKey = 'ca
       if (el.scrollHeight <= el.clientHeight + 20) return -1;
       const text = (el.innerText || '').toLowerCase();
       let score = 0;
-      if (text.includes('история обработки груза')) score += 15;
-      if (text.includes('параметры авианакладной')) score += 12;
-      if (text.includes('таможенная информация')) score += 8;
-      if (text.includes('дата awb')) score += 5;
+      if (text.includes('Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР РЏ Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р В Р’В±Р В РЎвЂўР РЋРІР‚С™Р В РЎвЂќР В РЎвЂ Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В Р’В°')) score += 15;
+      if (text.includes('Р В РЎвЂ”Р В Р’В°Р РЋР вЂљР В Р’В°Р В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР вЂљР РЋРІР‚в„– Р В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В°Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂР В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“')) score += 12;
+      if (text.includes('Р РЋРІР‚С™Р В Р’В°Р В РЎВР В РЎвЂўР В Р’В¶Р В Р’ВµР В Р вЂ¦Р В Р вЂ¦Р В Р’В°Р РЋР РЏ Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ')) score += 8;
+      if (text.includes('Р В РўвЂР В Р’В°Р РЋРІР‚С™Р В Р’В° awb')) score += 5;
       score += Math.min(el.scrollHeight / 500, 15);
       score += Math.min(el.clientHeight / 300, 5);
       return score;
@@ -916,9 +916,9 @@ const fillGenericAwbInputs = async ({ page, awb, awbParts }) => {
       const hint = `${type} ${name} ${id} ${placeholder}`;
 
       if (/(date|email|password|tel)/.test(type)) continue;
-      if (hint.includes('prefix') || hint.includes('преф') || hint.includes('code')) {
+      if (hint.includes('prefix') || hint.includes('Р В РЎвЂ”Р РЋР вЂљР В Р’ВµР РЋРІР‚С›') || hint.includes('code')) {
         if (firstIndex === -1) firstIndex = i;
-      } else if (hint.includes('number') || hint.includes('номер') || hint.includes('awb') || hint.includes('наклад')) {
+      } else if (hint.includes('number') || hint.includes('Р В Р вЂ¦Р В РЎвЂўР В РЎВР В Р’ВµР РЋР вЂљ') || hint.includes('awb') || hint.includes('Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ')) {
         if (oneFieldIndex === -1) oneFieldIndex = i;
         if (secondIndex === -1) secondIndex = i;
       } else if (oneFieldIndex === -1 && (type === 'text' || type === 'search' || type === '')) {
@@ -947,7 +947,7 @@ const fillGenericAwbInputs = async ({ page, awb, awbParts }) => {
 };
 
 const clickGenericSearchButton = async (page) => {
-  const buttonTexts = ['провер', 'найти', 'поиск', 'статус', 'search', 'check'];
+  const buttonTexts = ['Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ', 'Р В Р вЂ¦Р В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ', 'Р В РЎвЂ”Р В РЎвЂўР В РЎвЂР РЋР С“Р В РЎвЂќ', 'Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“', 'search', 'check'];
   const buttons = page.locator('button, input[type="submit"], input[type="button"]');
   const count = await buttons.count();
   for (let i = 0; i < count; i += 1) {
@@ -998,6 +998,72 @@ const clickFirstVisibleBySelectors = async (page, selectors) => {
   return false;
 };
 
+const readInputDigits = async (locator) => String((await locator.inputValue()) || '').replace(/\D/g, '');
+
+const fillInputDigitsRobust = async (locator, value, options = {}) => {
+  const target = String(value || '').replace(/\D/g, '');
+  if (!target) return true;
+
+  const {
+    maxAttempts = 3,
+    typeDelay = 35,
+  } = options;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await locator.click({ clickCount: 3, timeout: 3000 }).catch(() => {});
+      await locator.press('ControlOrMeta+a').catch(() => {});
+      await locator.press('Backspace').catch(() => {});
+      await locator.fill('').catch(() => {});
+      await locator.type(target, { delay: typeDelay }).catch(async () => {
+        await locator.fill(target);
+      });
+      await locator.dispatchEvent('input').catch(() => {});
+      await locator.dispatchEvent('change').catch(() => {});
+      await locator.blur().catch(() => {});
+    } catch (error) {
+      // Try JS fallback below.
+    }
+
+    let actual = '';
+    try {
+      actual = await readInputDigits(locator);
+    } catch (error) {
+      actual = '';
+    }
+    if (actual === target) return true;
+
+    try {
+      await locator.evaluate((element, nextValue) => {
+        element.focus();
+        element.value = nextValue;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+        element.blur();
+      }, target);
+    } catch (error) {
+      // Ignore and retry if attempts remain.
+    }
+
+    actual = await readInputDigits(locator).catch(() => '');
+    if (actual === target) return true;
+  }
+
+  return false;
+};
+
+const fillSplitAwbInputsRobust = async ({ firstInput, secondInput, prefix, number, typeDelay = 35 }) => {
+  const prefixOk = await fillInputDigitsRobust(firstInput, prefix, { typeDelay });
+  if (!prefixOk) return false;
+
+  const numberOk = await fillInputDigitsRobust(secondInput, number, { typeDelay });
+  if (!numberOk) return false;
+
+  const firstVal = await readInputDigits(firstInput).catch(() => '');
+  const secondVal = await readInputDigits(secondInput).catch(() => '');
+  return firstVal === String(prefix || '').replace(/\D/g, '')
+    && secondVal === String(number || '').replace(/\D/g, '');
+};
 const searchShercargoStatus = async ({ page, awb, awbParts }) => {
   const resolvedAwbParts = awbParts || splitAwbParts(awb);
   const numberValue = resolvedAwbParts ? resolvedAwbParts.number : awb.replace(/\D/g, '').slice(3);
@@ -1045,19 +1111,14 @@ const searchShercargoStatus = async ({ page, awb, awbParts }) => {
       [first, second] = [second, first];
     }
 
-    const typeIn = async (locator, value) => {
-      await locator.click({ clickCount: 3 });
-      await locator.press('Backspace').catch(() => {});
-      await locator.type(String(value || ''), { delay: 60 });
-      await locator.blur();
-    };
-
-    await typeIn(first.input, prefixValue);
-    await typeIn(second.input, numberValue);
-
-    const firstVal = String((await first.input.inputValue()) || '').replace(/\D/g, '');
-    const secondVal = String((await second.input.inputValue()) || '').replace(/\D/g, '');
-    if (!firstVal || !secondVal) return false;
+    const typed = await fillSplitAwbInputsRobust({
+      firstInput: first.input,
+      secondInput: second.input,
+      prefix: prefixValue,
+      number: numberValue,
+      typeDelay: 40,
+    });
+    if (!typed) return false;
 
     const searchButton = ctx.locator(
       'button[aria-label*="search" i], button[title*="search" i], button:has(i), button:has(svg), button[class*="search" i], input[type="submit"], input[type="button"], button',
@@ -1094,14 +1155,14 @@ const searchShercargoStatus = async ({ page, awb, awbParts }) => {
     'input[name*="awb" i]',
     'input[id*="awb" i]',
     'input[placeholder*="awb" i]',
-    'input[placeholder*="наклад" i]',
+    'input[placeholder*="Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ" i]',
     'input[name*="cargo" i]',
     'input[type="text"]',
     'input[type="search"]',
   ];
   const buttonSelectors = [
-    'button:has-text("Провер")',
-    'button:has-text("Найти")',
+    'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ")',
+    'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
     'button:has-text("Search")',
     'input[type="submit"]',
     'input[type="button"]',
@@ -1163,14 +1224,14 @@ const searchVnukovoStatus = async ({ page, awb, awbParts }) => {
       [first, second] = [second, first];
     }
 
-    await first.input.fill('');
-    await second.input.fill('');
-    await first.input.type(resolvedAwbParts.prefix, { delay: 40 });
-    await second.input.type(resolvedAwbParts.number, { delay: 40 });
-
-    const firstVal = String((await first.input.inputValue()) || '').replace(/\D/g, '');
-    const secondVal = String((await second.input.inputValue()) || '').replace(/\D/g, '');
-    if (!firstVal || !secondVal) return false;
+    const typed = await fillSplitAwbInputsRobust({
+      firstInput: first.input,
+      secondInput: second.input,
+      prefix: resolvedAwbParts.prefix,
+      number: resolvedAwbParts.number,
+      typeDelay: 40,
+    });
+    if (!typed) return false;
 
     return true;
   };
@@ -1178,10 +1239,10 @@ const searchVnukovoStatus = async ({ page, awb, awbParts }) => {
   const splitFilled = await trySplitInputs();
   if (splitFilled) {
     const clicked = await clickFirstVisibleBySelectors(page, [
-      'button:has-text("Проверить")',
-      'button:has-text("Провер")',
-      'button:has-text("Узнать")',
-      'button:has-text("Найти")',
+      'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р РЋР Р‰")',
+      'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ")',
+      'button:has-text("Р В Р в‚¬Р В Р’В·Р В Р вЂ¦Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰")',
+      'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
       'input[type="submit"]',
       'input[type="button"]',
     ]);
@@ -1197,15 +1258,15 @@ const searchVnukovoStatus = async ({ page, awb, awbParts }) => {
   const awbSelectors = [
     'input[name*="awb" i]',
     'input[id*="awb" i]',
-    'input[placeholder*="наклад" i]',
+    'input[placeholder*="Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ" i]',
     'input[placeholder*="awb" i]',
     'input[type="text"]',
     'input[type="search"]',
   ];
   const buttonSelectors = [
-    'button:has-text("Провер")',
-    'button:has-text("Узнать")',
-    'button:has-text("Найти")',
+    'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ")',
+    'button:has-text("Р В Р в‚¬Р В Р’В·Р В Р вЂ¦Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰")',
+    'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
     'input[type="submit"]',
     'input[type="button"]',
   ];
@@ -1239,7 +1300,7 @@ const searchDomodedovoStatus = async ({ page, awb, awbParts }) => {
       };
 
       const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,div,span,strong,p'))
-        .filter((el) => textMatch(el.textContent, /информация\s+о\s+грузе/));
+        .filter((el) => textMatch(el.textContent, /Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ\s+Р В РЎвЂў\s+Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В Р’Вµ/));
 
       for (const heading of headings) {
         let node = heading;
@@ -1250,7 +1311,7 @@ const searchDomodedovoStatus = async ({ page, awb, awbParts }) => {
           });
           const buttons = Array.from(node.querySelectorAll('button,input[type="submit"],input[type="button"]'))
             .filter((button) => isVisible(button));
-          const hasCargoButton = buttons.some((button) => textMatch(button.textContent || button.value, /показать\s+информац/));
+          const hasCargoButton = buttons.some((button) => textMatch(button.textContent || button.value, /Р В РЎвЂ”Р В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰\s+Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В /));
           if (inputs.length >= 2 && hasCargoButton) {
             return true;
           }
@@ -1304,24 +1365,24 @@ const searchDomodedovoStatus = async ({ page, awb, awbParts }) => {
       numberInput = second.input;
     }
 
-    await prefixInput.fill('');
-    await numberInput.fill('');
-    await prefixInput.type(resolvedAwbParts.prefix, { delay: 40 });
-    await numberInput.type(resolvedAwbParts.number, { delay: 40 });
-
-    const firstVal = String((await prefixInput.inputValue()) || '').replace(/\D/g, '');
-    const secondVal = String((await numberInput.inputValue()) || '').replace(/\D/g, '');
-    if (!firstVal || !secondVal) return false;
+    const typed = await fillSplitAwbInputsRobust({
+      firstInput: prefixInput,
+      secondInput: numberInput,
+      prefix: resolvedAwbParts.prefix,
+      number: resolvedAwbParts.number,
+      typeDelay: 40,
+    });
+    if (!typed) return false;
 
     const clickedInfo = await clickFirstVisibleBySelectors(page, [
-      'button:has-text("Показать информацию")',
-      'input[type="submit"][value*="Показать информацию"]',
-      'input[type="button"][value*="Показать информацию"]',
+      'button:has-text("Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№")',
+      'input[type="submit"][value*="Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№"]',
+      'input[type="button"][value*="Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№"]',
     ]);
     if (clickedInfo) return true;
 
     const clickedGeneric = await clickFirstVisibleBySelectors(page, [
-      'button:has-text("Показать")',
+      'button:has-text("Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰")',
       'input[type="submit"]',
       'input[type="button"]',
     ]);
@@ -1337,14 +1398,14 @@ const searchDomodedovoStatus = async ({ page, awb, awbParts }) => {
   const awbSelectors = [
     'input[name*="awb" i]',
     'input[id*="awb" i]',
-    'input[placeholder*="наклад" i]',
+    'input[placeholder*="Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ" i]',
     'input[placeholder*="awb" i]',
     'input[type="text"]',
     'input[type="search"]',
   ];
   const buttonSelectors = [
-    'button:has-text("Провер")',
-    'button:has-text("Найти")',
+    'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ")',
+    'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
     'button:has-text("Search")',
     'input[type="submit"]',
     'input[type="button"]',
@@ -1368,7 +1429,7 @@ const searchZhukovskyStatus = async ({ page, awb, awbParts }) => {
   const trySplitInputs = async () => {
     if (!resolvedAwbParts) return false;
 
-    const panel = page.locator('div, section, form').filter({ hasText: 'Номер накладной' }).first();
+    const panel = page.locator('div, section, form').filter({ hasText: 'Р В РЎСљР В РЎвЂўР В РЎВР В Р’ВµР РЋР вЂљ Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂР В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“' }).first();
     if (!(await panel.count())) return false;
 
     const inputs = panel.locator('input[type="text"], input[type="search"], input[type="tel"], input:not([type])');
@@ -1395,20 +1456,20 @@ const searchZhukovskyStatus = async ({ page, awb, awbParts }) => {
       [first, second] = [second, first];
     }
 
-    await first.input.fill('');
-    await second.input.fill('');
-    await first.input.type(resolvedAwbParts.prefix, { delay: 35 });
-    await second.input.type(resolvedAwbParts.number, { delay: 35 });
-
-    const firstVal = String((await first.input.inputValue()) || '').replace(/\D/g, '');
-    const secondVal = String((await second.input.inputValue()) || '').replace(/\D/g, '');
-    if (!firstVal || !secondVal) return false;
+    const typed = await fillSplitAwbInputsRobust({
+      firstInput: first.input,
+      secondInput: second.input,
+      prefix: resolvedAwbParts.prefix,
+      number: resolvedAwbParts.number,
+      typeDelay: 35,
+    });
+    if (!typed) return false;
 
     const clicked = await clickFirstVisibleBySelectors(page, [
-      'button:has-text("Поиск")',
-      'input[type="submit"][value*="Поиск"]',
-      'input[type="button"][value*="Поиск"]',
-      'button:has-text("Найти")',
+      'button:has-text("Р В РЎСџР В РЎвЂўР В РЎвЂР РЋР С“Р В РЎвЂќ")',
+      'input[type="submit"][value*="Р В РЎСџР В РЎвЂўР В РЎвЂР РЋР С“Р В РЎвЂќ"]',
+      'input[type="button"][value*="Р В РЎСџР В РЎвЂўР В РЎвЂР РЋР С“Р В РЎвЂќ"]',
+      'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
     ]);
     if (!clicked) {
       await second.input.press('Enter').catch(() => {});
@@ -1424,14 +1485,14 @@ const searchZhukovskyStatus = async ({ page, awb, awbParts }) => {
     'input[id*="awb" i]',
     'input[name*="nn" i]',
     'input[name*="num" i]',
-    'input[placeholder*="наклад" i]',
+    'input[placeholder*="Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ" i]',
     'input[type="text"]',
     'input[type="search"]',
   ];
   const buttonSelectors = [
-    'button:has-text("Провер")',
-    'button:has-text("Найти")',
-    'button:has-text("Показ")',
+    'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ")',
+    'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
+    'button:has-text("Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·")',
     'input[type="submit"]',
     'input[type="button"]',
   ];
@@ -1516,7 +1577,7 @@ const scrapeGenericCargoStatus = async ({ awb, awbParts, terminalConfig }) => {
           screenshotId: screenshot.screenshotId,
           screenshotUrl: screenshot.screenshotUrl,
           manualRequired: true,
-          manualMessage: 'Требуется ручная проверка на сайте Внуково.',
+          manualMessage: 'Р В РЎС›Р РЋР вЂљР В Р’ВµР В Р’В±Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™Р РЋР С“Р РЋР РЏ Р РЋР вЂљР РЋРЎвЂњР РЋРІР‚РЋР В Р вЂ¦Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р В Р вЂ¦Р В Р’В° Р РЋР С“Р В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В Р’Вµ Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р В РЎвЂў.',
           manualUrl: terminalConfig.url,
         };
       }
@@ -1564,7 +1625,7 @@ const normalizePlusValue = (value) => {
   const text = normalizeText(value);
   if (!text) return '';
   if (text.includes('+')) return '+';
-  if (['да', 'yes', 'true', '1'].includes(text)) return '+';
+  if (['Р В РўвЂР В Р’В°', 'yes', 'true', '1'].includes(text)) return '+';
   return '';
 };
 
@@ -1575,9 +1636,9 @@ const isSheremetyevoSheet = ({ airportName, tabTitle, rows }) => {
   const tab = normalizeText(tabTitle);
   const header = normalizeText((rows?.[0] || []).join(' '));
 
-  if (airport.includes('шерем') || tab.includes('шерем')) return true;
-  if (header.includes('москва') && header.includes('карго')) return true;
-  if (header.includes('шерем') && header.includes('карго')) return true;
+  if (airport.includes('Р РЋРІвЂљВ¬Р В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВ') || tab.includes('Р РЋРІвЂљВ¬Р В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВ')) return true;
+  if (header.includes('Р В РЎВР В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°') && header.includes('Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў')) return true;
+  if (header.includes('Р РЋРІвЂљВ¬Р В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВ') && header.includes('Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў')) return true;
 
   return false;
 };
@@ -1590,19 +1651,19 @@ const parseNonSheremetyevoRows = (rows) => {
   const recipientIdx = findHeaderIndex(
     headers,
     (h) =>
-      headerIncludes(h, 'получ') ||
-      headerIncludes(h, 'наимен') ||
-      headerIncludes(h, 'клиент') ||
-      headerIncludes(h, 'компан'),
+      headerIncludes(h, 'Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋ') ||
+      headerIncludes(h, 'Р В Р вЂ¦Р В Р’В°Р В РЎвЂР В РЎВР В Р’ВµР В Р вЂ¦') ||
+      headerIncludes(h, 'Р В РЎвЂќР В Р’В»Р В РЎвЂР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™') ||
+      headerIncludes(h, 'Р В РЎвЂќР В РЎвЂўР В РЎВР В РЎвЂ”Р В Р’В°Р В Р вЂ¦'),
     0,
   );
 
   const plusIdx = findHeaderIndex(
     headers,
     (h) =>
-      (headerIncludes(h, 'довер') && !isDateHeader(h)) ||
+      (headerIncludes(h, 'Р В РўвЂР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ') && !isDateHeader(h)) ||
       normalizeText(h) === '+' ||
-      headerIncludes(h, 'налич'),
+      headerIncludes(h, 'Р В Р вЂ¦Р В Р’В°Р В Р’В»Р В РЎвЂР РЋРІР‚РЋ'),
     1,
   );
 
@@ -1618,7 +1679,7 @@ const parseNonSheremetyevoRows = (rows) => {
 };
 
 const parseSheremetyevoRows = (rows) => {
-  const result = { 'Москва-карго': [], 'Шереметьево-карго': [] };
+  const result = { 'Р В РЎС™Р В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў': [], 'Р В Р РѓР В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР Р‰Р В Р’ВµР В Р вЂ Р В РЎвЂў-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў': [] };
   if (!rows || rows.length === 0) return result;
 
   const headers = rows[0];
@@ -1627,16 +1688,16 @@ const parseSheremetyevoRows = (rows) => {
   const recipientIdx = findHeaderIndex(
     headers,
     (h) =>
-      headerIncludes(h, 'получ') ||
-      headerIncludes(h, 'наимен') ||
-      headerIncludes(h, 'клиент') ||
-      headerIncludes(h, 'компан'),
+      headerIncludes(h, 'Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋ') ||
+      headerIncludes(h, 'Р В Р вЂ¦Р В Р’В°Р В РЎвЂР В РЎВР В Р’ВµР В Р вЂ¦') ||
+      headerIncludes(h, 'Р В РЎвЂќР В Р’В»Р В РЎвЂР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™') ||
+      headerIncludes(h, 'Р В РЎвЂќР В РЎвЂўР В РЎВР В РЎвЂ”Р В Р’В°Р В Р вЂ¦'),
     0,
   );
 
   const moscowPlusIdx = findHeaderIndex(
     headers,
-    (h) => headerIncludes(h, 'москва') && headerIncludes(h, 'карго') && !isDateHeader(h),
+    (h) => headerIncludes(h, 'Р В РЎВР В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°') && headerIncludes(h, 'Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў') && !isDateHeader(h),
     1,
   );
   const sheremetyevoValidUntilIdx = 4;
@@ -1645,11 +1706,11 @@ const parseSheremetyevoRows = (rows) => {
     headers,
     (h) =>
       (
-        headerIncludes(h, 'шерем') &&
-        headerIncludes(h, 'карго') &&
+        headerIncludes(h, 'Р РЋРІвЂљВ¬Р В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВ') &&
+        headerIncludes(h, 'Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў') &&
         !isDateHeader(h)
       ) ||
-      headerIncludes(h, 'шеркарго'),
+      headerIncludes(h, 'Р РЋРІвЂљВ¬Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў'),
     3,
   );
 
@@ -1657,13 +1718,13 @@ const parseSheremetyevoRows = (rows) => {
     const recipient = getCell(row, recipientIdx);
     if (!recipient) return;
 
-    result['Москва-карго'].push({
+    result['Р В РЎС™Р В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў'].push({
       recipient,
       hasAttorney: normalizePlusValue(getCell(row, moscowPlusIdx)),
       validUntil: getCell(row, sheremetyevoValidUntilIdx),
     });
 
-    result['Шереметьево-карго'].push({
+    result['Р В Р РѓР В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР Р‰Р В Р’ВµР В Р вЂ Р В РЎвЂў-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў'].push({
       recipient,
       hasAttorney: normalizePlusValue(getCell(row, sherPlusIdx)),
       validUntil: getCell(row, sheremetyevoValidUntilIdx),
@@ -1779,7 +1840,7 @@ const resolveMoscowCargoTrackingWidget = async (page) => {
     } catch (error) {
       // Ignore text read errors.
     }
-    if (!containerText.includes('awb') && !containerText.includes('наклад')) continue;
+    if (!containerText.includes('awb') && !containerText.includes('Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ')) continue;
 
     const hasActionButton =
       (await container.locator('button').count()) > 0 ||
@@ -1796,10 +1857,18 @@ const fillMoscowCargoAwbInputs = async (widget, awbParts) => {
   const firstInput = widget.textInputs.nth(0);
   const secondInput = widget.textInputs.nth(1);
 
-  await firstInput.fill('');
-  await secondInput.fill('');
-  await firstInput.fill(awbParts.prefix);
-  await secondInput.fill(awbParts.number);
+  const typed = await fillSplitAwbInputsRobust({
+    firstInput,
+    secondInput,
+    prefix: awbParts.prefix,
+    number: awbParts.number,
+    typeDelay: 35,
+  });
+  if (!typed) {
+    const error = new Error('Failed to fill AWB inputs in tracking widget');
+    error.code = 'awb_fill_failed';
+    throw error;
+  }
 };
 
 const triggerMoscowCargoSearch = async (widget) => {
@@ -1809,7 +1878,7 @@ const triggerMoscowCargoSearch = async (widget) => {
     const button = buttons.nth(i);
     try {
       const text = (await button.innerText()).toLowerCase();
-      if (text.includes('провер') || text.includes('найти') || text.includes('поиск')) {
+      if (text.includes('Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ') || text.includes('Р В Р вЂ¦Р В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ') || text.includes('Р В РЎвЂ”Р В РЎвЂўР В РЎвЂР РЋР С“Р В РЎвЂќ')) {
         await button.click({ timeout: 5000 });
         return;
       }
@@ -1875,7 +1944,7 @@ const extractMoscowCargoTables = async (page) => {
     });
 
     result.push({
-      title: title || `Таблица ${result.length + 1}`,
+      title: title || `Р В РЎС›Р В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂР РЋРІР‚В Р В Р’В° ${result.length + 1}`,
       rows: parsedRows,
     });
   }
@@ -1921,7 +1990,7 @@ const chunks = [];
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((line) => /(статус|груз|наклад|awb|cargo|принят|выдан|достав|терминал)/i.test(line));
+    .filter((line) => /(Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“|Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·|Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ|awb|cargo|Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В Р вЂ¦Р РЋР РЏР РЋРІР‚С™|Р В Р вЂ Р РЋРІР‚в„–Р В РўвЂР В Р’В°Р В Р вЂ¦|Р В РўвЂР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ |Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В РЎВР В РЎвЂР В Р вЂ¦Р В Р’В°Р В Р’В»)/i.test(line));
 
   return [...new Set(lines)].slice(0, 25).join('\n');
 };
@@ -1929,8 +1998,8 @@ const chunks = [];
 const detectVnukovoManualCheck = async (page) => {
   const bodyText = ((await page.locator('body').innerText()).trim() || '').toLowerCase();
   if (
-    bodyText.includes('вы точно не робот') ||
-    bodyText.includes('подтвердите, что вы не робот') ||
+    bodyText.includes('Р В Р вЂ Р РЋРІР‚в„– Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂў Р В Р вЂ¦Р В Р’Вµ Р РЋР вЂљР В РЎвЂўР В Р’В±Р В РЎвЂўР РЋРІР‚С™') ||
+    bodyText.includes('Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋР вЂљР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’Вµ, Р РЋРІР‚РЋР РЋРІР‚С™Р В РЎвЂў Р В Р вЂ Р РЋРІР‚в„– Р В Р вЂ¦Р В Р’Вµ Р РЋР вЂљР В РЎвЂўР В Р’В±Р В РЎвЂўР РЋРІР‚С™') ||
     bodyText.includes('captcha')
   ) {
     return true;
@@ -2002,7 +2071,7 @@ const scrapeMoscowCargoStatus = async ({ awb, awbParts, terminalLabel }) => {
     const screenshot = await captureMoscowCargoResultScreenshot({ page, awb, terminalKey: 'svo_moscow' });
 
     return {
-      terminal: terminalLabel || 'Москва-карго',
+      terminal: terminalLabel || 'Р В РЎС™Р В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў',
       awb,
       statusText,
       tables,
@@ -2113,7 +2182,7 @@ app.post('/cargo/status', async (req, res) => {
         checkedAt: Date.now(),
         sourceUrl: terminalConfig.url,
         manualRequired: true,
-        manualMessage: 'Требуется ручная проверка на сайте Внуково.',
+        manualMessage: 'Р В РЎС›Р РЋР вЂљР В Р’ВµР В Р’В±Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™Р РЋР С“Р РЋР РЏ Р РЋР вЂљР РЋРЎвЂњР РЋРІР‚РЋР В Р вЂ¦Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р В Р вЂ¦Р В Р’В° Р РЋР С“Р В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В Р’Вµ Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р В РЎвЂў.',
         manualUrl: terminalConfig.url,
         cached: false,
         cacheExpiresAt: Date.now() + CARGO_STATUS_TTL_MS,
