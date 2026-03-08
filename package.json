@@ -7,6 +7,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "start": "vite",
+    "check:encoding": "node scripts/check-mojibake.js",
     "lint": "npm run lint:js && npm run lint:encoding",
     "lint:js": "eslint src",
     "lint:encoding": "node scripts/check-mojibake.js"

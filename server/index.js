@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
@@ -64,41 +64,41 @@ const ZHUKOVSKY_CARGO_URL = 'https://www.aero-grad.ru/aircargo/info/ac_07.pub_in
 const CARGO_TERMINAL_CONFIG = {
   svo_moscow: {
     key: 'svo_moscow',
-    label: 'Р В РЎС™Р В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў',
+    label: 'Москва-карго',
     url: MOSCOW_CARGO_URL,
     mode: 'moscow',
   },
   svo_sher: {
     key: 'svo_sher',
-    label: 'Р В Р РѓР В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР Р‰Р В Р’ВµР В Р вЂ Р В РЎвЂў-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў',
+    label: 'Шереметьево-карго',
     url: SHER_CARGO_URL,
     mode: 'generic',
   },
   vko: {
     key: 'vko',
-    label: 'Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р В РЎвЂў',
+    label: 'Внуково',
     url: VNUKOVO_CARGO_URL,
     mode: 'generic',
   },
   dme: {
     key: 'dme',
-    label: 'Р В РІР‚СњР В РЎвЂўР В РЎВР В РЎвЂўР В РўвЂР В Р’ВµР В РўвЂР В РЎвЂўР В Р вЂ Р В РЎвЂў',
+    label: 'Домодедово',
     url: DOMODEDOVO_CARGO_URL,
     mode: 'generic',
   },
   zia: {
     key: 'zia',
-    label: 'Р В РІР‚вЂњР РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р РЋР С“Р В РЎвЂќР В РЎвЂР В РІвЂћвЂ“',
+    label: 'Жуковский',
     url: ZHUKOVSKY_CARGO_URL,
     mode: 'generic',
   },
 };
 
 const defaultSheetTabs = {
-  'Р В Р РѓР В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР Р‰Р В Р’ВµР В Р вЂ Р В РЎвЂў': 'Р В Р РѓР В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР Р‰Р В Р’ВµР В Р вЂ Р В РЎвЂў',
-  'Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р В РЎвЂў': 'Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р В РЎвЂў',
-  'Р В РІР‚СњР В РЎвЂўР В РЎВР В РЎвЂўР В РўвЂР В Р’ВµР В РўвЂР В РЎвЂўР В Р вЂ Р В РЎвЂў': 'Р В РІР‚СњР В РЎвЂўР В РЎВР В РЎвЂўР В РўвЂР В Р’ВµР В РўвЂР В РЎвЂўР В Р вЂ Р В РЎвЂў',
-  'Р В РІР‚вЂњР РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р РЋР С“Р В РЎвЂќР В РЎвЂР В РІвЂћвЂ“': 'Р В РІР‚вЂњР РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р РЋР С“Р В РЎвЂќР В РЎвЂР В РІвЂћвЂ“',
+  'Шереметьево': 'Шереметьево',
+  'Внуково': 'Внуково',
+  'Домодедово': 'Домодедово',
+  'Жуковский': 'Жуковский',
 };
 
 let poaCache = {
@@ -112,7 +112,7 @@ const cargoScreenshotStore = new Map();
 const normalizeText = (value) =>
   String(value || '')
     .toLowerCase()
-    .replace(/Р РЋРІР‚В/g, 'Р В Р’Вµ')
+    .replace(/ё/g, 'е')
     .replace(/\s+/g, ' ')
     .trim();
 
@@ -148,7 +148,7 @@ const buildTripApplicationPdfHtml = ({ trip, orders }) => {
     .map((order, index) => `
       <tr>
         <td>${index + 1}</td>
-        <td>${escapeHtml(order.name || order.recipient || 'Р В РІР‚ВР В Р’ВµР В Р’В· Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ')}</td>
+        <td>${escapeHtml(order.name || order.recipient || 'Без названия')}</td>
         <td>${escapeHtml(order.awb || '-')}</td>
         <td>${escapeHtml(order.recipient || '-')}</td>
         <td>${escapeHtml(order.customsName || order.customsCode || '-')}</td>
@@ -162,7 +162,7 @@ const buildTripApplicationPdfHtml = ({ trip, orders }) => {
 <html lang="ru">
 <head>
   <meta charset="UTF-8" />
-  <title>Р В РІР‚вЂќР В Р’В°Р РЋР РЏР В Р вЂ Р В РЎвЂќР В Р’В° Р В Р Р‹Р В РЎС›Р В Р Р‹</title>
+  <title>Заявка СТС</title>
   <style>
     @page { size: A4; margin: 14mm; }
     body { margin: 0; font-family: "Times New Roman", serif; color: #111; font-size: 13px; }
@@ -181,24 +181,24 @@ const buildTripApplicationPdfHtml = ({ trip, orders }) => {
 </head>
 <body>
   <div class="doc">
-    <div class="title">Р В РІР‚вЂќР В Р’В°Р РЋР РЏР В Р вЂ Р В РЎвЂќР В Р’В° Р В Р Р‹Р В РЎС›Р В Р Р‹</div>
+    <div class="title">Заявка СТС</div>
     <div class="meta">
-      <div class="meta-row"><div class="meta-key">Р В РЎСљР В РЎвЂўР В РЎВР В Р’ВµР РЋР вЂљ Р РЋР вЂљР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р В Р’В°:</div><div>${escapeHtml(trip.tripNumber || '-')}</div></div>
-      <div class="meta-row"><div class="meta-key">Р В РІР‚СњР В Р’В°Р РЋРІР‚С™Р В Р’В° Р РЋР вЂљР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р В Р’В°:</div><div>${escapeHtml(formatTripDateRu(trip.tripDate) || '-')}</div></div>
-      <div class="meta-row"><div class="meta-key">Р В РЎвЂ™Р В Р вЂ Р РЋРІР‚С™Р В РЎвЂўР В РЎВР В РЎвЂўР В Р’В±Р В РЎвЂР В Р’В»Р РЋР Р‰:</div><div>${escapeHtml(trip.carNumber || '-')}</div></div>
-      <div class="meta-row"><div class="meta-key">Р В РІР‚в„ўР В РЎвЂўР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰:</div><div>${escapeHtml(trip.driverName || '-')}</div></div>
-      <div class="meta-row"><div class="meta-key">Р В РЎв„ўР В РЎвЂўР В Р’В»Р В РЎвЂР РЋРІР‚РЋР В Р’ВµР РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В РЎвЂў Р В Р’В·Р В Р’В°Р В РЎвЂќР В Р’В°Р В Р’В·Р В РЎвЂўР В Р вЂ :</div><div>${orders.length}</div></div>
+      <div class="meta-row"><div class="meta-key">Номер рейса:</div><div>${escapeHtml(trip.tripNumber || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Дата рейса:</div><div>${escapeHtml(formatTripDateRu(trip.tripDate) || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Автомобиль:</div><div>${escapeHtml(trip.carNumber || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Водитель:</div><div>${escapeHtml(trip.driverName || '-')}</div></div>
+      <div class="meta-row"><div class="meta-key">Количество заказов:</div><div>${orders.length}</div></div>
     </div>
     <table>
       <thead>
         <tr>
-          <th style="width: 34px;">Р Р†РІР‚С›РІР‚вЂњ</th>
-          <th>Р В РІР‚вЂќР В Р’В°Р В РЎвЂќР В Р’В°Р В Р’В·</th>
+          <th style="width: 34px;">№</th>
+          <th>Заказ</th>
           <th>AWB</th>
-          <th>Р В РЎСџР В РЎвЂўР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋР В Р’В°Р РЋРІР‚С™Р В Р’ВµР В Р’В»Р РЋР Р‰</th>
-          <th>Р В РЎС›Р В Р’В°Р В РЎВР В РЎвЂўР В Р’В¶Р В Р вЂ¦Р РЋР РЏ Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ</th>
-          <th style="width: 70px;">Р В РЎС™Р В Р’ВµР РЋР С“Р РЋРІР‚С™</th>
-          <th style="width: 70px;">Р В РІР‚в„ўР В Р’ВµР РЋР С“, Р В РЎвЂќР В РЎвЂ“</th>
+          <th>Получатель</th>
+          <th>Таможня назначения</th>
+          <th style="width: 70px;">Мест</th>
+          <th style="width: 70px;">Вес, кг</th>
         </tr>
       </thead>
       <tbody>
@@ -207,12 +207,12 @@ const buildTripApplicationPdfHtml = ({ trip, orders }) => {
     </table>
     <div class="signatures">
       <div>
-        <div class="sign-box">Р В РЎСџР В РЎвЂўР В РўвЂР В РЎвЂ”Р В РЎвЂР РЋР С“Р РЋР Р‰ Р В РЎвЂўР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋРІР‚С™Р РЋР С“Р РЋРІР‚С™Р В Р вЂ Р В Р’ВµР В Р вЂ¦Р В Р вЂ¦Р В РЎвЂўР В РЎвЂ“Р В РЎвЂў</div>
-        <div class="muted">Р В Р’В¤Р В Р’ВР В РЎвЂє, Р В РЎвЂ”Р В РЎвЂўР В РўвЂР В РЎвЂ”Р В РЎвЂР РЋР С“Р РЋР Р‰, Р В РўвЂР В Р’В°Р РЋРІР‚С™Р В Р’В°</div>
+        <div class="sign-box">Подпись ответственного</div>
+        <div class="muted">ФИО, подпись, дата</div>
       </div>
       <div>
-        <div class="sign-box">Р В РЎС™.Р В РЎСџ.</div>
-        <div class="muted">Р В РЎСџР В Р’ВµР РЋРІР‚РЋР В Р’В°Р РЋРІР‚С™Р РЋР Р‰</div>
+        <div class="sign-box">М.П.</div>
+        <div class="muted">Печать</div>
       </div>
     </div>
   </div>
@@ -256,17 +256,17 @@ const generateTripPdfFromWordTemplate = async ({ templatePath, trip, orders }) =
     carNumber: String(trip.carNumber || '').trim(),
     driverName: String(trip.driverName || '').trim(),
     airport: String(orders[0]?.shipmentAirport || '').trim(),
-    signerRole: String(trip.signerRole || 'Р В РЎС™Р В Р’ВµР В Р вЂ¦Р В Р’ВµР В РўвЂР В Р’В¶Р В Р’ВµР РЋР вЂљ').trim(),
-    signerName: String(trip.signerName || 'Р В РЎв„ўР В РЎвЂўР РЋР С“Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В РЎвЂў Р В РІР‚Сњ.Р В РІР‚в„ў.').trim(),
+    signerRole: String(trip.signerRole || 'Менеджер').trim(),
+    signerName: String(trip.signerName || 'Косенко Д.В.').trim(),
     labels: {
-      awbPrefix: '-Р В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В°Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂР В Р вЂ¦Р В Р’В°Р РЋР РЏ Р Р†РІР‚С›РІР‚вЂњ',
-      places: 'Р В РЎВР В Р’ВµР РЋР С“Р РЋРІР‚С™',
-      kg: 'Р В РЎвЂќР В РЎвЂ“',
-      customsPrefix: 'Р В РЎС›Р В Р’В°Р В РЎВР В РЎвЂўР В Р’В¶Р В Р вЂ¦Р РЋР РЏ Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ -',
-      notePrefix: 'Р В РЎСџР РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋРІР‚РЋР В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ:',
+      awbPrefix: '-авианакладная №',
+      places: 'мест',
+      kg: 'кг',
+      customsPrefix: 'Таможня назначения -',
+      notePrefix: 'Примечание:',
     },
     orders: orders.map((order) => ({
-      name: String(order.name || order.recipient || 'Р В РІР‚ВР В Р’ВµР В Р’В· Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ').trim(),
+      name: String(order.name || order.recipient || 'Без названия').trim(),
       awb: String(order.awb || '').trim(),
       quantity: String(order.quantity || '').trim(),
       weight: String(order.weight || '').trim(),
@@ -325,8 +325,8 @@ try {
 
   Replace-InRange $fullRange '{{SIGNER_ROLE}}' $payload.signerRole
   Replace-InRange $fullRange '{{SIGNER_NAME}}' $payload.signerName
-  Replace-InRange $fullRange '{{SIGNER_ROLE|Р В РЎС™Р В Р’ВµР В Р вЂ¦Р В Р’ВµР В РўвЂР В Р’В¶Р В Р’ВµР РЋР вЂљ}}' $payload.signerRole
-  Replace-InRange $fullRange '{{SIGNER_NAME|Р В РЎв„ўР В РЎвЂўР РЋР С“Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В РЎвЂў Р В РІР‚Сњ.Р В РІР‚в„ў.}}' $payload.signerName
+  Replace-InRange $fullRange '{{SIGNER_ROLE|Менеджер}}' $payload.signerRole
+  Replace-InRange $fullRange '{{SIGNER_NAME|Косенко Д.В.}}' $payload.signerName
 
   $startPara = $null
   $endPara = $null
@@ -469,17 +469,17 @@ const findParagraphRangeByToken = (xml, token) => {
 const buildOrdersDocxParagraphs = (orders) => {
   const lines = [];
   orders.forEach((order, index) => {
-    const name = String(order.name || order.recipient || 'Р В РІР‚ВР В Р’ВµР В Р’В· Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ').trim();
+    const name = String(order.name || order.recipient || 'Без названия').trim();
     const awb = String(order.awb || '').trim();
     const quantity = String(order.quantity || '').trim();
     const weight = String(order.weight || '').trim();
     const customsName = String(order.customsName || '').trim();
     const customsCode = String(order.customsCode || '').trim();
     const notes = String(order.notes || '').trim();
-    lines.push(`${index + 1}. ${name} -Р В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В°Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂР В Р вЂ¦Р В Р’В°Р РЋР РЏ Р Р†РІР‚С›РІР‚вЂњ ${awb} - ${quantity} Р В РЎВР В Р’ВµР РЋР С“Р РЋРІР‚С™ / ${weight} Р В РЎвЂќР В РЎвЂ“,`);
-    lines.push(`Р В РЎС›Р В Р’В°Р В РЎВР В РЎвЂўР В Р’В¶Р В Р вЂ¦Р РЋР РЏ Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ¦Р В Р’В°Р РЋРІР‚РЋР В Р’ВµР В Р вЂ¦Р В РЎвЂР РЋР РЏ - ${customsName} / ${customsCode}`);
+    lines.push(`${index + 1}. ${name} -авианакладная № ${awb} - ${quantity} мест / ${weight} кг,`);
+    lines.push(`Таможня назначения - ${customsName} / ${customsCode}`);
     if (notes) {
-      lines.push(`Р В РЎСџР РЋР вЂљР В РЎвЂР В РЎВР В Р’ВµР РЋРІР‚РЋР В Р’В°Р В Р вЂ¦Р В РЎвЂР В Р’Вµ: ${notes}`);
+      lines.push(`Примечание: ${notes}`);
     }
   });
   return lines
@@ -488,7 +488,7 @@ const buildOrdersDocxParagraphs = (orders) => {
 };
 
 const buildOrderTokenMap = (order, index) => {
-  const recipient = String(order.name || order.recipient || 'Р В РІР‚ВР В Р’ВµР В Р’В· Р В Р вЂ¦Р В Р’В°Р В Р’В·Р В Р вЂ Р В Р’В°Р В Р вЂ¦Р В РЎвЂР РЋР РЏ').trim();
+  const recipient = String(order.name || order.recipient || 'Без названия').trim();
   const awb = String(order.awb || '').trim();
   const places = String(order.quantity || '').trim();
   const weight = String(order.weight || '').trim();
@@ -586,10 +586,10 @@ const generateTripDocxFromTemplate = async ({ templatePath, trip, orders }) => {
     ['{{AIRPORT}}', String(orders[0]?.shipmentAirport || '').trim()],
     ['{{CAR_NUMBER}}', String(trip.carNumber || '').trim()],
     ['{{DRIVER_NAME}}', String(trip.driverName || '').trim()],
-    ['{{SIGNER_ROLE}}', String(trip.signerRole || 'Р В РЎС™Р В Р’ВµР В Р вЂ¦Р В Р’ВµР В РўвЂР В Р’В¶Р В Р’ВµР РЋР вЂљ').trim()],
-    ['{{SIGNER_NAME}}', String(trip.signerName || 'Р В РЎв„ўР В РЎвЂўР РЋР С“Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В РЎвЂў Р В РІР‚Сњ.Р В РІР‚в„ў.').trim()],
-    ['{{SIGNER_ROLE|Р В РЎС™Р В Р’ВµР В Р вЂ¦Р В Р’ВµР В РўвЂР В Р’В¶Р В Р’ВµР РЋР вЂљ}}', String(trip.signerRole || 'Р В РЎС™Р В Р’ВµР В Р вЂ¦Р В Р’ВµР В РўвЂР В Р’В¶Р В Р’ВµР РЋР вЂљ').trim()],
-    ['{{SIGNER_NAME|Р В РЎв„ўР В РЎвЂўР РЋР С“Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В РЎвЂў Р В РІР‚Сњ.Р В РІР‚в„ў.}}', String(trip.signerName || 'Р В РЎв„ўР В РЎвЂўР РЋР С“Р В Р’ВµР В Р вЂ¦Р В РЎвЂќР В РЎвЂў Р В РІР‚Сњ.Р В РІР‚в„ў.').trim()],
+    ['{{SIGNER_ROLE}}', String(trip.signerRole || 'Менеджер').trim()],
+    ['{{SIGNER_NAME}}', String(trip.signerName || 'Косенко Д.В.').trim()],
+    ['{{SIGNER_ROLE|Менеджер}}', String(trip.signerRole || 'Менеджер').trim()],
+    ['{{SIGNER_NAME|Косенко Д.В.}}', String(trip.signerName || 'Косенко Д.В.').trim()],
   ]);
 
   replacements.forEach((value, token) => {
@@ -651,7 +651,7 @@ const headerIncludes = (header, token) => normalizeText(header).includes(token);
 
 const isDateHeader = (header) => {
   const h = normalizeText(header);
-  return h.includes('Р РЋР С“Р РЋР вЂљР В РЎвЂўР В РЎвЂќ') || h.includes('Р В РўвЂР В Р’ВµР В РІвЂћвЂ“Р РЋР С“Р РЋРІР‚С™Р В Р вЂ ') || h.includes('Р В РўвЂР В РЎвЂў') || h.includes('expir');
+  return h.includes('срок') || h.includes('действ') || h.includes('до') || h.includes('expir');
 };
 
 const makeCargoScreenshotMeta = ({ awb, terminalKey = 'cargo' }) => {
@@ -797,10 +797,10 @@ const captureMoscowCargoResultScreenshot = async ({ page, awb, terminalKey = 'ca
       if (el.scrollHeight <= el.clientHeight + 20) return -1;
       const text = (el.innerText || '').toLowerCase();
       let score = 0;
-      if (text.includes('Р В РЎвЂР РЋР С“Р РЋРІР‚С™Р В РЎвЂўР РЋР вЂљР В РЎвЂР РЋР РЏ Р В РЎвЂўР В Р’В±Р РЋР вЂљР В Р’В°Р В Р’В±Р В РЎвЂўР РЋРІР‚С™Р В РЎвЂќР В РЎвЂ Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В Р’В°')) score += 15;
-      if (text.includes('Р В РЎвЂ”Р В Р’В°Р РЋР вЂљР В Р’В°Р В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР вЂљР РЋРІР‚в„– Р В Р’В°Р В Р вЂ Р В РЎвЂР В Р’В°Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂР В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“')) score += 12;
-      if (text.includes('Р РЋРІР‚С™Р В Р’В°Р В РЎВР В РЎвЂўР В Р’В¶Р В Р’ВµР В Р вЂ¦Р В Р вЂ¦Р В Р’В°Р РЋР РЏ Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ')) score += 8;
-      if (text.includes('Р В РўвЂР В Р’В°Р РЋРІР‚С™Р В Р’В° awb')) score += 5;
+      if (text.includes('история обработки груза')) score += 15;
+      if (text.includes('параметры авианакладной')) score += 12;
+      if (text.includes('таможенная информация')) score += 8;
+      if (text.includes('дата awb')) score += 5;
       score += Math.min(el.scrollHeight / 500, 15);
       score += Math.min(el.clientHeight / 300, 5);
       return score;
@@ -916,9 +916,9 @@ const fillGenericAwbInputs = async ({ page, awb, awbParts }) => {
       const hint = `${type} ${name} ${id} ${placeholder}`;
 
       if (/(date|email|password|tel)/.test(type)) continue;
-      if (hint.includes('prefix') || hint.includes('Р В РЎвЂ”Р РЋР вЂљР В Р’ВµР РЋРІР‚С›') || hint.includes('code')) {
+      if (hint.includes('prefix') || hint.includes('преф') || hint.includes('code')) {
         if (firstIndex === -1) firstIndex = i;
-      } else if (hint.includes('number') || hint.includes('Р В Р вЂ¦Р В РЎвЂўР В РЎВР В Р’ВµР РЋР вЂљ') || hint.includes('awb') || hint.includes('Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ')) {
+      } else if (hint.includes('number') || hint.includes('номер') || hint.includes('awb') || hint.includes('наклад')) {
         if (oneFieldIndex === -1) oneFieldIndex = i;
         if (secondIndex === -1) secondIndex = i;
       } else if (oneFieldIndex === -1 && (type === 'text' || type === 'search' || type === '')) {
@@ -947,7 +947,7 @@ const fillGenericAwbInputs = async ({ page, awb, awbParts }) => {
 };
 
 const clickGenericSearchButton = async (page) => {
-  const buttonTexts = ['Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ', 'Р В Р вЂ¦Р В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ', 'Р В РЎвЂ”Р В РЎвЂўР В РЎвЂР РЋР С“Р В РЎвЂќ', 'Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“', 'search', 'check'];
+  const buttonTexts = ['провер', 'найти', 'поиск', 'статус', 'search', 'check'];
   const buttons = page.locator('button, input[type="submit"], input[type="button"]');
   const count = await buttons.count();
   for (let i = 0; i < count; i += 1) {
@@ -1155,14 +1155,14 @@ const searchShercargoStatus = async ({ page, awb, awbParts }) => {
     'input[name*="awb" i]',
     'input[id*="awb" i]',
     'input[placeholder*="awb" i]',
-    'input[placeholder*="Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ" i]',
+    'input[placeholder*="наклад" i]',
     'input[name*="cargo" i]',
     'input[type="text"]',
     'input[type="search"]',
   ];
   const buttonSelectors = [
-    'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ")',
-    'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
+    'button:has-text("Провер")',
+    'button:has-text("Найти")',
     'button:has-text("Search")',
     'input[type="submit"]',
     'input[type="button"]',
@@ -1239,10 +1239,10 @@ const searchVnukovoStatus = async ({ page, awb, awbParts }) => {
   const splitFilled = await trySplitInputs();
   if (splitFilled) {
     const clicked = await clickFirstVisibleBySelectors(page, [
-      'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂР РЋРІР‚С™Р РЋР Р‰")',
-      'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ")',
-      'button:has-text("Р В Р в‚¬Р В Р’В·Р В Р вЂ¦Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰")',
-      'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
+      'button:has-text("Проверить")',
+      'button:has-text("Провер")',
+      'button:has-text("Узнать")',
+      'button:has-text("Найти")',
       'input[type="submit"]',
       'input[type="button"]',
     ]);
@@ -1258,15 +1258,15 @@ const searchVnukovoStatus = async ({ page, awb, awbParts }) => {
   const awbSelectors = [
     'input[name*="awb" i]',
     'input[id*="awb" i]',
-    'input[placeholder*="Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ" i]',
+    'input[placeholder*="наклад" i]',
     'input[placeholder*="awb" i]',
     'input[type="text"]',
     'input[type="search"]',
   ];
   const buttonSelectors = [
-    'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ")',
-    'button:has-text("Р В Р в‚¬Р В Р’В·Р В Р вЂ¦Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰")',
-    'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
+    'button:has-text("Провер")',
+    'button:has-text("Узнать")',
+    'button:has-text("Найти")',
     'input[type="submit"]',
     'input[type="button"]',
   ];
@@ -1300,7 +1300,7 @@ const searchDomodedovoStatus = async ({ page, awb, awbParts }) => {
       };
 
       const headings = Array.from(document.querySelectorAll('h1,h2,h3,h4,div,span,strong,p'))
-        .filter((el) => textMatch(el.textContent, /Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР РЏ\s+Р В РЎвЂў\s+Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·Р В Р’Вµ/));
+        .filter((el) => textMatch(el.textContent, /информация\s+о\s+грузе/));
 
       for (const heading of headings) {
         let node = heading;
@@ -1311,7 +1311,7 @@ const searchDomodedovoStatus = async ({ page, awb, awbParts }) => {
           });
           const buttons = Array.from(node.querySelectorAll('button,input[type="submit"],input[type="button"]'))
             .filter((button) => isVisible(button));
-          const hasCargoButton = buttons.some((button) => textMatch(button.textContent || button.value, /Р В РЎвЂ”Р В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰\s+Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В /));
+          const hasCargoButton = buttons.some((button) => textMatch(button.textContent || button.value, /показать\s+информац/));
           if (inputs.length >= 2 && hasCargoButton) {
             return true;
           }
@@ -1375,14 +1375,14 @@ const searchDomodedovoStatus = async ({ page, awb, awbParts }) => {
     if (!typed) return false;
 
     const clickedInfo = await clickFirstVisibleBySelectors(page, [
-      'button:has-text("Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№")',
-      'input[type="submit"][value*="Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№"]',
-      'input[type="button"][value*="Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰ Р В РЎвЂР В Р вЂ¦Р РЋРІР‚С›Р В РЎвЂўР РЋР вЂљР В РЎВР В Р’В°Р РЋРІР‚В Р В РЎвЂР РЋР вЂ№"]',
+      'button:has-text("Показать информацию")',
+      'input[type="submit"][value*="Показать информацию"]',
+      'input[type="button"][value*="Показать информацию"]',
     ]);
     if (clickedInfo) return true;
 
     const clickedGeneric = await clickFirstVisibleBySelectors(page, [
-      'button:has-text("Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·Р В Р’В°Р РЋРІР‚С™Р РЋР Р‰")',
+      'button:has-text("Показать")',
       'input[type="submit"]',
       'input[type="button"]',
     ]);
@@ -1398,14 +1398,14 @@ const searchDomodedovoStatus = async ({ page, awb, awbParts }) => {
   const awbSelectors = [
     'input[name*="awb" i]',
     'input[id*="awb" i]',
-    'input[placeholder*="Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ" i]',
+    'input[placeholder*="наклад" i]',
     'input[placeholder*="awb" i]',
     'input[type="text"]',
     'input[type="search"]',
   ];
   const buttonSelectors = [
-    'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ")',
-    'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
+    'button:has-text("Провер")',
+    'button:has-text("Найти")',
     'button:has-text("Search")',
     'input[type="submit"]',
     'input[type="button"]',
@@ -1429,7 +1429,7 @@ const searchZhukovskyStatus = async ({ page, awb, awbParts }) => {
   const trySplitInputs = async () => {
     if (!resolvedAwbParts) return false;
 
-    const panel = page.locator('div, section, form').filter({ hasText: 'Р В РЎСљР В РЎвЂўР В РЎВР В Р’ВµР РЋР вЂљ Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂР В Р вЂ¦Р В РЎвЂўР В РІвЂћвЂ“' }).first();
+    const panel = page.locator('div, section, form').filter({ hasText: 'Номер накладной' }).first();
     if (!(await panel.count())) return false;
 
     const inputs = panel.locator('input[type="text"], input[type="search"], input[type="tel"], input:not([type])');
@@ -1466,10 +1466,10 @@ const searchZhukovskyStatus = async ({ page, awb, awbParts }) => {
     if (!typed) return false;
 
     const clicked = await clickFirstVisibleBySelectors(page, [
-      'button:has-text("Р В РЎСџР В РЎвЂўР В РЎвЂР РЋР С“Р В РЎвЂќ")',
-      'input[type="submit"][value*="Р В РЎСџР В РЎвЂўР В РЎвЂР РЋР С“Р В РЎвЂќ"]',
-      'input[type="button"][value*="Р В РЎСџР В РЎвЂўР В РЎвЂР РЋР С“Р В РЎвЂќ"]',
-      'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
+      'button:has-text("Поиск")',
+      'input[type="submit"][value*="Поиск"]',
+      'input[type="button"][value*="Поиск"]',
+      'button:has-text("Найти")',
     ]);
     if (!clicked) {
       await second.input.press('Enter').catch(() => {});
@@ -1485,14 +1485,14 @@ const searchZhukovskyStatus = async ({ page, awb, awbParts }) => {
     'input[id*="awb" i]',
     'input[name*="nn" i]',
     'input[name*="num" i]',
-    'input[placeholder*="Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ" i]',
+    'input[placeholder*="наклад" i]',
     'input[type="text"]',
     'input[type="search"]',
   ];
   const buttonSelectors = [
-    'button:has-text("Р В РЎСџР РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ")',
-    'button:has-text("Р В РЎСљР В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ")',
-    'button:has-text("Р В РЎСџР В РЎвЂўР В РЎвЂќР В Р’В°Р В Р’В·")',
+    'button:has-text("Провер")',
+    'button:has-text("Найти")',
+    'button:has-text("Показ")',
     'input[type="submit"]',
     'input[type="button"]',
   ];
@@ -1577,7 +1577,7 @@ const scrapeGenericCargoStatus = async ({ awb, awbParts, terminalConfig }) => {
           screenshotId: screenshot.screenshotId,
           screenshotUrl: screenshot.screenshotUrl,
           manualRequired: true,
-          manualMessage: 'Р В РЎС›Р РЋР вЂљР В Р’ВµР В Р’В±Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™Р РЋР С“Р РЋР РЏ Р РЋР вЂљР РЋРЎвЂњР РЋРІР‚РЋР В Р вЂ¦Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р В Р вЂ¦Р В Р’В° Р РЋР С“Р В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В Р’Вµ Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р В РЎвЂў.',
+          manualMessage: 'Требуется ручная проверка на сайте Внуково.',
           manualUrl: terminalConfig.url,
         };
       }
@@ -1621,11 +1621,14 @@ const findHeaderIndex = (headers, predicate, fallback) => {
   return idx >= 0 ? idx : fallback;
 };
 
+const POA_KEY_MOSCOW_CARGO = '\u041c\u043e\u0441\u043a\u0432\u0430-\u043a\u0430\u0440\u0433\u043e';
+const POA_KEY_SHER_CARGO = '\u0428\u0435\u0440\u0435\u043c\u0435\u0442\u044c\u0435\u0432\u043e-\u043a\u0430\u0440\u0433\u043e';
+
 const normalizePlusValue = (value) => {
   const text = normalizeText(value);
   if (!text) return '';
   if (text.includes('+')) return '+';
-  if (['Р В РўвЂР В Р’В°', 'yes', 'true', '1'].includes(text)) return '+';
+  if (['\u0434\u0430', 'yes', 'true', '1'].includes(text)) return '+';
   return '';
 };
 
@@ -1636,9 +1639,9 @@ const isSheremetyevoSheet = ({ airportName, tabTitle, rows }) => {
   const tab = normalizeText(tabTitle);
   const header = normalizeText((rows?.[0] || []).join(' '));
 
-  if (airport.includes('Р РЋРІвЂљВ¬Р В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВ') || tab.includes('Р РЋРІвЂљВ¬Р В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВ')) return true;
-  if (header.includes('Р В РЎВР В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°') && header.includes('Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў')) return true;
-  if (header.includes('Р РЋРІвЂљВ¬Р В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВ') && header.includes('Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў')) return true;
+  if (airport.includes('\u0448\u0435\u0440\u0435\u043c\u0435\u0442')) return true;
+  if (tab.includes('\u0448\u0435\u0440\u0435\u043c\u0435\u0442')) return true;
+  if (header.includes('\u043c\u043e\u0441\u043a') && header.includes('\u0448\u0435\u0440\u0435\u043c\u0435\u0442') && header.includes('\u043a\u0430\u0440\u0433\u043e')) return true;
 
   return false;
 };
@@ -1651,19 +1654,19 @@ const parseNonSheremetyevoRows = (rows) => {
   const recipientIdx = findHeaderIndex(
     headers,
     (h) =>
-      headerIncludes(h, 'Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋ') ||
-      headerIncludes(h, 'Р В Р вЂ¦Р В Р’В°Р В РЎвЂР В РЎВР В Р’ВµР В Р вЂ¦') ||
-      headerIncludes(h, 'Р В РЎвЂќР В Р’В»Р В РЎвЂР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™') ||
-      headerIncludes(h, 'Р В РЎвЂќР В РЎвЂўР В РЎВР В РЎвЂ”Р В Р’В°Р В Р вЂ¦'),
+      headerIncludes(h, 'получ') ||
+      headerIncludes(h, 'наимен') ||
+      headerIncludes(h, 'клиент') ||
+      headerIncludes(h, 'компан'),
     0,
   );
 
   const plusIdx = findHeaderIndex(
     headers,
     (h) =>
-      (headerIncludes(h, 'Р В РўвЂР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ') && !isDateHeader(h)) ||
+      (headerIncludes(h, 'довер') && !isDateHeader(h)) ||
       normalizeText(h) === '+' ||
-      headerIncludes(h, 'Р В Р вЂ¦Р В Р’В°Р В Р’В»Р В РЎвЂР РЋРІР‚РЋ'),
+      headerIncludes(h, 'налич'),
     1,
   );
 
@@ -1679,7 +1682,7 @@ const parseNonSheremetyevoRows = (rows) => {
 };
 
 const parseSheremetyevoRows = (rows) => {
-  const result = { 'Р В РЎС™Р В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў': [], 'Р В Р РѓР В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР Р‰Р В Р’ВµР В Р вЂ Р В РЎвЂў-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў': [] };
+  const result = { [POA_KEY_MOSCOW_CARGO]: [], [POA_KEY_SHER_CARGO]: [] };
   if (!rows || rows.length === 0) return result;
 
   const headers = rows[0];
@@ -1688,16 +1691,16 @@ const parseSheremetyevoRows = (rows) => {
   const recipientIdx = findHeaderIndex(
     headers,
     (h) =>
-      headerIncludes(h, 'Р В РЎвЂ”Р В РЎвЂўР В Р’В»Р РЋРЎвЂњР РЋРІР‚РЋ') ||
-      headerIncludes(h, 'Р В Р вЂ¦Р В Р’В°Р В РЎвЂР В РЎВР В Р’ВµР В Р вЂ¦') ||
-      headerIncludes(h, 'Р В РЎвЂќР В Р’В»Р В РЎвЂР В Р’ВµР В Р вЂ¦Р РЋРІР‚С™') ||
-      headerIncludes(h, 'Р В РЎвЂќР В РЎвЂўР В РЎВР В РЎвЂ”Р В Р’В°Р В Р вЂ¦'),
+      headerIncludes(h, 'получ') ||
+      headerIncludes(h, 'наимен') ||
+      headerIncludes(h, 'клиент') ||
+      headerIncludes(h, 'компан'),
     0,
   );
 
   const moscowPlusIdx = findHeaderIndex(
     headers,
-    (h) => headerIncludes(h, 'Р В РЎВР В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°') && headerIncludes(h, 'Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў') && !isDateHeader(h),
+    (h) => headerIncludes(h, 'москва') && headerIncludes(h, 'карго') && !isDateHeader(h),
     1,
   );
   const sheremetyevoValidUntilIdx = 4;
@@ -1706,11 +1709,11 @@ const parseSheremetyevoRows = (rows) => {
     headers,
     (h) =>
       (
-        headerIncludes(h, 'Р РЋРІвЂљВ¬Р В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВ') &&
-        headerIncludes(h, 'Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў') &&
+        headerIncludes(h, 'шерем') &&
+        headerIncludes(h, 'карго') &&
         !isDateHeader(h)
       ) ||
-      headerIncludes(h, 'Р РЋРІвЂљВ¬Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў'),
+      headerIncludes(h, 'шеркарго'),
     3,
   );
 
@@ -1718,13 +1721,13 @@ const parseSheremetyevoRows = (rows) => {
     const recipient = getCell(row, recipientIdx);
     if (!recipient) return;
 
-    result['Р В РЎС™Р В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў'].push({
+    result[POA_KEY_MOSCOW_CARGO].push({
       recipient,
       hasAttorney: normalizePlusValue(getCell(row, moscowPlusIdx)),
       validUntil: getCell(row, sheremetyevoValidUntilIdx),
     });
 
-    result['Р В Р РѓР В Р’ВµР РЋР вЂљР В Р’ВµР В РЎВР В Р’ВµР РЋРІР‚С™Р РЋР Р‰Р В Р’ВµР В Р вЂ Р В РЎвЂў-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў'].push({
+    result[POA_KEY_SHER_CARGO].push({
       recipient,
       hasAttorney: normalizePlusValue(getCell(row, sherPlusIdx)),
       validUntil: getCell(row, sheremetyevoValidUntilIdx),
@@ -1840,7 +1843,7 @@ const resolveMoscowCargoTrackingWidget = async (page) => {
     } catch (error) {
       // Ignore text read errors.
     }
-    if (!containerText.includes('awb') && !containerText.includes('Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ')) continue;
+    if (!containerText.includes('awb') && !containerText.includes('наклад')) continue;
 
     const hasActionButton =
       (await container.locator('button').count()) > 0 ||
@@ -1878,7 +1881,7 @@ const triggerMoscowCargoSearch = async (widget) => {
     const button = buttons.nth(i);
     try {
       const text = (await button.innerText()).toLowerCase();
-      if (text.includes('Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљ') || text.includes('Р В Р вЂ¦Р В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В РЎвЂ') || text.includes('Р В РЎвЂ”Р В РЎвЂўР В РЎвЂР РЋР С“Р В РЎвЂќ')) {
+      if (text.includes('провер') || text.includes('найти') || text.includes('поиск')) {
         await button.click({ timeout: 5000 });
         return;
       }
@@ -1944,7 +1947,7 @@ const extractMoscowCargoTables = async (page) => {
     });
 
     result.push({
-      title: title || `Р В РЎС›Р В Р’В°Р В Р’В±Р В Р’В»Р В РЎвЂР РЋРІР‚В Р В Р’В° ${result.length + 1}`,
+      title: title || `Таблица ${result.length + 1}`,
       rows: parsedRows,
     });
   }
@@ -1990,7 +1993,7 @@ const chunks = [];
     .split('\n')
     .map((line) => line.trim())
     .filter(Boolean)
-    .filter((line) => /(Р РЋР С“Р РЋРІР‚С™Р В Р’В°Р РЋРІР‚С™Р РЋРЎвЂњР РЋР С“|Р В РЎвЂ“Р РЋР вЂљР РЋРЎвЂњР В Р’В·|Р В Р вЂ¦Р В Р’В°Р В РЎвЂќР В Р’В»Р В Р’В°Р В РўвЂ|awb|cargo|Р В РЎвЂ”Р РЋР вЂљР В РЎвЂР В Р вЂ¦Р РЋР РЏР РЋРІР‚С™|Р В Р вЂ Р РЋРІР‚в„–Р В РўвЂР В Р’В°Р В Р вЂ¦|Р В РўвЂР В РЎвЂўР РЋР С“Р РЋРІР‚С™Р В Р’В°Р В Р вЂ |Р РЋРІР‚С™Р В Р’ВµР РЋР вЂљР В РЎВР В РЎвЂР В Р вЂ¦Р В Р’В°Р В Р’В»)/i.test(line));
+    .filter((line) => /(статус|груз|наклад|awb|cargo|принят|выдан|достав|терминал)/i.test(line));
 
   return [...new Set(lines)].slice(0, 25).join('\n');
 };
@@ -1998,8 +2001,8 @@ const chunks = [];
 const detectVnukovoManualCheck = async (page) => {
   const bodyText = ((await page.locator('body').innerText()).trim() || '').toLowerCase();
   if (
-    bodyText.includes('Р В Р вЂ Р РЋРІР‚в„– Р РЋРІР‚С™Р В РЎвЂўР РЋРІР‚РЋР В Р вЂ¦Р В РЎвЂў Р В Р вЂ¦Р В Р’Вµ Р РЋР вЂљР В РЎвЂўР В Р’В±Р В РЎвЂўР РЋРІР‚С™') ||
-    bodyText.includes('Р В РЎвЂ”Р В РЎвЂўР В РўвЂР РЋРІР‚С™Р В Р вЂ Р В Р’ВµР РЋР вЂљР В РўвЂР В РЎвЂР РЋРІР‚С™Р В Р’Вµ, Р РЋРІР‚РЋР РЋРІР‚С™Р В РЎвЂў Р В Р вЂ Р РЋРІР‚в„– Р В Р вЂ¦Р В Р’Вµ Р РЋР вЂљР В РЎвЂўР В Р’В±Р В РЎвЂўР РЋРІР‚С™') ||
+    bodyText.includes('вы точно не робот') ||
+    bodyText.includes('подтвердите, что вы не робот') ||
     bodyText.includes('captcha')
   ) {
     return true;
@@ -2071,7 +2074,7 @@ const scrapeMoscowCargoStatus = async ({ awb, awbParts, terminalLabel }) => {
     const screenshot = await captureMoscowCargoResultScreenshot({ page, awb, terminalKey: 'svo_moscow' });
 
     return {
-      terminal: terminalLabel || 'Р В РЎС™Р В РЎвЂўР РЋР С“Р В РЎвЂќР В Р вЂ Р В Р’В°-Р В РЎвЂќР В Р’В°Р РЋР вЂљР В РЎвЂ“Р В РЎвЂў',
+      terminal: terminalLabel || 'Москва-карго',
       awb,
       statusText,
       tables,
@@ -2182,7 +2185,7 @@ app.post('/cargo/status', async (req, res) => {
         checkedAt: Date.now(),
         sourceUrl: terminalConfig.url,
         manualRequired: true,
-        manualMessage: 'Р В РЎС›Р РЋР вЂљР В Р’ВµР В Р’В±Р РЋРЎвЂњР В Р’ВµР РЋРІР‚С™Р РЋР С“Р РЋР РЏ Р РЋР вЂљР РЋРЎвЂњР РЋРІР‚РЋР В Р вЂ¦Р В Р’В°Р РЋР РЏ Р В РЎвЂ”Р РЋР вЂљР В РЎвЂўР В Р вЂ Р В Р’ВµР РЋР вЂљР В РЎвЂќР В Р’В° Р В Р вЂ¦Р В Р’В° Р РЋР С“Р В Р’В°Р В РІвЂћвЂ“Р РЋРІР‚С™Р В Р’Вµ Р В РІР‚в„ўР В Р вЂ¦Р РЋРЎвЂњР В РЎвЂќР В РЎвЂўР В Р вЂ Р В РЎвЂў.',
+        manualMessage: 'Требуется ручная проверка на сайте Внуково.',
         manualUrl: terminalConfig.url,
         cached: false,
         cacheExpiresAt: Date.now() + CARGO_STATUS_TTL_MS,
@@ -2467,6 +2470,8 @@ app.post('/trip-application/docx', async (req, res) => {
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => console.log(`OAuth proxy listening on 0.0.0.0:${port}; CORS_ORIGIN=${allowAllOrigins ? '*' : corsOrigins.join(',')}`));
+
+
 
 
 

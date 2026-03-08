@@ -124,3 +124,17 @@ Behavior:
 - On first launch with Supabase enabled, local state is migrated to cloud if cloud row does not exist.
 - If cloud row exists, app loads state from cloud.
 - Then app auto-saves `orders`, `trips`, stages, and print signature settings to cloud.
+
+## Encoding check
+
+Use this check before commit to catch broken text encoding (mojibake):
+
+```bash
+npm run check:encoding
+```
+
+Or run full lint:
+
+```bash
+npm run lint
+```
