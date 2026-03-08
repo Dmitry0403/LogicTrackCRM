@@ -742,6 +742,9 @@ const App = () => {
   const driveOpsProcessingRef = React.useRef(false);
   const backendWarmupAtRef = React.useRef(0);
   const cloudSaveTimeoutRef = React.useRef(null);
+  const lastCloudUpdatedAtRef = React.useRef(0);
+  const isApplyingCloudStateRef = React.useRef(false);
+  const skipNextCloudSaveRef = React.useRef(false);
   const userScopedAppStateId = React.useMemo(
     () => (currentUser?.id ? `${currentUser.id}:${SUPABASE_WORKSPACE_KEY}` : ""),
     [currentUser],
@@ -875,16 +878,53 @@ const App = () => {
     localStorage.setItem(PRINT_SIGNER_STORAGE_KEY, JSON.stringify(printSignerSettings));
   }, [printSignerSettings]);
 
+  const parseCloudUpdatedAt = React.useCallback((value) => {
+    const ts = Date.parse(String(value || ""));
+    return Number.isFinite(ts) ? ts : 0;
+  }, []);
+
+  const applyCloudSnapshot = React.useCallback((data) => {
+    const cloudOrders = Array.isArray(data?.orders) ? data.orders : [];
+    const cloudTrips = Array.isArray(data?.trips) ? data.trips : [];
+    const cloudOrderStages = Array.isArray(data?.order_stages) && data.order_stages.length > 0
+      ? normalizeOrderStages(data.order_stages)
+      : DEFAULT_ORDER_STAGES;
+    const cloudTripStages = Array.isArray(data?.trip_stages) && data.trip_stages.length > 0
+      ? normalizeTripStages(data.trip_stages)
+      : DEFAULT_TRIP_STAGES;
+    const cloudPrintSigner = data?.print_signer && typeof data.print_signer === "object"
+      ? {
+          signerRole: String(data.print_signer.signerRole || DEFAULT_PRINT_SIGNER_SETTINGS.signerRole).trim(),
+          signerName: String(data.print_signer.signerName || DEFAULT_PRINT_SIGNER_SETTINGS.signerName).trim(),
+        }
+      : DEFAULT_PRINT_SIGNER_SETTINGS;
+
+    isApplyingCloudStateRef.current = true;
+    skipNextCloudSaveRef.current = true;
+    setOrders(cloudOrders);
+    setTrips(cloudTrips);
+    setOrderStages(cloudOrderStages);
+    setTripStages(cloudTripStages);
+    setPrintSignerSettings(cloudPrintSigner);
+    setTimeout(() => {
+      isApplyingCloudStateRef.current = false;
+    }, 0);
+  }, []);
+
   React.useEffect(() => {
     if (!isSupabaseConfigured) return;
-    setIsCloudStateReady(Boolean(authReady && currentUser?.id));
-  }, [authReady, currentUser]);
+    if (!authReady || !currentUser?.id) {
+      setIsCloudStateReady(false);
+      lastCloudUpdatedAtRef.current = 0;
+    }
+  }, [isSupabaseConfigured, authReady, currentUser]);
 
   React.useEffect(() => {
     if (!isSupabaseConfigured || !supabase || !authReady || !currentUser?.id) return undefined;
     let cancelled = false;
 
     const bootstrapCloudState = async () => {
+      setIsCloudStateReady(false);
       try {
         const { data, error } = await supabase
           .from("app_state")
@@ -905,37 +945,25 @@ const App = () => {
             trip_stages: tripStages,
             print_signer: printSignerSettings,
           };
-          const { error: insertError } = await supabase.from("app_state").upsert(payload);
+          const { data: inserted, error: insertError } = await supabase
+            .from("app_state")
+            .upsert(payload)
+            .select("updated_at")
+            .single();
           if (insertError) throw insertError;
           if (cancelled) return;
+          lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(inserted?.updated_at);
           setIsCloudStateReady(true);
           return;
         }
 
-        const cloudOrders = Array.isArray(data.orders) ? data.orders : [];
-        const cloudTrips = Array.isArray(data.trips) ? data.trips : [];
-        const cloudOrderStages = Array.isArray(data.order_stages) && data.order_stages.length > 0
-          ? normalizeOrderStages(data.order_stages)
-          : DEFAULT_ORDER_STAGES;
-        const cloudTripStages = Array.isArray(data.trip_stages) && data.trip_stages.length > 0
-          ? normalizeTripStages(data.trip_stages)
-          : DEFAULT_TRIP_STAGES;
-        const cloudPrintSigner = data.print_signer && typeof data.print_signer === "object"
-          ? {
-              signerRole: String(data.print_signer.signerRole || DEFAULT_PRINT_SIGNER_SETTINGS.signerRole).trim(),
-              signerName: String(data.print_signer.signerName || DEFAULT_PRINT_SIGNER_SETTINGS.signerName).trim(),
-            }
-          : DEFAULT_PRINT_SIGNER_SETTINGS;
-
-        setOrders(cloudOrders);
-        setTrips(cloudTrips);
-        setOrderStages(cloudOrderStages);
-        setTripStages(cloudTripStages);
-        setPrintSignerSettings(cloudPrintSigner);
+        applyCloudSnapshot(data);
+        lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(data.updated_at);
         setIsCloudStateReady(true);
       } catch (cloudError) {
-        console.error("Не удалось загрузить состояние из Supabase:", cloudError);
-        setIsCloudStateReady(true);
+        console.error("Failed to load state from Supabase:", cloudError);
+        // Safe mode: do not push local data until cloud bootstrap succeeds.
+        setIsCloudStateReady(false);
       }
     };
 
@@ -944,30 +972,106 @@ const App = () => {
     return () => {
       cancelled = true;
     };
-  }, [isSupabaseConfigured, authReady, currentUser, userScopedAppStateId]);
+  }, [
+    isSupabaseConfigured,
+    authReady,
+    currentUser,
+    userScopedAppStateId,
+    applyCloudSnapshot,
+    parseCloudUpdatedAt,
+  ]);
 
   React.useEffect(() => {
     if (!isSupabaseConfigured || !supabase || !authReady || !currentUser?.id || !isCloudStateReady) {
       return undefined;
     }
+    if (isApplyingCloudStateRef.current) return undefined;
+    if (skipNextCloudSaveRef.current) {
+      skipNextCloudSaveRef.current = false;
+      return undefined;
+    }
+
     if (cloudSaveTimeoutRef.current) {
       clearTimeout(cloudSaveTimeoutRef.current);
     }
 
     cloudSaveTimeoutRef.current = setTimeout(() => {
-      void supabase.from("app_state").upsert({
-        id: userScopedAppStateId,
-        owner_user_id: currentUser.id,
-        orders,
-        trips,
-        order_stages: orderStages,
-        trip_stages: tripStages,
-        print_signer: printSignerSettings,
-      }).then(({ error }) => {
-        if (error) {
-          console.error("Не удалось сохранить состояние в Supabase:", error);
+      void (async () => {
+        try {
+          const { data: remoteMeta, error: remoteMetaError } = await supabase
+            .from("app_state")
+            .select("id, updated_at, orders, trips, order_stages, trip_stages, print_signer")
+            .eq("id", userScopedAppStateId)
+            .maybeSingle();
+
+          if (remoteMetaError) throw remoteMetaError;
+
+          const remoteUpdatedAtMs = parseCloudUpdatedAt(remoteMeta?.updated_at);
+          if (
+            remoteMeta &&
+            lastCloudUpdatedAtRef.current > 0 &&
+            remoteUpdatedAtMs > lastCloudUpdatedAtRef.current + 500
+          ) {
+            console.warn("Cloud conflict detected. Applying newer server snapshot.");
+            applyCloudSnapshot(remoteMeta);
+            lastCloudUpdatedAtRef.current = remoteUpdatedAtMs;
+            return;
+          }
+
+          const payload = {
+            owner_user_id: currentUser.id,
+            orders,
+            trips,
+            order_stages: orderStages,
+            trip_stages: tripStages,
+            print_signer: printSignerSettings,
+          };
+
+          if (!remoteMeta) {
+            const { data: inserted, error: insertError } = await supabase
+              .from("app_state")
+              .insert({ id: userScopedAppStateId, ...payload })
+              .select("updated_at")
+              .single();
+            if (insertError) throw insertError;
+            lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(inserted?.updated_at);
+            return;
+          }
+
+          let updateQuery = supabase
+            .from("app_state")
+            .update(payload)
+            .eq("id", userScopedAppStateId);
+
+          if (remoteMeta.updated_at) {
+            updateQuery = updateQuery.eq("updated_at", remoteMeta.updated_at);
+          }
+
+          const { data: updated, error: updateError } = await updateQuery
+            .select("updated_at")
+            .maybeSingle();
+
+          if (updateError) throw updateError;
+
+          if (!updated) {
+            const { data: freshRemote } = await supabase
+              .from("app_state")
+              .select("id, updated_at, orders, trips, order_stages, trip_stages, print_signer")
+              .eq("id", userScopedAppStateId)
+              .maybeSingle();
+            if (freshRemote) {
+              console.warn("Cloud CAS mismatch. Applying server snapshot.");
+              applyCloudSnapshot(freshRemote);
+              lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(freshRemote.updated_at);
+            }
+            return;
+          }
+
+          lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(updated.updated_at);
+        } catch (error) {
+          console.error("Failed to save state to Supabase:", error);
         }
-      });
+      })();
     }, 700);
 
     return () => {
@@ -985,6 +1089,8 @@ const App = () => {
     orderStages,
     tripStages,
     printSignerSettings,
+    applyCloudSnapshot,
+    parseCloudUpdatedAt,
   ]);
 
   React.useEffect(() => {
