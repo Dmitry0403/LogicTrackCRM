@@ -1927,6 +1927,22 @@ const App = () => {
       ? `${summaryHead} (+${selectedOrders.length - 3})`
       : summaryHead;
   };
+  const getTripsWithoutOrderIds = (sourceTrips, orderIdsToRemove, sourceOrders, excludedTripId = "") => {
+    const idsToRemove = new Set(orderIdsToRemove);
+    if (idsToRemove.size === 0) return sourceTrips;
+    return sourceTrips.map((trip) => {
+      if (excludedTripId && trip.id === excludedTripId) return trip;
+      const currentOrderIds = Array.isArray(trip.orderIds) ? trip.orderIds : [];
+      const nextOrderIds = currentOrderIds.filter((tripOrderId) => !idsToRemove.has(tripOrderId));
+      if (nextOrderIds.length === currentOrderIds.length) return trip;
+      return {
+        ...trip,
+        orderIds: nextOrderIds,
+        ordersSummary: buildTripOrdersSummary(nextOrderIds, sourceOrders),
+      };
+    });
+  };
+
   const removeOrderIdsFromTrips = (orderIdsToRemove, sourceOrders, excludedTripId = "") => {
     const idsToRemove = new Set(orderIdsToRemove);
     if (idsToRemove.size === 0) return;
@@ -2729,9 +2745,17 @@ const App = () => {
         if (orderToDelete?.driveFolderId) {
           await deleteDriveFolder(orderToDelete.driveFolderId);
         }
-        const remainingOrders = orders.filter((o) => o.id !== id);
-        setOrders(remainingOrders);
-        removeOrderFromTrips(id, remainingOrders);
+        const nextOrders = orders.filter((o) => o.id !== id);
+        const nextTrips = getTripsWithoutOrderIds(trips, [id], nextOrders);
+        setOrders(nextOrders);
+        setTrips(nextTrips);
+        await saveCloudSnapshotNow({
+          orders: nextOrders,
+          trips: nextTrips,
+          orderStages,
+          tripStages,
+          printSignerSettings,
+        });
         if (editingOrderId === id) {
           cancelOrderForm();
         }
@@ -2740,16 +2764,18 @@ const App = () => {
       if (type === "trip") {
         const tripToDelete = trips.find((trip) => trip.id === id);
         const tripOrderIds = new Set(tripToDelete?.orderIds || []);
-      if (tripToDelete?.stageId === completedTripStageId) {
+        let nextOrders = orders;
+        let nextTrips = trips.filter((trip) => trip.id !== id);
+
+        if (tripToDelete?.stageId === completedTripStageId) {
           const ordersToDelete = orders.filter((order) => tripOrderIds.has(order.id));
           for (const order of ordersToDelete) {
             if (order?.driveFolderId) {
               await deleteDriveFolder(order.driveFolderId);
             }
           }
-          const remainingOrders = orders.filter((order) => !tripOrderIds.has(order.id));
-          setOrders(remainingOrders);
-          removeOrderIdsFromTrips(Array.from(tripOrderIds), remainingOrders, id);
+          nextOrders = orders.filter((order) => !tripOrderIds.has(order.id));
+          nextTrips = getTripsWithoutOrderIds(nextTrips, Array.from(tripOrderIds), nextOrders);
         } else {
           const tripOrders = orders.filter((order) => tripOrderIds.has(order.id));
           for (const order of tripOrders) {
@@ -2757,18 +2783,24 @@ const App = () => {
               await moveOrderFolderToBase(order);
             }
           }
-          setOrders((prevOrders) =>
-            prevOrders.map((order) =>
+          nextOrders = orders.map((order) =>
             tripOrderIds.has(order.id)
-                ? { ...order, stageId: warehouseStageId }
-                : order,
-            ),
+              ? { ...order, stageId: warehouseStageId }
+              : order,
           );
         }
         if (tripToDelete?.driveFolderId) {
           await deleteDriveFolder(tripToDelete.driveFolderId);
         }
-        setTrips((prev) => prev.filter((trip) => trip.id !== id));
+        setOrders(nextOrders);
+        setTrips(nextTrips);
+        await saveCloudSnapshotNow({
+          orders: nextOrders,
+          trips: nextTrips,
+          orderStages,
+          tripStages,
+          printSignerSettings,
+        });
         if (editingTripId === id) {
           closeCreateTripForm();
         }
@@ -2777,12 +2809,11 @@ const App = () => {
       closeDeleteCardModal();
     } catch (error) {
       console.error("delete_card_failed", error);
-      alert(`Не удалось удалить карточку: ${error?.message || "неизвестная ошибка"}`);
+      alert("Не удалось удалить карточку: " + (error?.message || "неизвестная ошибка"));
     } finally {
       setIsDeleteCardLoading(false);
     }
   };
-
   const createOrderFormDataFromOrder = (order) => {
     const awbParts = splitAwb(order.awb);
     return {
