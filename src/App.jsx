@@ -1,4 +1,4 @@
-import React from 'react';
+﻿import React from 'react';
 import {
   OrderFormCard,
   SettingsModal,
@@ -28,8 +28,10 @@ const DRIVE_CONFIG = {
   CLIENT_ID: normalizeEnvValue(import.meta.env.VITE_GOOGLE_CLIENT_ID),
   API_KEY: normalizeEnvValue(import.meta.env.VITE_GOOGLE_API_KEY),
   REDIRECT_URI: normalizeEnvValue(import.meta.env.VITE_GOOGLE_REDIRECT_URI || "http://localhost:5173/"),
-  SCOPE: normalizeEnvValue(import.meta.env.VITE_GOOGLE_DRIVE_SCOPE || "https://www.googleapis.com/auth/drive.file"),
+  SCOPE: normalizeEnvValue(import.meta.env.VITE_GOOGLE_DRIVE_SCOPE || "https://www.googleapis.com/auth/drive"),
 };
+
+const DRIVE_PERMISSION_HINT = "\u041d\u0435\u0442 \u043f\u0440\u0430\u0432 \u043d\u0430 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u043f\u0430\u043f\u043e\u043a Google Drive. \u041d\u0430\u0436\u043c\u0438\u0442\u0435 \"\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c Google Drive\" \u0438 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u0434\u043e\u0441\u0442\u0443\u043f \u0441\u043d\u043e\u0432\u0430.";
 
 const API_BASE_URL = normalizeEnvValue(
   import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:3001" : ""),
@@ -950,7 +952,7 @@ const App = () => {
             .from("app_state")
             .upsert(payload)
             .select("updated_at")
-            .single();
+            .maybeSingle();
           if (insertError) throw insertError;
           if (cancelled) return;
           lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(inserted?.updated_at);
@@ -1022,7 +1024,7 @@ const App = () => {
           .from("app_state")
           .insert({ id: userScopedAppStateId, ...payload })
           .select("updated_at")
-          .single();
+          .maybeSingle();
         if (insertError) throw insertError;
         lastCloudUpdatedAtRef.current = parseCloudUpdatedAt(inserted?.updated_at);
         return { saved: true };
@@ -1219,7 +1221,7 @@ const App = () => {
       
       if (toks && toks.refresh_token) {
         try {
-          setDriveHint('Проверяем подключение к Google Drive...');
+          setDriveHint('Обновляю подключение к Google Drive...');
           const res = await fetch(`${API_BASE_URL}/oauth/token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1260,7 +1262,7 @@ const App = () => {
       }
 
       try {
-        setDriveHint('Подключаем Google Drive...');
+        setDriveHint('Подключаю Google Drive...');
         const res = await fetch(`${API_BASE_URL}/oauth/token`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1276,7 +1278,7 @@ const App = () => {
         };
         setStoredTokens(tokens);
         setDriveConnected(true);
-        setDriveHint('Google Drive успешно подключен.');
+        setDriveHint('Google Drive подключен.');
         try {
           const account = await fetchGoogleDriveAccount(tokens.access_token);
           setDriveAccount(account);
@@ -2080,7 +2082,7 @@ const App = () => {
     setSelectedDriveFolder(null);
     setDriveAccount(null);
     if (notify) {
-      setDriveHint('Google Drive отключен. Нажмите "Подключить Google Drive", чтобы включить синхронизацию.');
+      setDriveHint('Синхронизация Google Drive отключена.');
     }
   }, []);
 
@@ -2089,7 +2091,7 @@ const App = () => {
     const hasSavedSession = Boolean(currentTokens?.access_token || currentTokens?.refresh_token);
     if (driveConnected || selectedDriveFolder || hasSavedSession) {
       clearGoogleDriveSession();
-      setDriveHint('Отключаю текущее подключение и запускаю новую авторизацию Google Drive...');
+      setDriveHint('Подключаю Google Drive...');
     }
 
     if (!DRIVE_CONFIG.CLIENT_ID) {
@@ -2194,7 +2196,18 @@ const App = () => {
 
     throw new Error('Drive authorization is required');
   };
-
+  const isDrivePermissionError = (error) => {
+    const reason = String(error?.reason || "").toLowerCase();
+    const message = String(error?.message || "").toLowerCase();
+    return (
+      reason === "appnotauthorizedtochild" ||
+      reason === "insufficientfilepermissions" ||
+      reason === "insufficientpermissions" ||
+      message.includes("appnotauthorizedtochild") ||
+      message.includes("insufficient file permissions") ||
+      message.includes("insufficientpermissions")
+    );
+  };
   const driveRequest = async (url, { method = 'GET', body = null, retries = 2, allow404 = false } = {}) => {
     let forceRefresh = false;
 
@@ -2230,6 +2243,7 @@ const App = () => {
         }
 
         if (!response.ok) {
+          const reason = String(data?.error?.errors?.[0]?.reason || "");
           const details = data?.error?.message || data?.message || `Drive request failed: ${response.status}`;
           const transient = [408, 409, 425, 429, 500, 502, 503, 504].includes(response.status);
           if (transient && attempt < retries) {
@@ -2238,6 +2252,7 @@ const App = () => {
           }
           const error = new Error(details);
           error.status = response.status;
+          error.reason = reason;
           throw error;
         }
 
@@ -2373,6 +2388,11 @@ const App = () => {
       return created;
     } catch (err) {
       console.error('Drive create order folder failed:', err);
+      if (isDrivePermissionError(err)) {
+        setDriveHint(DRIVE_PERMISSION_HINT);
+        removeDriveOpByKey('create_order_folder', { orderId });
+        return null;
+      }
       upsertDriveOp('create_order_folder', { orderId, orderName, parentId }, err?.message || 'create_order_folder_failed');
       return null;
     }
@@ -2404,6 +2424,11 @@ const App = () => {
       return created;
     } catch (err) {
       console.error('Drive create trip folder failed:', err);
+      if (isDrivePermissionError(err)) {
+        setDriveHint(DRIVE_PERMISSION_HINT);
+        removeDriveOpByKey('create_trip_folder', { tripId: trip.id });
+        return null;
+      }
       upsertDriveOp('create_trip_folder', { tripId: trip.id, parentId, tripFolderName }, err?.message || 'create_trip_folder_failed');
       return null;
     }
@@ -2416,6 +2441,11 @@ const App = () => {
       return true;
     } catch (err) {
       console.error('Drive move folder failed:', err);
+      if (isDrivePermissionError(err)) {
+        setDriveHint(DRIVE_PERMISSION_HINT);
+        removeDriveOpByKey('move_folder', { folderId, parentId: parentId || null });
+        return false;
+      }
       upsertDriveOp('move_folder', { folderId, parentId: parentId || null }, err?.message || 'move_folder_failed');
       return false;
     }
@@ -2478,6 +2508,11 @@ const App = () => {
       removeDriveOpByKey('rename_folder', { folderId });
     } catch (err) {
       console.error('Drive rename folder failed:', err);
+      if (isDrivePermissionError(err)) {
+        setDriveHint(DRIVE_PERMISSION_HINT);
+        removeDriveOpByKey('rename_folder', { folderId });
+        return;
+      }
       upsertDriveOp('rename_folder', { folderId, newName }, err?.message || 'rename_folder_failed');
     }
   };
@@ -2490,6 +2525,11 @@ const App = () => {
       return true;
     } catch (err) {
       console.error('Drive delete folder failed:', err);
+      if (isDrivePermissionError(err)) {
+        setDriveHint(DRIVE_PERMISSION_HINT);
+        removeDriveOpByKey('delete_folder', { folderId });
+        return false;
+      }
       upsertDriveOp('delete_folder', { folderId }, err?.message || 'delete_folder_failed');
       return false;
     }
@@ -2555,6 +2595,11 @@ const App = () => {
 
           setDriveOpsQueue((prev) => prev.filter((item) => item.id !== dueOp.id));
         } catch (error) {
+          if (isDrivePermissionError(error)) {
+            setDriveHint(DRIVE_PERMISSION_HINT);
+            setDriveOpsQueue((prev) => prev.filter((item) => item.id !== dueOp.id));
+            continue;
+          }
           const nextAttempt = Number(dueOp.attempt || 0) + 1;
           const nextRunAt = Date.now() + getDriveRetryDelayMs(nextAttempt);
           setDriveOpsQueue((prev) =>
@@ -3474,4 +3519,16 @@ const App = () => {
   );
 };
 export default App;
+
+
+
+
+
+
+
+
+
+
+
+
 
