@@ -1720,7 +1720,7 @@ const App = () => {
     setTripsScreenMode("create");
   };
 
-  const saveTripFromForm = () => {
+  const saveTripFromForm = async () => {
     const allowedOrderIds = new Set(availableOrdersForTrip.map((order) => order.id));
     const selectedOrderIds = tripFormData.orderIds.filter((orderId) => allowedOrderIds.has(orderId));
     if (!tripFormData.tripNumber.trim() || !tripFormData.carNumber || !tripFormData.driverName) {
@@ -1762,8 +1762,37 @@ const App = () => {
           ? `${ordersSummary} (+${selectedOrders.length - 3})`
           : ordersSummary,
     };
+
+    const nextTrips = editingTripId
+      ? trips.map((item) => (item.id === editingTripId ? trip : item))
+      : [trip, ...trips];
+
+    const previousOrderIds = new Set(editingTrip?.orderIds || []);
+    const selectedOrderIdsSet = new Set(selectedOrderIds);
+    const occupiedByOtherTrips = new Set();
+    trips.forEach((existingTrip) => {
+      if (existingTrip.id === editingTripId) return;
+      (existingTrip.orderIds || []).forEach((orderId) => occupiedByOtherTrips.add(orderId));
+    });
+    const nextOrders = orders.map((order) => {
+      if (selectedOrderIdsSet.has(order.id)) {
+        return { ...order, stageId: inCarStageId };
+      }
+      if (
+        editingTripId &&
+        previousOrderIds.has(order.id) &&
+        !occupiedByOtherTrips.has(order.id) &&
+        order.stageId === inCarStageId
+      ) {
+        return { ...order, stageId: warehouseStageId };
+      }
+      return order;
+    });
+
+    setTrips(nextTrips);
+    setOrders(nextOrders);
+
     if (editingTripId) {
-      setTrips((prev) => prev.map((item) => (item.id === editingTripId ? trip : item)));
       const previousTripFolderName = buildTripDriveFolderName({
         carNumber: editingTrip?.carNumberBase || editingTrip?.carNumber,
         driverName: editingTrip?.driverName,
@@ -1775,33 +1804,8 @@ const App = () => {
       if (editingTrip?.driveFolderId && previousTripFolderName !== nextTripFolderName) {
         void updateDriveFolderName(editingTrip.driveFolderId, nextTripFolderName);
       }
-    } else {
-      setTrips((prev) => [trip, ...prev]);
     }
 
-    const previousOrderIds = new Set(editingTrip?.orderIds || []);
-    const selectedOrderIdsSet = new Set(selectedOrderIds);
-    const occupiedByOtherTrips = new Set();
-    trips.forEach((existingTrip) => {
-      if (existingTrip.id === editingTripId) return;
-      (existingTrip.orderIds || []).forEach((orderId) => occupiedByOtherTrips.add(orderId));
-    });
-    setOrders((prev) =>
-      prev.map((order) => {
-        if (selectedOrderIdsSet.has(order.id)) {
-          return { ...order, stageId: inCarStageId };
-        }
-        if (
-          editingTripId &&
-          previousOrderIds.has(order.id) &&
-          !occupiedByOtherTrips.has(order.id) &&
-          order.stageId === inCarStageId
-        ) {
-          return { ...order, stageId: warehouseStageId };
-        }
-        return order;
-      }),
-    );
     const addedOrderIds = selectedOrderIds.filter((orderId) => !previousOrderIds.has(orderId));
     const removedOrderIds = Array.from(previousOrderIds).filter((orderId) => !selectedOrderIdsSet.has(orderId));
     void syncTripOrderFolders({
@@ -1810,10 +1814,18 @@ const App = () => {
       addedOrderIds,
       removedOrderIds,
     });
+
+    await saveCloudSnapshotNow({
+      orders: nextOrders,
+      trips: nextTrips,
+      orderStages,
+      tripStages,
+      printSignerSettings,
+    });
+
     closeCreateTripForm();
     return { trip, selectedOrders };
   };
-
   const printTripApplication = async (trip, selectedOrders) => {
     if (typeof window === "undefined") return;
     setIsTripPrintLoading(true);
@@ -1879,13 +1891,13 @@ const App = () => {
     }
   };
 
-  const handleTripSubmit = (event) => {
+  const handleTripSubmit = async (event) => {
     event.preventDefault();
-    saveTripFromForm();
+    await saveTripFromForm();
   };
 
   const handleTripPrint = async () => {
-    const result = saveTripFromForm();
+    const result = await saveTripFromForm();
     if (!result) return;
     await printTripApplication(result.trip, result.selectedOrders);
   };
@@ -1943,153 +1955,176 @@ const App = () => {
     });
   };
 
-  const removeOrderIdsFromTrips = (orderIdsToRemove, sourceOrders, excludedTripId = "") => {
-    const idsToRemove = new Set(orderIdsToRemove);
-    if (idsToRemove.size === 0) return;
-    const sourceOrdersById = new Map(sourceOrders.map((order) => [order.id, order]));
-    setTrips((prevTrips) =>
-      prevTrips.map((trip) => {
-        if (excludedTripId && trip.id === excludedTripId) return trip;
-        const currentOrderIds = Array.isArray(trip.orderIds) ? trip.orderIds : [];
-        const nextOrderIds = currentOrderIds.filter((id) => !idsToRemove.has(id));
-        if (nextOrderIds.length === currentOrderIds.length) return trip;
-        if (driveConnected && trip.driveFolderId) {
-          currentOrderIds
-            .filter((id) => idsToRemove.has(id))
-            .forEach((orderId) => {
-              const order = sourceOrdersById.get(orderId);
-              if (order?.driveFolderId) {
-                void moveOrderFolderToBase(order);
-              }
-            });
-        }
-        return {
-          ...trip,
-          orderIds: nextOrderIds,
-          ordersSummary: buildTripOrdersSummary(nextOrderIds, sourceOrders),
-        };
-      }),
-    );
-  };
-  const removeOrderFromTrips = (orderId, sourceOrders = orders, excludedTripId = "") => {
-    removeOrderIdsFromTrips([orderId], sourceOrders, excludedTripId);
-  };
+  const handleMoveOrderToStage = async (orderId, stageId) => {
+    const currentOrder = orders.find((order) => order.id === orderId);
+    if (!currentOrder || currentOrder.stageId === stageId) return;
 
-  const handleMoveOrderToStage = (orderId, stageId) => {
-    setOrders((prev) =>
-      prev.map((order) =>
-        order.id === orderId ? { ...order, stageId } : order,
-      ),
+    const nextOrders = orders.map((order) =>
+      order.id === orderId ? { ...order, stageId } : order,
     );
-    if (shouldRemoveOrderFromTrip(stageId)) {
-      removeOrderFromTrips(orderId);
+    const nextTrips = shouldRemoveOrderFromTrip(stageId)
+      ? getTripsWithoutOrderIds(trips, [orderId], nextOrders)
+      : trips;
+
+    setOrders(nextOrders);
+    setTrips(nextTrips);
+
+    if (shouldRemoveOrderFromTrip(stageId) && currentOrder.driveFolderId) {
+      void moveOrderFolderToBase(currentOrder);
     }
-  };
 
-  const handleMoveTripToStage = (tripId, stageId) => {
-    setTrips((prev) => {
-      let movedTrip = null;
-      let previousStageId = "";
-      const nextTrips = prev.map((trip) => {
-        if (trip.id !== tripId) return trip;
-        movedTrip = trip;
-        previousStageId = trip.stageId;
-        return { ...trip, stageId };
-      });
-
-      if (movedTrip && stageId === completedTripStageId) {
-        const movedOrderIds = new Set(movedTrip.orderIds || []);
-        setOrders((prevOrders) =>
-          prevOrders.map((order) =>
-            movedOrderIds.has(order.id)
-              ? { ...order, stageId: deliveredStageId }
-              : order,
-          ),
-        );
-      }
-      if (
-        movedTrip &&
-        previousStageId === completedTripStageId &&
-        stageId !== completedTripStageId
-      ) {
-        const movedOrderIds = new Set(movedTrip.orderIds || []);
-        setOrders((prevOrders) =>
-          prevOrders.map((order) =>
-            movedOrderIds.has(order.id)
-              ? { ...order, stageId: inCarStageId }
-              : order,
-          ),
-        );
-      }
-
-      return nextTrips;
+    await saveCloudSnapshotNow({
+      orders: nextOrders,
+      trips: nextTrips,
+      orderStages,
+      tripStages,
+      printSignerSettings,
     });
   };
 
-  const handleInsertOrderStage = (afterStageId) => {
+  const handleMoveTripToStage = async (tripId, stageId) => {
+    const currentTrip = trips.find((trip) => trip.id === tripId);
+    if (!currentTrip || currentTrip.stageId === stageId) return;
+
+    const nextTrips = trips.map((trip) =>
+      trip.id === tripId ? { ...trip, stageId } : trip,
+    );
+
+    let nextOrders = orders;
+    const movedOrderIds = new Set(currentTrip.orderIds || []);
+
+    if (stageId === completedTripStageId) {
+      nextOrders = orders.map((order) =>
+        movedOrderIds.has(order.id)
+          ? { ...order, stageId: deliveredStageId }
+          : order,
+      );
+    }
+
+    if (currentTrip.stageId === completedTripStageId && stageId !== completedTripStageId) {
+      nextOrders = orders.map((order) =>
+        movedOrderIds.has(order.id)
+          ? { ...order, stageId: inCarStageId }
+          : order,
+      );
+    }
+
+    setTrips(nextTrips);
+    setOrders(nextOrders);
+
+    await saveCloudSnapshotNow({
+      orders: nextOrders,
+      trips: nextTrips,
+      orderStages,
+      tripStages,
+      printSignerSettings,
+    });
+  };
+  const handleInsertOrderStage = async (afterStageId) => {
     const stage = createStage("order-stage", "Новый этап");
-    setOrderStages((prev) => {
-      const index = prev.findIndex((item) => item.id === afterStageId);
-      if (index < 0) return [...prev, stage];
-      return [...prev.slice(0, index + 1), stage, ...prev.slice(index + 1)];
+    const index = orderStages.findIndex((item) => item.id === afterStageId);
+    const nextOrderStages = index < 0
+      ? [...orderStages, stage]
+      : [...orderStages.slice(0, index + 1), stage, ...orderStages.slice(index + 1)];
+    setOrderStages(nextOrderStages);
+    await saveCloudSnapshotNow({
+      orders,
+      trips,
+      orderStages: nextOrderStages,
+      tripStages,
+      printSignerSettings,
     });
     return stage.id;
   };
 
-  const handleInsertTripStage = (afterStageId) => {
+  const handleInsertTripStage = async (afterStageId) => {
     const stage = createStage("trip-stage", "Новый этап");
-    setTripStages((prev) => {
-      const index = prev.findIndex((item) => item.id === afterStageId);
-      if (index < 0) return [...prev, stage];
-      return [...prev.slice(0, index + 1), stage, ...prev.slice(index + 1)];
+    const index = tripStages.findIndex((item) => item.id === afterStageId);
+    const nextTripStages = index < 0
+      ? [...tripStages, stage]
+      : [...tripStages.slice(0, index + 1), stage, ...tripStages.slice(index + 1)];
+    setTripStages(nextTripStages);
+    await saveCloudSnapshotNow({
+      orders,
+      trips,
+      orderStages,
+      tripStages: nextTripStages,
+      printSignerSettings,
     });
     return stage.id;
   };
 
-  const handleRenameOrderStage = (stageId, name) => {
+  const handleRenameOrderStage = async (stageId, name) => {
     const value = String(name || "").trim();
     if (!value) return;
-    setOrderStages((prev) =>
-      prev.map((stage) => (stage.id === stageId ? { ...stage, name: value } : stage)),
+    const nextOrderStages = orderStages.map((stage) =>
+      stage.id === stageId ? { ...stage, name: value } : stage,
     );
+    setOrderStages(nextOrderStages);
+    await saveCloudSnapshotNow({
+      orders,
+      trips,
+      orderStages: nextOrderStages,
+      tripStages,
+      printSignerSettings,
+    });
   };
 
-  const handleRenameTripStage = (stageId, name) => {
+  const handleRenameTripStage = async (stageId, name) => {
     const value = String(name || "").trim();
     if (!value) return;
-    setTripStages((prev) =>
-      prev.map((stage) => (stage.id === stageId ? { ...stage, name: value } : stage)),
+    const nextTripStages = tripStages.map((stage) =>
+      stage.id === stageId ? { ...stage, name: value } : stage,
     );
+    setTripStages(nextTripStages);
+    await saveCloudSnapshotNow({
+      orders,
+      trips,
+      orderStages,
+      tripStages: nextTripStages,
+      printSignerSettings,
+    });
   };
 
-  const handleDeleteOrderStage = (stageId) => {
+  const handleDeleteOrderStage = async (stageId) => {
     if (orderStages.length <= 1) return;
     const targetStage = orderStages.find((stage) => stage.id === stageId);
     if (DEFAULT_ORDER_STAGE_CODES.has(String(targetStage?.code || ""))) return;
-    const remaining = orderStages.filter((stage) => stage.id !== stageId);
-    const fallbackStageId = remaining[0]?.id;
-    setOrderStages(remaining);
-    setOrders((prev) =>
-      prev.map((order) =>
-        order.stageId === stageId ? { ...order, stageId: fallbackStageId } : order,
-      ),
+    const nextOrderStages = orderStages.filter((stage) => stage.id !== stageId);
+    const fallbackStageId = nextOrderStages[0]?.id;
+    const nextOrders = orders.map((order) =>
+      order.stageId === stageId ? { ...order, stageId: fallbackStageId } : order,
     );
+    setOrderStages(nextOrderStages);
+    setOrders(nextOrders);
+    await saveCloudSnapshotNow({
+      orders: nextOrders,
+      trips,
+      orderStages: nextOrderStages,
+      tripStages,
+      printSignerSettings,
+    });
   };
 
-  const handleDeleteTripStage = (stageId) => {
+  const handleDeleteTripStage = async (stageId) => {
     if (tripStages.length <= 1) return;
     const targetStage = tripStages.find((stage) => stage.id === stageId);
     if (DEFAULT_TRIP_STAGE_CODES.has(String(targetStage?.code || ""))) return;
-    const remaining = tripStages.filter((stage) => stage.id !== stageId);
-    const fallbackStageId = remaining[0]?.id;
-    setTripStages(remaining);
-    setTrips((prev) =>
-      prev.map((trip) =>
-        trip.stageId === stageId ? { ...trip, stageId: fallbackStageId } : trip,
-      ),
+    const nextTripStages = tripStages.filter((stage) => stage.id !== stageId);
+    const fallbackStageId = nextTripStages[0]?.id;
+    const nextTrips = trips.map((trip) =>
+      trip.stageId === stageId ? { ...trip, stageId: fallbackStageId } : trip,
     );
+    setTripStages(nextTripStages);
+    setTrips(nextTrips);
+    await saveCloudSnapshotNow({
+      orders,
+      trips: nextTrips,
+      orderStages,
+      tripStages: nextTripStages,
+      printSignerSettings,
+    });
   };
-
   const clearGoogleDriveSession = React.useCallback(({ notify = false } = {}) => {
     localStorage.removeItem('gdrive_tokens');
     localStorage.removeItem('gdrive_selected_folder');
@@ -2906,6 +2941,17 @@ const App = () => {
     }));
   };
 
+  const closeSignatureSettingsModal = async () => {
+    await saveCloudSnapshotNow({
+      orders,
+      trips,
+      orderStages,
+      tripStages,
+      printSignerSettings,
+    });
+    setShowSignatureSettingsModal(false);
+    setShowSettingsModal(true);
+  };
   const handleAuthFieldChange = (field) => (event) => {
     const value = String(event.target.value || "");
     setAuthForm((prev) => ({ ...prev, [field]: value }));
@@ -3455,10 +3501,7 @@ const App = () => {
         isOpen={showSignatureSettingsModal}
         printSignerSettings={printSignerSettings}
         onPrintSignerChange={handlePrintSignerChange}
-        onClose={() => {
-          setShowSignatureSettingsModal(false);
-          setShowSettingsModal(true);
-        }}
+        onClose={closeSignatureSettingsModal}
       />
 
       {deleteCardModal.isOpen && (
