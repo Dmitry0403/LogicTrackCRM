@@ -17,6 +17,30 @@ import {
   isSupabaseConfigured,
   SUPABASE_WORKSPACE_KEY,
 } from "./lib/supabase";
+import { RU } from "./i18n/ru";
+import {
+  AIRPORT_ALIASES,
+  CARGO_TERMINAL_URLS,
+  CUSTOMS_CODE_MAP,
+  DEFAULT_ORDER_STAGES,
+  DEFAULT_ORDER_STAGE_CODES,
+  DEFAULT_POWER_OF_ATTORNEY_REGISTRY,
+  DEFAULT_PRINT_SIGNER_SETTINGS,
+  DEFAULT_TRIP_STAGES,
+  DEFAULT_TRIP_STAGE_CODES,
+  ORDER_STAGE_CODES,
+  ORDER_STAGE_DELIVERED_ID,
+  ORDER_STAGE_IN_CAR_ID,
+  ORDER_STAGE_PLAN_ID,
+  ORDER_STAGE_WAREHOUSE_ID,
+  TERMINAL_ALIASES,
+  TRAILER_NUMBER,
+  TRIP_CAR_NUMBERS,
+  TRIP_DRIVER_NAMES,
+  TRIP_FALLBACK_NAME,
+  TRIP_STAGE_CODES,
+  TRIP_STAGE_COMPLETED_ID,
+} from "./constants/domain";
 
 const normalizeEnvValue = (rawValue) =>
   String(rawValue || "")
@@ -31,7 +55,7 @@ const DRIVE_CONFIG = {
   SCOPE: normalizeEnvValue(import.meta.env.VITE_GOOGLE_DRIVE_SCOPE || "https://www.googleapis.com/auth/drive"),
 };
 
-const DRIVE_PERMISSION_HINT = "\u041d\u0435\u0442 \u043f\u0440\u0430\u0432 \u043d\u0430 \u0438\u0437\u043c\u0435\u043d\u0435\u043d\u0438\u0435 \u043f\u0430\u043f\u043e\u043a Google Drive. \u041d\u0430\u0436\u043c\u0438\u0442\u0435 \"\u041f\u043e\u0434\u043a\u043b\u044e\u0447\u0438\u0442\u044c Google Drive\" \u0438 \u043f\u043e\u0434\u0442\u0432\u0435\u0440\u0434\u0438\u0442\u0435 \u0434\u043e\u0441\u0442\u0443\u043f \u0441\u043d\u043e\u0432\u0430.";
+const DRIVE_PERMISSION_HINT = RU.drive.permissionHint;
 
 const API_BASE_URL = normalizeEnvValue(
   import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:3001" : ""),
@@ -117,70 +141,37 @@ const localizeAuthErrorMessage = (error, fallbackMessage) => {
   const normalized = rawMessage.toLowerCase();
 
   if (normalized.includes("invalid login credentials")) {
-    return "Неверный email или пароль.";
+    return RU.authErrors.invalidLogin;
   }
   if (normalized.includes("email not confirmed")) {
-    return "Подтвердите email по ссылке из письма и попробуйте снова.";
+    return RU.authErrors.emailNotConfirmed;
   }
   if (normalized.includes("user already registered")) {
-    return "Пользователь с таким email уже зарегистрирован.";
+    return RU.authErrors.userAlreadyRegistered;
   }
   if (normalized.includes("password should be at least")) {
-    return "Пароль слишком короткий. Используйте не менее 6 символов.";
+    return RU.authErrors.passwordTooShort;
   }
   if (normalized.includes("unable to validate email address")) {
-    return "Проверьте корректность email.";
+    return RU.authErrors.invalidEmail;
   }
   if (normalized.includes("too many requests")) {
-    return "Слишком много попыток. Попробуйте позже.";
+    return RU.authErrors.tooManyRequests;
   }
   if (normalized.includes("network request failed") || normalized.includes("failed to fetch")) {
-    return "Не удалось связаться с сервером. Проверьте интернет-соединение.";
+    return RU.authErrors.networkFailed;
   }
 
   return fallbackMessage;
 };
 
 
-const customsCodeMap = {
-  "06536": "ПТО Аэропорт Минск",
-  "06533": "ПТО Минск-СЭЗ",
-  "06529": "ПТО Колядичи-авто",
-  "06611": "ПТО Белкультторг",
-  "06650": "ПТО Минск-ТЛЦ-2",
-  "06649": "ПТО Минск-ТЛЦ-1",
-  "06544": "ПТО Белювелирторг",
-  "06641": "ПТО Солигорск",
-  "06651": "ПТО Великий Камень",
-  "06613": "ПТО Жодино-Логистик",
-  "06608": "ПТО Борисов-авто",
-  "07242": "ПТО Полоцк-стекловолокно",
-  "07260": "ПТО Витебск-Белтаможсервис",
-  "07270": "ПТО Орша-Белтаможсервис",
-  "07271": "ПТО Орша-ТЛЦ",
-  "09146": "ПТО Барановичи-Фестивальная",
-  "09159": "ПТО Брест-Белтаможсервис",
-  "09161": "ПТО Пинск-Белтаможсервис",
-  "09162": "ПТО Брест-Белтаможсервис-2",
-  "14325": "ПТО Гомель-Белтаможсервис",
-  "14336": "ПТО Жлобин-металлургический",
-  "14354": "ПТО Гомель-СЭЗ",
-  "09157": "ПТО Мозырь-Белтаможсервис",
-  "16443": "ПТО Лида-авто",
-  "16457": "ПТО Гродно-ГАП-2",
-  "16463": "ПТО Брузги-ТЛЦ",
-  "16464": "ПТО Каменный Лог-Белтаможсервис",
-  "16465": "ПТО Берестовица-ТЛЦ",
-  "20733": "ПТО Могилев-Белтаможсервис",
-  "20734": "ПТО Бобруйск-Белтаможсервис",
-};
-
-const getCustomsName = (code) => customsCodeMap[code] || "Введите правильный код";
+const getCustomsName = (code) => CUSTOMS_CODE_MAP[code] || RU.domain.invalidCustomsCode;
 
 const getCustomsSuggestions = (typedValue) => {
   const typed = normalizeText(typedValue);
 
-  return Object.entries(customsCodeMap)
+  return Object.entries(CUSTOMS_CODE_MAP)
     .filter(([code, name]) => {
       if (!typed) return true;
       return code.includes(typed) || normalizeText(name).includes(typed);
@@ -203,87 +194,26 @@ const DRIVE_MODAL_RESTORE_STORAGE_KEY = "logictrack_restore_drive_modal";
 const DRIVE_OPS_QUEUE_STORAGE_KEY = "logictrack_drive_ops_queue";
 const DRIVE_OP_RETRY_BASE_MS = 1500;
 const DRIVE_OP_RETRY_MAX_MS = 60000;
-const DEFAULT_PRINT_SIGNER_SETTINGS = {
-  signerRole: "Менеджер",
-  signerName: "Косенко Д.В.",
-};
-const TRIP_CAR_NUMBERS = [
-  "AC 7769-5",
-  "AM 1019-5",
-  "AT 9287-5",
-  "AT 9288-5",
-  "AM 2957-5",
-  "AM 9118-5",
-  "AT 2761-5",
-  "AT 2762-5",
-  "AP 7963-5",
-  "AP 9736-5",
-  "AT 0887-5",
-];
-const TRIP_DRIVER_NAMES = [
-  "Бабрович Юрий",
-  "Медведь Валерий",
-  "Медведь Вадим",
-  "Сержан Чеслав",
-  "Латушко Олег",
-  "Шамко Дмитрий",
-];
-const TRAILER_NUMBER = "А 1482 Е-5";
-const DEFAULT_ORDER_STAGES = [
-  { id: "order-stage-plan", code: "plan", name: "План" },
-  { id: "order-stage-warehouse", code: "warehouse", name: "На складе" },
-  { id: "order-stage-in-car", code: "in_car", name: "В машине" },
-  { id: "order-stage-delivered", code: "delivered", name: "Доставлено" },
-];
-const DEFAULT_TRIP_STAGES = [
-  { id: "trip-stage-plan", code: "plan", name: "План" },
-  { id: "trip-stage-in-route", code: "in_route", name: "В рейсе" },
-  { id: "trip-stage-completed", code: "completed", name: "Завершено" },
-];
-const ORDER_STAGE_PLAN_ID = "order-stage-plan";
-const ORDER_STAGE_WAREHOUSE_ID = "order-stage-warehouse";
-const ORDER_STAGE_IN_CAR_ID = "order-stage-in-car";
-const ORDER_STAGE_DELIVERED_ID = "order-stage-delivered";
-const TRIP_STAGE_COMPLETED_ID = "trip-stage-completed";
-const ORDER_STAGE_CODES = {
-  PLAN: "plan",
-  WAREHOUSE: "warehouse",
-  IN_CAR: "in_car",
-  DELIVERED: "delivered",
-};
-const TRIP_STAGE_CODES = {
-  PLAN: "plan",
-  IN_ROUTE: "in_route",
-  COMPLETED: "completed",
-};
-
 const resolveCargoApiUrl = (urlPath) => {
   if (!urlPath) return "";
   if (/^https?:\/\//i.test(urlPath)) return urlPath;
   return `${CARGO_API_BASE_URL}${urlPath.startsWith("/") ? "" : "/"}${urlPath}`;
 };
 
-const CARGO_TERMINAL_URLS = {
-  svo_moscow: "https://www.moscow-cargo.com/",
-  svo_sher: "https://www.shercargo.ru/it/free/",
-  vko: "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/",
-  dme: "https://business.dme.ru/cargo/",
-  zia: "https://www.aero-grad.ru/aircargo/info/ac_07.pub_info.main?p_lang=R",
-};
 const stripAnsiCodes = (value) =>
   // eslint-disable-next-line no-control-regex
   String(value || "").replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-ntqry=><~]))/g, "");
 
 
 const resolveCargoTerminalKey = ({ shipmentAirport, shipmentTerminal }) => {
-  if (shipmentAirport === "Шереметьево") {
-    if (shipmentTerminal === "Москва-карго") return "svo_moscow";
-    if (shipmentTerminal === "Шереметьево-карго") return "svo_sher";
+  if (shipmentAirport === RU.domain.airports.sheremetyevo) {
+    if (shipmentTerminal === RU.domain.terminals.moscowCargo) return "svo_moscow";
+    if (shipmentTerminal === RU.domain.terminals.sheremetyevoCargo) return "svo_sher";
     return "";
   }
-  if (shipmentAirport === "Внуково") return "vko";
-  if (shipmentAirport === "Домодедово") return "dme";
-  if (shipmentAirport === "Жуковский") return "zia";
+  if (shipmentAirport === RU.domain.airports.vnukovo) return "vko";
+  if (shipmentAirport === RU.domain.airports.domodedovo) return "dme";
+  if (shipmentAirport === RU.domain.airports.zhukovsky) return "zia";
   return "";
 };
 
@@ -316,41 +246,12 @@ const splitAwb = (awb) => {
   };
 };
 
-const defaultPowerOfAttorneyRegistry = {
-  "Шереметьево": {
-    "Москва-карго": [
-      // { recipient: "ООО Пример", hasAttorney: "+", validUntil: "2026-12-31" },
-    ],
-    "Шереметьево-карго": [
-      // { recipient: "ООО Пример 2", hasAttorney: "+", validUntil: "2026-06-01" },
-    ],
-  },
-  "Внуково": [],
-  "Домодедово": [],
-  "Жуковский": [],
-};
-
-const AIRPORT_ALIASES = new Map([
-  ["Шереметьево", "Шереметьево"],
-  ["Внуково", "Внуково"],
-  ["Домодедово", "Домодедово"],
-  ["Жуковский", "Жуковский"],
-]);
-
-const TERMINAL_ALIASES = new Map([
-  ["Москва-карго", "Москва-карго"],
-  ["Шереметьево-карго", "Шереметьево-карго"],
-]);
-
 const normalizeText = (value) =>
   String(value || "")
     .toLowerCase()
     .replace(/ё/g, "е")
     .replace(/\s+/g, " ")
     .trim();
-
-const DEFAULT_ORDER_STAGE_CODES = new Set(Object.values(ORDER_STAGE_CODES));
-const DEFAULT_TRIP_STAGE_CODES = new Set(Object.values(TRIP_STAGE_CODES));
 
 const resolveOrderStageCode = (stage) => {
   const rawCode = String(stage?.code || "").trim();
@@ -366,12 +267,12 @@ const resolveOrderStageCode = (stage) => {
   if (legacyIdCode) return legacyIdCode;
 
   const normalizedName = normalizeText(stage?.name || "");
-  if (normalizedName === normalizeText("План")) return ORDER_STAGE_CODES.PLAN;
-  if (normalizedName === normalizeText("На складе")) return ORDER_STAGE_CODES.WAREHOUSE;
-  if (normalizedName === normalizeText("В машине")) return ORDER_STAGE_CODES.IN_CAR;
+  if (normalizedName === normalizeText(RU.domain.orderStages.plan)) return ORDER_STAGE_CODES.PLAN;
+  if (normalizedName === normalizeText(RU.domain.orderStages.warehouse)) return ORDER_STAGE_CODES.WAREHOUSE;
+  if (normalizedName === normalizeText(RU.domain.orderStages.inCar)) return ORDER_STAGE_CODES.IN_CAR;
   if (
-    normalizedName === normalizeText("Доставлено") ||
-    normalizedName === normalizeText("Доставлен")
+    normalizedName === normalizeText(RU.domain.orderStages.delivered) ||
+    normalizedName === normalizeText(RU.domain.orderStages.deliveredAlt)
   ) {
     return ORDER_STAGE_CODES.DELIVERED;
   }
@@ -391,11 +292,11 @@ const resolveTripStageCode = (stage) => {
   if (legacyIdCode) return legacyIdCode;
 
   const normalizedName = normalizeText(stage?.name || "");
-  if (normalizedName === normalizeText("План")) return TRIP_STAGE_CODES.PLAN;
-  if (normalizedName === normalizeText("В рейсе")) return TRIP_STAGE_CODES.IN_ROUTE;
+  if (normalizedName === normalizeText(RU.domain.tripStages.plan)) return TRIP_STAGE_CODES.PLAN;
+  if (normalizedName === normalizeText(RU.domain.tripStages.inRoute)) return TRIP_STAGE_CODES.IN_ROUTE;
   if (
-    normalizedName === normalizeText("Завершено") ||
-    normalizedName === normalizeText("Завершен")
+    normalizedName === normalizeText(RU.domain.tripStages.completed) ||
+    normalizedName === normalizeText(RU.domain.tripStages.completedAlt)
   ) {
     return TRIP_STAGE_CODES.COMPLETED;
   }
@@ -463,12 +364,12 @@ const getPowerOfAttorneyStatus = ({ shipmentAirport, shipmentTerminal, recipient
   const airportKey = normalizeAirport(shipmentAirport);
   const airportRegistry = registry[airportKey];
   if (!airportRegistry) {
-    return { type: "danger", message: "Доверенности нет." };
+    return { type: "danger", message: RU.domain.poa.missing };
   }
 
   let records = [];
-  if (airportKey === "Шереметьево") {
-    const terminalKey = normalizeTerminal(shipmentTerminal) || "Москва-карго";
+  if (airportKey === RU.domain.airports.sheremetyevo) {
+    const terminalKey = normalizeTerminal(shipmentTerminal) || RU.domain.terminals.moscowCargo;
     records = airportRegistry[terminalKey] || [];
   } else if (Array.isArray(airportRegistry)) {
     records = airportRegistry;
@@ -480,7 +381,7 @@ const getPowerOfAttorneyStatus = ({ shipmentAirport, shipmentTerminal, recipient
       hasPlusMark(record.hasAttorney),
   );
   if (matchedRecords.length === 0) {
-    return { type: "danger", message: "Доверенности нет." };
+    return { type: "danger", message: RU.domain.poa.missing };
   }
 
   const validUntilDates = matchedRecords
@@ -496,16 +397,16 @@ const getPowerOfAttorneyStatus = ({ shipmentAirport, shipmentTerminal, recipient
     if (latestValidUntil < todayStart) {
       return {
         type: "danger",
-        message: `Доверенность истекла ${formatRuDate(latestValidUntil)}.`,
+        message: `${RU.domain.poa.expiredPrefix} ${formatRuDate(latestValidUntil)}.`,
       };
     }
     return {
       type: "success",
-      message: `Доверенность действительна до ${formatRuDate(latestValidUntil)}.`,
+      message: `${RU.domain.poa.validUntilPrefix} ${formatRuDate(latestValidUntil)}.`,
     };
   }
 
-  return { type: "success", message: "Доверенность действительна до: срок не указан." };
+  return { type: "success", message: RU.domain.poa.validUntilUnknown };
 };
 
 const getRecipientSuggestions = ({ shipmentAirport, shipmentTerminal, recipient, registry }) => {
@@ -514,8 +415,8 @@ const getRecipientSuggestions = ({ shipmentAirport, shipmentTerminal, recipient,
   if (!airportRegistry) return [];
 
   let records = [];
-  if (airportKey === "Шереметьево") {
-    const terminalKey = normalizeTerminal(shipmentTerminal) || "Москва-карго";
+  if (airportKey === RU.domain.airports.sheremetyevo) {
+    const terminalKey = normalizeTerminal(shipmentTerminal) || RU.domain.terminals.moscowCargo;
     records = airportRegistry[terminalKey] || [];
   } else if (Array.isArray(airportRegistry)) {
     records = airportRegistry;
@@ -546,7 +447,7 @@ const getRecipientSuggestions = ({ shipmentAirport, shipmentTerminal, recipient,
 
     const hasMultipleByName = (nameCounts.get(normalizedName) || 0) > 1;
     const label = hasMultipleByName
-      ? (validUntilRaw ? `${name} - до ${validUntilRaw}` : `${name} - срок не указан`)
+      ? (validUntilRaw ? `${name} - ${RU.domain.poa.labelUntil} ${validUntilRaw}` : `${name} - ${RU.domain.poa.labelUnknown}`)
       : name;
 
     suggestions.push({ value: name, label });
@@ -632,12 +533,12 @@ const extractDriverSurname = (driverName) => {
 const buildTripDriveFolderName = ({ carNumber, driverName }) => {
   const car = String(carNumber || "").trim();
   const surname = extractDriverSurname(driverName);
-  return [car, surname].filter(Boolean).join(" ").trim() || "Рейс";
+  return [car, surname].filter(Boolean).join(" ").trim() || TRIP_FALLBACK_NAME;
 };
 
 const App = () => {
-  const SHEREMETYEVO_VALUES = new Set(["Шереметьево"]);
-  const DEFAULT_SHEREMETYEVO_TERMINAL = "Москва-карго";
+  const SHEREMETYEVO_VALUES = new Set([RU.domain.airports.sheremetyevo]);
+  const DEFAULT_SHEREMETYEVO_TERMINAL = RU.domain.terminals.moscowCargo;
 
   const [orders, setOrders] = React.useState(loadOrders);
   const [trips, setTrips] = React.useState(loadTrips);
@@ -651,10 +552,10 @@ const App = () => {
   const [ordersScreenMode, setOrdersScreenMode] = React.useState("list");
   const [tripsScreenMode, setTripsScreenMode] = React.useState("list");
   const [driveConnected, setDriveConnected] = React.useState(false);
-  const [powerOfAttorneyRegistry, setPowerOfAttorneyRegistry] = React.useState(defaultPowerOfAttorneyRegistry);
+  const [powerOfAttorneyRegistry, setPowerOfAttorneyRegistry] = React.useState(DEFAULT_POWER_OF_ATTORNEY_REGISTRY);
   const [isPowerOfAttorneySyncLoading, setIsPowerOfAttorneySyncLoading] = React.useState(false);
   const [driveHint, setDriveHint] = React.useState(
-    "Чтобы активировать синхронизацию, подключите Google Drive."
+    RU.appMessages.driveHintConnect
   );
 
   const [formData, setFormData] = React.useState({
@@ -833,7 +734,7 @@ const App = () => {
       if (event === "PASSWORD_RECOVERY") {
         setIsChangePasswordScreenOpen(true);
         setChangePasswordError("");
-        setChangePasswordInfo("Введите новый пароль.");
+        setChangePasswordInfo(RU.appMessages.enterNewPassword);
       }
       setAuthReady(true);
     });
@@ -1206,7 +1107,7 @@ const App = () => {
       const toks = getStoredTokens();
       if (toks && toks.access_token && toks.expires_at && Date.now() < toks.expires_at - 60000) {
         setDriveConnected(true);
-        setDriveHint('Google Drive подключен.');
+        setDriveHint(RU.appMessages.driveConnected);
         try {
           const account = await fetchGoogleDriveAccount(toks.access_token);
           setDriveAccount(account);
@@ -1221,7 +1122,7 @@ const App = () => {
       
       if (toks && toks.refresh_token) {
         try {
-          setDriveHint('Обновляю подключение к Google Drive...');
+          setDriveHint(RU.appMessages.driveRefreshing);
           const res = await fetch(`${API_BASE_URL}/oauth/token`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1237,7 +1138,7 @@ const App = () => {
           };
           setStoredTokens(newTokens);
           setDriveConnected(true);
-          setDriveHint('Google Drive подключен.');
+          setDriveHint(RU.appMessages.driveConnected);
           try {
             const account = await fetchGoogleDriveAccount(newTokens.access_token);
             setDriveAccount(account);
@@ -1262,7 +1163,7 @@ const App = () => {
       }
 
       try {
-        setDriveHint('Подключаю Google Drive...');
+        setDriveHint(RU.appMessages.driveConnecting);
         const res = await fetch(`${API_BASE_URL}/oauth/token`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1278,7 +1179,7 @@ const App = () => {
         };
         setStoredTokens(tokens);
         setDriveConnected(true);
-        setDriveHint('Google Drive подключен.');
+        setDriveHint(RU.appMessages.driveConnected);
         try {
           const account = await fetchGoogleDriveAccount(tokens.access_token);
           setDriveAccount(account);
@@ -1293,7 +1194,7 @@ const App = () => {
         window.history.replaceState({}, document.title, url.toString());
       } catch (err) {
         console.error(err);
-        setDriveHint('Не удалось подключить Google Drive. Попробуйте еще раз.');
+        setDriveHint(RU.appMessages.driveConnectFailed);
       }
       restoreDriveModalIfNeeded();
     })();
@@ -1302,7 +1203,7 @@ const App = () => {
 
   const customsName = formData.customsCode
     ? getCustomsName(formData.customsCode.trim())
-    : "Введите код таможни";
+    : RU.appMessages.enterCustomsCode;
   const powerOfAttorneyStatus = getPowerOfAttorneyStatus({
     ...formData,
     registry: powerOfAttorneyRegistry,
@@ -1319,7 +1220,7 @@ const App = () => {
     if (!awb) {
       setAwbStatusCheck({
         loading: false,
-        error: "Введите номер авианакладной.",
+        error: RU.appMessages.enterAwb,
         data: null,
       });
       return;
@@ -1329,7 +1230,7 @@ const App = () => {
     if (!terminalKey) {
       setAwbStatusCheck({
         loading: false,
-        error: "Сначала выберите аэропорт и терминал для проверки.",
+        error: RU.appMessages.selectAirportTerminal,
         data: null,
       });
       return;
@@ -1364,9 +1265,9 @@ const App = () => {
           if (serverDetails) {
             console.error("[cargo/status] cargo_status_failed:", serverDetails);
           }
-          throw new Error("Не удалось проверить статус груза. Попробуйте еще раз.");
+          throw new Error(RU.appMessages.cargoCheckFailed);
         }
-        throw new Error(serverDetails || serverErrorCode || "Ошибка проверки статуса");
+        throw new Error(serverDetails || serverErrorCode || RU.appMessages.cargoCheckError);
       }
 
       setAwbStatusCheck({
@@ -1400,7 +1301,7 @@ const App = () => {
       }
       setAwbStatusCheck({
         loading: false,
-        error: error.message || "Не удалось проверить статус груза.",
+        error: error.message || RU.appMessages.cargoCheckFailed,
         data: null,
       });
       setCargoScreenshotModal({
@@ -1427,7 +1328,7 @@ const App = () => {
   };
 
   const checkOrderAwbStatus = async (order) => {
-    if (String(order?.shipmentAirport || "").trim() === "Внуково") {
+    if (String(order?.shipmentAirport || "").trim() === RU.domain.airports.vnukovo) {
       window.open(
         "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/",
         "_blank",
@@ -1724,11 +1625,11 @@ const App = () => {
     const allowedOrderIds = new Set(availableOrdersForTrip.map((order) => order.id));
     const selectedOrderIds = tripFormData.orderIds.filter((orderId) => allowedOrderIds.has(orderId));
     if (!tripFormData.tripNumber.trim() || !tripFormData.carNumber || !tripFormData.driverName) {
-      alert("Заполните обязательные поля рейса.");
+      alert(RU.appMessages.fillTripRequired);
       return null;
     }
     if (selectedOrderIds.length === 0) {
-      alert("Выберите хотя бы один заказ для рейса.");
+      alert(RU.appMessages.chooseTripOrders);
       return null;
     }
 
@@ -1885,7 +1786,7 @@ const App = () => {
       downloadLink.remove();
       URL.revokeObjectURL(docxUrl);
     } catch (error) {
-      alert(`Не удалось сформировать DOCX заявки: ${error?.message || "неизвестная ошибка"}`);
+      alert(`${RU.appMessages.docxFailedPrefix} ${error?.message || RU.appMessages.unknownError}`);
     } finally {
       setIsTripPrintLoading(false);
     }
@@ -1907,7 +1808,7 @@ const App = () => {
     const selectedOrderIds = Array.isArray(trip.orderIds) ? trip.orderIds : [];
     const selectedOrders = orders.filter((order) => selectedOrderIds.includes(order.id));
     if (selectedOrders.length === 0) {
-      alert("В рейсе нет заказов для печати заявки.");
+      alert(RU.appMessages.noTripOrdersForPrint);
       return;
     }
     await printTripApplication(trip, selectedOrders);
@@ -2021,7 +1922,7 @@ const App = () => {
     });
   };
   const handleInsertOrderStage = async (afterStageId) => {
-    const stage = createStage("order-stage", "Новый этап");
+    const stage = createStage("order-stage", RU.workflow.newStage);
     const index = orderStages.findIndex((item) => item.id === afterStageId);
     const nextOrderStages = index < 0
       ? [...orderStages, stage]
@@ -2038,7 +1939,7 @@ const App = () => {
   };
 
   const handleInsertTripStage = async (afterStageId) => {
-    const stage = createStage("trip-stage", "Новый этап");
+    const stage = createStage("trip-stage", RU.workflow.newStage);
     const index = tripStages.findIndex((item) => item.id === afterStageId);
     const nextTripStages = index < 0
       ? [...tripStages, stage]
@@ -2133,7 +2034,7 @@ const App = () => {
     setSelectedDriveFolder(null);
     setDriveAccount(null);
     if (notify) {
-      setDriveHint('Синхронизация Google Drive отключена.');
+      setDriveHint(RU.appMessages.driveSyncDisabled);
     }
   }, []);
 
@@ -2142,11 +2043,11 @@ const App = () => {
     const hasSavedSession = Boolean(currentTokens?.access_token || currentTokens?.refresh_token);
     if (driveConnected || selectedDriveFolder || hasSavedSession) {
       clearGoogleDriveSession();
-      setDriveHint('Подключаю Google Drive...');
+      setDriveHint(RU.appMessages.driveConnecting);
     }
 
     if (!DRIVE_CONFIG.CLIENT_ID) {
-      setDriveHint('Подключение временно недоступно. Обратитесь к администратору.');
+      setDriveHint(RU.appMessages.driveUnavailable);
       return;
     }
 
@@ -2166,7 +2067,7 @@ const App = () => {
       window.location = `https://accounts.google.com/o/oauth2/v2/auth?${params.toString()}`;
     } catch (err) {
       console.error(err);
-      setDriveHint('Не удалось начать подключение. Попробуйте еще раз.');
+      setDriveHint(RU.appMessages.driveStartFailed);
     }
   };
 
@@ -2683,7 +2584,7 @@ const App = () => {
 
   const selectDriveFolder = async () => {
     if (!driveConnected) {
-      setDriveHint('Сначала подключите Google Drive.');
+      setDriveHint(RU.appMessages.connectDriveFirst);
       return;
     }
 
@@ -2693,16 +2594,16 @@ const App = () => {
       
       // Проверить, загружена ли Google Picker API
       if (!DRIVE_CONFIG.API_KEY) {
-        setDriveHint('Сейчас нельзя открыть выбор папки. Обратитесь к администратору.');
+        setDriveHint(RU.appMessages.pickerAdminOnly);
         return;
       }
 
       if (typeof google === 'undefined' || typeof google.picker === 'undefined') {
-        setDriveHint('Выбор папки пока недоступен. Повторите через пару секунд.');
+        setDriveHint(RU.appMessages.pickerUnavailable);
         return;
       }
 
-      setDriveHint('Открываю выбор папки Google Drive...');
+      setDriveHint(RU.appMessages.pickerOpening);
       
       // Создать Picker для выбора папки
       const folderView = new google.picker.DocsView(google.picker.ViewId.FOLDERS)
@@ -2722,10 +2623,10 @@ const App = () => {
               url: `https://drive.google.com/drive/folders/${folderData.id}`,
             };
             setSelectedDriveFolder(folderObj);
-            setDriveHint(`Выбрана папка: ${folderObj.name}`);
+            setDriveHint(`${RU.appMessages.folderSelectedPrefix} ${folderObj.name}`);
             console.log('Выбрана папка:', folderObj);
           } else if (data.action === google.picker.Action.CANCEL) {
-            setDriveHint('Выбор папки отменён.');
+            setDriveHint(RU.appMessages.folderCanceled);
           }
         })
         .build();
@@ -2733,7 +2634,7 @@ const App = () => {
       picker.setVisible(true);
     } catch (err) {
       console.error(err);
-      setDriveHint('Не удалось открыть выбор папки. Попробуйте еще раз.');
+      setDriveHint(RU.appMessages.folderOpenFailed);
     }
   };
 
@@ -2746,7 +2647,7 @@ const App = () => {
       isOpen: true,
       type: "order",
       id: order.id,
-      title: order.name || "Без названия",
+      title: order.name || RU.deleteCardModal.orderFallbackTitle,
     });
   };
 
@@ -2755,7 +2656,7 @@ const App = () => {
       isOpen: true,
       type: "trip",
       id: trip.id,
-      title: trip.tripNumber || "Без номера",
+      title: trip.tripNumber || RU.deleteCardModal.tripFallbackTitle,
     });
   };
 
@@ -2844,7 +2745,7 @@ const App = () => {
       closeDeleteCardModal();
     } catch (error) {
       console.error("delete_card_failed", error);
-      alert("Не удалось удалить карточку: " + (error?.message || "неизвестная ошибка"));
+      alert(`${RU.appMessages.deleteCardFailedPrefix} ${error?.message || RU.appMessages.unknownError}`);
     } finally {
       setIsDeleteCardLoading(false);
     }
@@ -2968,7 +2869,7 @@ const App = () => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) throw error;
     } catch (error) {
-      setAuthError(localizeAuthErrorMessage(error, "Не удалось войти."));
+      setAuthError(localizeAuthErrorMessage(error, RU.authFlow.signInFailed));
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -2984,9 +2885,9 @@ const App = () => {
       const password = String(authForm.password || "");
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) throw error;
-      setAuthInfo("Проверьте email: подтвердите регистрацию по ссылке.");
+      setAuthInfo(RU.authFlow.verifyEmail);
     } catch (error) {
-      setAuthError(localizeAuthErrorMessage(error, "Не удалось зарегистрироваться."));
+      setAuthError(localizeAuthErrorMessage(error, RU.authFlow.signUpFailed));
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -3000,14 +2901,14 @@ const App = () => {
     try {
       const email = String(authForm.email || "").trim();
       if (!email) {
-        throw new Error("Введите email для восстановления.");
+        throw new Error(RU.authFlow.enterRecoveryEmail);
       }
       const redirectTo = typeof window !== "undefined" ? window.location.origin : undefined;
       const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo });
       if (error) throw error;
-      setAuthInfo("Ссылка для восстановления отправлена на email.");
+      setAuthInfo(RU.authFlow.resetLinkSent);
     } catch (error) {
-      setAuthError(localizeAuthErrorMessage(error, "Не удалось отправить ссылку восстановления."));
+      setAuthError(localizeAuthErrorMessage(error, RU.authFlow.resetLinkFailed));
     } finally {
       setIsAuthSubmitting(false);
     }
@@ -3038,17 +2939,17 @@ const App = () => {
       const password = String(changePasswordForm.password || "");
       const confirmPassword = String(changePasswordForm.confirmPassword || "");
       if (password.length < 6) {
-        throw new Error("Пароль должен быть не короче 6 символов.");
+        throw new Error(RU.authFlow.passwordTooShort);
       }
       if (password !== confirmPassword) {
-        throw new Error("Пароли не совпадают.");
+        throw new Error(RU.authFlow.passwordsMismatch);
       }
       const { error } = await supabase.auth.updateUser({ password });
       if (error) throw error;
-      setChangePasswordInfo("Пароль успешно изменен.");
+      setChangePasswordInfo(RU.authFlow.passwordChanged);
       setChangePasswordForm({ password: "", confirmPassword: "" });
     } catch (error) {
-      setChangePasswordError(localizeAuthErrorMessage(error, "Не удалось изменить пароль."));
+      setChangePasswordError(localizeAuthErrorMessage(error, RU.authFlow.changePasswordFailed));
     } finally {
       setIsChangePasswordSubmitting(false);
     }
@@ -3060,9 +2961,9 @@ const App = () => {
       title: 'Google Drive',
       status: driveConnected
         ? driveAccount?.email
-          ? `подключен: ${driveAccount.email}`
-          : 'подключен (аккаунт не определен)'
-        : 'не подключен',
+          ? `${RU.settingsCards.driveStatusConnectedPrefix} ${driveAccount.email}`
+          : RU.settingsCards.driveStatusConnectedUnknown
+        : RU.settingsCards.driveStatusDisconnected,
       onOpen: () => {
         setShowSettingsModal(false);
         setShowDriveSettingsModal(true);
@@ -3070,7 +2971,7 @@ const App = () => {
     },
     {
       id: 'print-signature',
-      title: 'Изменение подписи',
+      title: RU.settingsCards.signatureTitle,
       status: `${printSignerSettings.signerRole || "—"} · ${printSignerSettings.signerName || "—"}`,
       onOpen: () => {
         setShowSettingsModal(false);
@@ -3079,8 +2980,8 @@ const App = () => {
     },
     {
       id: 'account',
-      title: 'Аккаунт',
-      status: currentUser?.email || 'Вход выполнен',
+      title: RU.settingsCards.accountTitle,
+      status: currentUser?.email || RU.settingsCards.accountSignedIn,
       onOpen: () => {
         setShowSettingsModal(false);
         setShowAccountSettingsModal(true);
@@ -3101,8 +3002,8 @@ const App = () => {
       <div className="app">
         <main className="workspace">
           <section className="card panel-section">
-            <h2>Авторизация</h2>
-            <p>Проверяем сессию Supabase...</p>
+            <h2>{RU.authUi.authTitle}</h2>
+            <p>{RU.authUi.checkingSession}</p>
           </section>
         </main>
       </div>
@@ -3114,7 +3015,7 @@ const App = () => {
       <div className="app">
         <main className="workspace">
           <section className="card panel-section" style={{ maxWidth: "520px", margin: "0 auto" }}>
-            <h2>{authScreen === "recover" ? "Восстановление пароля" : "Вход в систему"}</h2>
+            <h2>{authScreen === "recover" ? RU.authUi.recoverTitle : RU.authUi.loginTitle}</h2>
             <div style={{ display: "grid", gap: "0.75rem", marginTop: "1rem" }}>
               <label style={{ display: "grid", gap: "0.35rem" }}>
                 <span>Email</span>
@@ -3126,12 +3027,12 @@ const App = () => {
                 />
               </label>
               <label style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Пароль</span>
+                <span>{RU.authUi.password}</span>
                 <input
                   type="password"
                   value={authForm.password}
                   onChange={handleAuthFieldChange("password")}
-                  placeholder="Минимум 6 символов"
+                  placeholder={RU.authUi.minPassword}
                   disabled={authScreen === "recover"}
                 />
               </label>
@@ -3141,7 +3042,7 @@ const App = () => {
                 {authScreen === "recover" ? (
                   <>
                     <button type="button" className="primary" onClick={handleRequestPasswordReset} disabled={isAuthSubmitting}>
-                      {isAuthSubmitting ? "Выполняем..." : "Отправить ссылку"}
+                      {isAuthSubmitting ? RU.authUi.processing : RU.authUi.sendLink}
                     </button>
                     <button
                       type="button"
@@ -3152,16 +3053,16 @@ const App = () => {
                       }}
                       disabled={isAuthSubmitting}
                     >
-                      Назад к входу
+                      {RU.authUi.backToLogin}
                     </button>
                   </>
                 ) : (
                   <>
                     <button type="button" className="primary" onClick={handleSignIn} disabled={isAuthSubmitting}>
-                      {isAuthSubmitting ? "Выполняем..." : "Войти"}
+                      {isAuthSubmitting ? RU.authUi.processing : RU.authUi.signIn}
                     </button>
                     <button type="button" onClick={handleSignUp} disabled={isAuthSubmitting}>
-                      {isAuthSubmitting ? "Выполняем..." : "Зарегистрироваться"}
+                      {isAuthSubmitting ? RU.authUi.processing : RU.authUi.signUp}
                     </button>
                     <button
                       type="button"
@@ -3172,7 +3073,7 @@ const App = () => {
                       }}
                       disabled={isAuthSubmitting}
                     >
-                      Восстановить пароль по email
+                      {RU.authUi.recoverByEmail}
                     </button>
                   </>
                 )}
@@ -3189,31 +3090,31 @@ const App = () => {
       <div className="app">
         <main className="workspace">
           <section className="card panel-section" style={{ maxWidth: "520px", margin: "0 auto" }}>
-            <h2>Сменить пароль</h2>
+            <h2>{RU.authUi.changePasswordTitle}</h2>
             <div style={{ display: "grid", gap: "0.75rem", marginTop: "1rem" }}>
               <label style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Новый пароль</span>
+                <span>{RU.authUi.newPassword}</span>
                 <input
                   type="password"
                   value={changePasswordForm.password}
                   onChange={handleChangePasswordField("password")}
-                  placeholder="Минимум 6 символов"
+                  placeholder={RU.authUi.minPassword}
                 />
               </label>
               <label style={{ display: "grid", gap: "0.35rem" }}>
-                <span>Повторите пароль</span>
+                <span>{RU.authUi.repeatPassword}</span>
                 <input
                   type="password"
                   value={changePasswordForm.confirmPassword}
                   onChange={handleChangePasswordField("confirmPassword")}
-                  placeholder="Повторите пароль"
+                  placeholder={RU.authUi.repeatPasswordPlaceholder}
                 />
               </label>
               {changePasswordError && <small style={{ color: "#b91c1c" }}>{changePasswordError}</small>}
               {changePasswordInfo && <small style={{ color: "#0f5132" }}>{changePasswordInfo}</small>}
               <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
                 <button type="button" className="primary" onClick={handleChangePasswordSubmit} disabled={isChangePasswordSubmitting}>
-                  {isChangePasswordSubmitting ? "Сохраняем..." : "Сохранить пароль"}
+                  {isChangePasswordSubmitting ? RU.common.saveInProgress : RU.authUi.savePassword}
                 </button>
                 <button
                   type="button"
@@ -3225,7 +3126,7 @@ const App = () => {
                   }}
                   disabled={isChangePasswordSubmitting}
                 >
-                  Назад
+                  {RU.authUi.back}
                 </button>
               </div>
             </div>
@@ -3246,15 +3147,15 @@ const App = () => {
             <>
               {ordersScreenMode === "list" ? (
                 <WorkPanel
-                  title="Реестр заказов"
-                  actionLabel="Создать заказ"
+                  title={RU.ordersTable.title}
+                  actionLabel={RU.ordersTable.create}
                   onAction={() => {
                     setEditingOrderId(null);
                     setOrdersScreenMode("create");
                   }}
                 >
                   <WorkflowBoard
-                    boardTitle="Этапы заявок"
+                    boardTitle={RU.workflow.boardTitle}
                     stages={orderStages}
                     items={orders}
                     getItemId={(order) => order.id}
@@ -3280,18 +3181,18 @@ const App = () => {
                       return (
                       <div className="workflow-card">
                         <div className="workflow-card__top-actions">
-                          <button type="button" className="workflow-card__icon-btn" title="Редактировать" onClick={() => handleEditClick(order)} aria-label="Редактировать">
+                          <button type="button" className="workflow-card__icon-btn" title={RU.orderCard.edit} onClick={() => handleEditClick(order)} aria-label={RU.orderCard.edit}>
                             <span aria-hidden="true">&#9998;</span>
                           </button>
-                          <button type="button" className="workflow-card__icon-btn" title="Копировать" onClick={() => handleCopyOrderClick(order)} aria-label="Копировать">
+                          <button type="button" className="workflow-card__icon-btn" title={RU.orderCard.copy} onClick={() => handleCopyOrderClick(order)} aria-label={RU.orderCard.copy}>
                             <span aria-hidden="true">&#128203;</span>
                           </button>
-                          <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title="Удалить" onClick={() => openDeleteOrderConfirm(order)} aria-label="Удалить">
+                          <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title={RU.orderCard.delete} onClick={() => openDeleteOrderConfirm(order)} aria-label={RU.orderCard.delete}>
                             <span aria-hidden="true">&#128465;</span>
                           </button>
                         </div>
                         <div className={`workflow-card__title ${isOrderWithoutPowerOfAttorney ? "workflow-card__title--danger" : ""}`}>
-                          {order.name || "Без названия"}
+                          {order.name || RU.orderCard.untitled}
                         </div>
                         <div className="workflow-card__meta workflow-card__meta--awb">
                           {order.shipmentAirport || "—"} - {order.customsName || order.customsCode || "—"}
@@ -3303,8 +3204,8 @@ const App = () => {
                               type="button"
                               className="workflow-card__order-link"
                               onClick={() => checkOrderAwbStatus(order)}
-                              title="Проверить накладную"
-                              aria-label={`Проверить накладную ${order.awb}`}
+                              title={RU.orderCard.checkAwb}
+                              aria-label={`${RU.orderCard.checkAwb} ${order.awb}`}
                             >
                               {order.awb}
                             </button>
@@ -3313,7 +3214,7 @@ const App = () => {
                           )}
                         </div>
                         <div className="workflow-card__meta">
-                          {order.quantity || "—"} мест / {order.weight || "—"} кг
+                          {order.quantity || RU.common.emDash} {RU.orderCard.placesUnit} / {order.weight || RU.common.emDash} {RU.orderCard.weightUnit}
                           {assignedTrip ? ` / ${assignedCarNumber || "—"}` : ""}
                         </div>
                       </div>
@@ -3323,7 +3224,7 @@ const App = () => {
                 </WorkPanel>
               ) : (
                 <WorkPanel
-                  title={editingOrderId ? "Редактирование заказа" : "Создание заказа"}
+                  title={editingOrderId ? RU.orderView.editTitle : RU.orderView.createTitle}
                 >
                   <OrderFormCard
                     formData={formData}
@@ -3353,12 +3254,12 @@ const App = () => {
             <>
               {tripsScreenMode === "list" ? (
                 <WorkPanel
-                  title="Список рейсов"
-                  actionLabel="Создать рейс"
+                  title={RU.tripView.listTitle}
+                  actionLabel={RU.tripView.createAction}
                   onAction={openCreateTripForm}
                 >
                   <WorkflowBoard
-                    boardTitle="Этапы рейсов"
+                    boardTitle={RU.tripView.boardTitle}
                     stages={tripStages}
                     items={trips}
                     getItemId={(trip) => trip.id}
@@ -3385,32 +3286,32 @@ const App = () => {
                       return (
                         <div className="workflow-card">
                           <div className="workflow-card__top-actions">
-                            <button type="button" className="workflow-card__icon-btn" title="Редактировать" onClick={() => handleEditTripClick(trip)} aria-label="Редактировать">
+                            <button type="button" className="workflow-card__icon-btn" title={RU.tripCard.edit} onClick={() => handleEditTripClick(trip)} aria-label={RU.tripCard.edit}>
                               <span aria-hidden="true">&#9998;</span>
                             </button>
                             <button
                               type="button"
                               className="workflow-card__icon-btn"
-                              title="Печать заявки"
+                              title={RU.tripCard.print}
                               onClick={() => handlePrintTripCard(trip)}
-                              aria-label="Печать заявки"
+                              aria-label={RU.tripCard.print}
                               disabled={isTripPrintLoading}
                             >
                               <span aria-hidden="true">&#128424;</span>
                             </button>
-                            <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title="Удалить" onClick={() => openDeleteTripConfirm(trip)} aria-label="Удалить">
+                            <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title={RU.tripCard.delete} onClick={() => openDeleteTripConfirm(trip)} aria-label={RU.tripCard.delete}>
                               <span aria-hidden="true">&#128465;</span>
                             </button>
                           </div>
                           <div className="workflow-card__title">
-                            {(trip.tripNumber || "Без номера")} от {formatTripDateShort(trip.tripDate)}
+                            {(trip.tripNumber || RU.tripCard.untitled)} {RU.tripCard.from} {formatTripDateShort(trip.tripDate)}
                           </div>
                           <div className="workflow-card__meta">{trip.carNumber || "—"} · {trip.driverName || "—"}</div>
                           <div className="workflow-card__meta">
-                            Заказов: {tripOrders.length} · Вес: {totalTripWeight.toLocaleString("ru-RU", {
+                            {RU.tripCard.ordersCount}: {tripOrders.length} · {RU.tripCard.weight}: {totalTripWeight.toLocaleString("ru-RU", {
                               minimumFractionDigits: 0,
                               maximumFractionDigits: 2,
-                            })} кг
+                            })} {RU.tripCard.weightUnit}
                           </div>
                           <div className="workflow-card__meta">
                             {tripOrders.length === 0
@@ -3421,7 +3322,7 @@ const App = () => {
                                       type="button"
                                       className="workflow-card__order-link"
                                       onClick={() => handleEditOrderFromTripClick(order)}
-                                      title="Открыть заказ для редактирования"
+                                      title={RU.tripCard.openOrder}
                                     >
                                       {order.name || order.recipient || order.awb || order.id}
                                     </button>
@@ -3436,7 +3337,7 @@ const App = () => {
                 </WorkPanel>
               ) : (
                 <WorkPanel
-                  title={editingTripId ? "Редактирование рейса" : "Создание рейса"}
+                  title={editingTripId ? RU.tripView.editTitle : RU.tripView.createTitle}
                 >
                   <TripFormCard
                     formData={tripFormData}
@@ -3445,7 +3346,7 @@ const App = () => {
                     onSubmit={handleTripSubmit}
                     onPrint={handleTripPrint}
                     onCancel={closeCreateTripForm}
-                    submitLabel="Сохранить"
+                    submitLabel={RU.tripView.save}
                     orders={availableOrdersForTrip}
                     carNumbers={TRIP_CAR_NUMBERS}
                     driverNames={TRIP_DRIVER_NAMES}
@@ -3505,14 +3406,14 @@ const App = () => {
       />
 
       {deleteCardModal.isOpen && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Подтверждение удаления карточки">
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={RU.deleteCardModal.aria}>
           <div className="modal-card workflow-modal">
             <div className="modal-card__header">
-              <h2>Удалить карточку?</h2>
+              <h2>{RU.deleteCardModal.title}</h2>
             </div>
             <div className="modal-card__body">
               <p>
-                Карточка "{deleteCardModal.title}" будет удалена без возможности восстановления.
+                {RU.deleteCardModal.descriptionPrefix} "{deleteCardModal.title}" {RU.deleteCardModal.descriptionSuffix}
               </p>
               <div className="workflow-confirm-actions">
                 <button
@@ -3521,10 +3422,10 @@ const App = () => {
                   onClick={confirmDeleteCard}
                   disabled={isDeleteCardLoading}
                 >
-                  {isDeleteCardLoading ? "Удаление..." : "Удалить"}
+                  {isDeleteCardLoading ? RU.deleteCardModal.deleting : RU.deleteCardModal.delete}
                 </button>
                 <button type="button" onClick={closeDeleteCardModal} disabled={isDeleteCardLoading}>
-                  Отмена
+                  {RU.common.cancel}
                 </button>
               </div>
             </div>
@@ -3533,37 +3434,37 @@ const App = () => {
       )}
 
       {isDeleteCardLoading && (
-        <div className="loader-overlay" role="status" aria-live="polite" aria-label="Удаление карточки">
+        <div className="loader-overlay" role="status" aria-live="polite" aria-label={RU.deleteCardModal.loaderAria}>
           <div className="loader-overlay__content">
             <div className="loader-overlay__spinner" />
-            <div className="loader-overlay__text">Удаляем карточку...</div>
+            <div className="loader-overlay__text">{RU.deleteCardModal.loaderText}</div>
           </div>
         </div>
       )}
 
       {awbStatusCheck.loading && (
-        <div className="loader-overlay" role="status" aria-live="polite" aria-label="Проверка статуса">
+        <div className="loader-overlay" role="status" aria-live="polite" aria-label={RU.loaders.awbAria}>
           <div className="loader-overlay__content">
             <button
               type="button"
               className="loader-overlay__close"
-              aria-label="Прервать проверку"
-              title="Прервать проверку"
+              aria-label={RU.loaders.awbCancel}
+              title={RU.loaders.awbCancel}
               onClick={cancelAwbStatusCheck}
             >
               &times;
             </button>
             <div className="loader-overlay__spinner" />
-            <div className="loader-overlay__text">Проверяем накладную...</div>
+            <div className="loader-overlay__text">{RU.loaders.awbText}</div>
           </div>
         </div>
       )}
 
       {isTripPrintLoading && (
-        <div className="loader-overlay" role="status" aria-live="polite" aria-label="Подготовка печати">
+        <div className="loader-overlay" role="status" aria-live="polite" aria-label={RU.loaders.printAria}>
           <div className="loader-overlay__content">
             <div className="loader-overlay__spinner" />
-            <div className="loader-overlay__text">Готовим заявку к печати...</div>
+            <div className="loader-overlay__text">{RU.loaders.printText}</div>
           </div>
         </div>
       )}
@@ -3573,18 +3474,18 @@ const App = () => {
           className="screenshot-modal__overlay"
           role="dialog"
           aria-modal="true"
-          aria-label="Скриншот статуса груза"
+          aria-label={RU.screenshotModal.aria}
           onClick={closeCargoScreenshotModal}
         >
           <div className="screenshot-modal" onClick={(event) => event.stopPropagation()}>
             <div className="screenshot-modal__header">
-              <h3>Скриншот ответа терминала</h3>
+              <h3>{RU.screenshotModal.title}</h3>
               <button type="button" onClick={closeCargoScreenshotModal}>
-                Закрыть
+                {RU.common.close}
               </button>
             </div>
             <div className="screenshot-modal__body">
-              <img src={cargoScreenshotModal.screenshotUrl} alt="Скриншот ответа терминала" />
+              <img src={cargoScreenshotModal.screenshotUrl} alt={RU.screenshotModal.alt} />
             </div>
           </div>
         </div>
@@ -3593,15 +3494,6 @@ const App = () => {
   );
 };
 export default App;
-
-
-
-
-
-
-
-
-
 
 
 

@@ -1,21 +1,22 @@
 import React from "react";
+import { RU } from "../i18n/ru";
 
 export function AppHeader({ driveConnected, onOpenSettings }) {
   return (
     <header className="app__header">
       <div>
-        <p className="app__eyebrow">Transport Logistics CRM</p>
-        <h1>Контроль и сопровождение заказов</h1>
+        <p className="app__eyebrow">{RU.appHeader.eyebrow}</p>
+        <h1>{RU.appHeader.title}</h1>
         <p className="app__subtitle">
-          Первый этап: создание заказа, контроль данных, подготовка к синхронизации с Google Drive.
+          {RU.appHeader.subtitle}
         </p>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem", alignItems: "flex-end" }}>
         <div className={`app__status ${driveConnected ? "app__status--connected" : ""}`}>
-          Google Drive: {driveConnected ? "подключен" : "не подключен"}
+          {RU.appHeader.driveLabel}: {driveConnected ? RU.appHeader.driveConnected : RU.appHeader.driveDisconnected}
         </div>
         <button type="button" onClick={onOpenSettings}>
-          Настройки
+          {RU.appHeader.settings}
         </button>
       </div>
     </header>
@@ -57,7 +58,7 @@ export function OrderFormCard({
   const form = (
     <form onSubmit={onSubmit} className="order-form">
       <div className="field order-form__left">
-        <label htmlFor="shipmentAirport">Аэропорт отгрузки *</label>
+        <label htmlFor="shipmentAirport">{RU.orderForm.shipmentAirport}</label>
         <select
           id="shipmentAirport"
           name="shipmentAirport"
@@ -66,51 +67,51 @@ export function OrderFormCard({
           onChange={onFieldChange("shipmentAirport")}
         >
           <option value="" disabled>
-            Выберите аэропорт
+            {RU.orderForm.selectAirport}
           </option>
-          <option value="Шереметьево">Шереметьево</option>
-          <option value="Внуково">Внуково</option>
-          <option value="Домодедово">Домодедово</option>
-          <option value="Жуковский">Жуковский</option>
+          <option value={RU.orderForm.airports.sheremetyevo}>{RU.orderForm.airports.sheremetyevo}</option>
+          <option value={RU.orderForm.airports.vnukovo}>{RU.orderForm.airports.vnukovo}</option>
+          <option value={RU.orderForm.airports.domodedovo}>{RU.orderForm.airports.domodedovo}</option>
+          <option value={RU.orderForm.airports.zhukovsky}>{RU.orderForm.airports.zhukovsky}</option>
         </select>
       </div>
-      {formData.shipmentAirport === "Шереметьево" && (
+      {formData.shipmentAirport === RU.orderForm.airports.sheremetyevo && (
         <div className="field order-form__left">
-          <span>Терминал в Шереметьево *</span>
-          <div className="radio-group" role="radiogroup" aria-label="Терминал в Шереметьево">
+          <span>{RU.orderForm.sheremetyevoTerminal}</span>
+          <div className="radio-group" role="radiogroup" aria-label={RU.orderForm.sheremetyevoTerminal}>
             <label className="radio-option" htmlFor="svo-terminal-moscow-cargo">
               <input
                 id="svo-terminal-moscow-cargo"
                 type="radio"
                 name="shipmentTerminal"
-                value="Москва-карго"
-                checked={formData.shipmentTerminal === "Москва-карго"}
+                value={RU.orderForm.terminals.moscowCargo}
+                checked={formData.shipmentTerminal === RU.orderForm.terminals.moscowCargo}
                 onChange={onFieldChange("shipmentTerminal")}
               />
-              Москва-карго
+              {RU.orderForm.terminals.moscowCargo}
             </label>
             <label className="radio-option" htmlFor="svo-terminal-shercargo">
               <input
                 id="svo-terminal-shercargo"
                 type="radio"
                 name="shipmentTerminal"
-                value="Шереметьево-карго"
-                checked={formData.shipmentTerminal === "Шереметьево-карго"}
+                value={RU.orderForm.terminals.sheremetyevoCargo}
+                checked={formData.shipmentTerminal === RU.orderForm.terminals.sheremetyevoCargo}
                 onChange={onFieldChange("shipmentTerminal")}
               />
-              Шереметьево-карго
+              {RU.orderForm.terminals.sheremetyevoCargo}
             </label>
           </div>
         </div>
       )}
       <div className="field order-form__left">
-        <label htmlFor="recipient">Получатель груза *</label>
+        <label htmlFor="recipient">{RU.orderForm.recipient}</label>
         <input
           id="recipient"
           name="recipient"
           type="text"
           list="recipient-suggestions"
-          placeholder="ООО Логистик Про"
+          placeholder={RU.orderForm.recipientPlaceholder}
           required
           value={formData.recipient}
           className={
@@ -136,17 +137,17 @@ export function OrderFormCard({
             onClick={onRefreshPowerOfAttorneyRegistry}
             disabled={isPowerOfAttorneySyncLoading}
           >
-            {isPowerOfAttorneySyncLoading ? "Обновляем..." : "Обновить реестр"}
+            {isPowerOfAttorneySyncLoading ? RU.orderForm.refreshRegistryLoading : RU.orderForm.refreshRegistry}
           </button>
         </div>
       </div>
       <div className="field order-form__left">
-        <label htmlFor="orderName">Название заказа</label>
+        <label htmlFor="orderName">{RU.orderForm.orderName}</label>
         <input id="orderName" name="orderName" type="text" value={formData.orderName} onChange={onFieldChange("orderName")} />
-        <small>Автоматически формируется по получателю груза.</small>
+        <small>{RU.orderForm.orderNameHint}</small>
       </div>
       <div className="field order-form__left">
-        <label htmlFor="awb-prefix">Номер авианакладной *</label>
+        <label htmlFor="awb-prefix">{RU.orderForm.awbNumber}</label>
         <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
           <input
             id="awb-prefix"
@@ -185,7 +186,7 @@ export function OrderFormCard({
               !String(formData.awbNumber || "").trim()
             }
           >
-            {awbStatusCheck?.loading ? "Проверяем..." : "Проверить"}
+            {awbStatusCheck?.loading ? RU.orderForm.checking : RU.orderForm.check}
           </button>
         </div>
         <div
@@ -211,34 +212,34 @@ export function OrderFormCard({
               type="text"
               value={formData.hawb || ""}
               onChange={onFieldChange("hawb")}
-              placeholder="Введите HAWB"
+              placeholder={RU.orderForm.hawbPlaceholder}
               required
               style={{ maxWidth: "260px" }}
             />
           )}
         </div>
         {!isAwbCheckAvailable && (
-          <small className="hint">Выберите аэропорт и терминал, затем нажмите "Проверить".</small>
+          <small className="hint">{RU.orderForm.airportTerminalHint}</small>
         )}
         {awbStatusCheck?.error && (
           <div style={{ marginTop: "8px", display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
             <small style={{ color: "#c0392b" }}>{awbStatusCheck.error}</small>
-            <button type="button" onClick={onOpenCargoTerminalFromError}>{"\u041f\u0435\u0440\u0435\u0439\u0442\u0438 \u043d\u0430 \u0441\u0430\u0439\u0442"}</button>
+            <button type="button" onClick={onOpenCargoTerminalFromError}>{RU.orderForm.goToSite}</button>
           </div>
         )}
         {awbStatusCheck?.data?.manualRequired && (
           <div style={{ marginTop: "8px", display: "flex", gap: "10px", alignItems: "center", flexWrap: "wrap" }}>
             <small style={{ color: "#c0392b", fontWeight: 700 }}>
-              {awbStatusCheck?.data?.manualMessage || "Требуется ручная проверка на сайте Внуково."}
+              {awbStatusCheck?.data?.manualMessage || RU.orderForm.manualCheckMessage}
             </small>
             <button type="button" onClick={onOpenManualCheck}>
-              Открыть сайт Внуково
+              {RU.orderForm.openVnukovoSite}
             </button>
           </div>
         )}
       </div>
       <div className="field order-form__right">
-        <label htmlFor="quantity">Количество (мест) *</label>
+        <label htmlFor="quantity">{RU.orderForm.quantity}</label>
         <input
           id="quantity"
           name="quantity"
@@ -257,7 +258,7 @@ export function OrderFormCard({
         />
       </div>
       <div className="field order-form__right">
-        <label htmlFor="weight">Вес (кг) *</label>
+        <label htmlFor="weight">{RU.orderForm.weight}</label>
         <input
           id="weight"
           name="weight"
@@ -276,7 +277,7 @@ export function OrderFormCard({
         />
       </div>
       <div className="field order-form__right">
-        <label htmlFor="customsCode">Код таможни назначения *</label>
+        <label htmlFor="customsCode">{RU.orderForm.customsCode}</label>
         <input
           id="customsCode"
           name="customsCode"
@@ -295,22 +296,22 @@ export function OrderFormCard({
         <small className="hint">{customsName}</small>
       </div>
       <div className="field order-form__right">
-        <label htmlFor="notes">Примечания</label>
+        <label htmlFor="notes">{RU.orderForm.notes}</label>
         <textarea
           id="notes"
           name="notes"
           rows="4"
-          placeholder="Дополнительные инструкции..."
+          placeholder={RU.orderForm.notesPlaceholder}
           value={formData.notes}
           onChange={onFieldChange("notes")}
         />
       </div>
       <div className="order-form__actions">
         <button type="submit" className="primary" disabled={isSaving}>
-          {isSaving ? "\u0421\u043e\u0445\u0440\u0430\u043d\u044f\u0435\u043c..." : "\u0421\u043e\u0445\u0440\u0430\u043d\u0438\u0442\u044c"}
+          {isSaving ? RU.common.saveInProgress : RU.common.save}
         </button>
         <button type="button" onClick={() => onCancel?.()} disabled={isSaving}>
-          {"\u041e\u0442\u043c\u0435\u043d\u0438\u0442\u044c"}
+          {RU.common.cancel}
         </button>
       </div>
     </form>
@@ -320,7 +321,7 @@ export function OrderFormCard({
 
   return (
     <section className="card">
-      <h2>Новый заказ</h2>
+      <h2>{RU.orderForm.saveTitle}</h2>
       {form}
     </section>
   );
@@ -337,8 +338,8 @@ export function SettingsModal({
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
       <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
-        <h2>Настройки</h2>
-        <p>Выберите раздел настроек.</p>
+        <h2>{RU.settingsModal.title}</h2>
+        <p>{RU.settingsModal.description}</p>
         {settingsSections.map((section) => (
           <div
             key={section.id}
@@ -369,14 +370,14 @@ export function SettingsModal({
             <div>
               <strong>{section.title}</strong>
               <div style={{ marginTop: "0.35rem", color: "#4f617e" }}>
-                Статус: {section.status}
+                {RU.common.status}: {section.status}
               </div>
             </div>
           </div>
         ))}
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
           <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
-            Закрыть
+            {RU.common.close}
           </button>
         </div>
       </div>
@@ -396,19 +397,19 @@ export function AccountSettingsModal({
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
       <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
-        <h2>Аккаунт</h2>
-        <p>Текущий пользователь: <strong>{accountEmail || "—"}</strong></p>
+        <h2>{RU.accountModal.title}</h2>
+        <p>{RU.common.currentUser}: <strong>{accountEmail || RU.common.emDash}</strong></p>
         <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.9rem" }}>
           <button type="button" className="primary" onClick={onOpenChangePassword}>
-            Изменить пароль
+            {RU.accountModal.changePassword}
           </button>
           <button type="button" onClick={onSignOut}>
-            Выйти
+            {RU.accountModal.signOut}
           </button>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
           <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
-            Закрыть
+            {RU.common.close}
           </button>
         </div>
       </div>
@@ -427,29 +428,29 @@ export function SignatureSettingsModal({
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
       <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
-        <h2>Подпись печатной формы</h2>
+        <h2>{RU.signatureModal.title}</h2>
         <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.9rem" }}>
           <label style={{ display: "grid", gap: "0.35rem" }}>
-            <span style={{ fontWeight: 600 }}>Должность</span>
+            <span style={{ fontWeight: 600 }}>{RU.signatureModal.role}</span>
             <input
               type="text"
               value={printSignerSettings?.signerRole || ""}
               onChange={(event) => onPrintSignerChange?.("signerRole", event.target.value)}
-              placeholder="Менеджер"
+              placeholder={RU.signatureModal.rolePlaceholder}
             />
           </label>
           <label style={{ display: "grid", gap: "0.35rem" }}>
-            <span style={{ fontWeight: 600 }}>ФИО</span>
+            <span style={{ fontWeight: 600 }}>{RU.signatureModal.name}</span>
             <input
               type="text"
               value={printSignerSettings?.signerName || ""}
               onChange={(event) => onPrintSignerChange?.("signerName", event.target.value)}
-              placeholder="Косенко Д.В."
+              placeholder={RU.signatureModal.namePlaceholder}
             />
           </label>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
-          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>Сохранить</button>
+          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>{RU.common.save}</button>
         </div>
       </div>
     </div>
@@ -471,30 +472,30 @@ export function DriveSettingsModal({
   return (
     <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
       <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
-        <h2>Google Drive синхронизация</h2>
+        <h2>{RU.driveModal.title}</h2>
         <p>
-          Выберите папку в Google Drive, где будут автоматически создаваться и управляться папки заказов.
+          {RU.driveModal.description}
         </p>
         <div className="drive-actions">
           <button type="button" onClick={onConnectGoogleDrive}>
-            Подключить Google Drive
+            {RU.driveModal.connect}
           </button>
           <button type="button" className="primary" disabled={!driveConnected} onClick={onSelectDriveFolder}>
-            Выбрать папку
+            {RU.driveModal.chooseFolder}
           </button>
           <button type="button" onClick={onDisconnectGoogleDrive} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
-            Выйти
+            {RU.driveModal.signOut}
           </button>
         </div>
         {selectedDriveFolder && (
           <div style={{ marginTop: "1rem", padding: "1rem", backgroundColor: "#f0f8ff", borderRadius: "4px", borderLeft: "4px solid #0066cc" }}>
-            <strong>Выбранная папка:</strong> <a href={selectedDriveFolder.url} target="_blank" rel="noopener noreferrer">{selectedDriveFolder.name}</a>
+            <strong>{RU.driveModal.selectedFolder}:</strong> <a href={selectedDriveFolder.url} target="_blank" rel="noopener noreferrer">{selectedDriveFolder.name}</a>
           </div>
         )}
         <div className="drive-hint">{driveHint}</div>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
           <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
-            Закрыть
+            {RU.common.close}
           </button>
         </div>
       </div>
@@ -506,18 +507,18 @@ export function OrdersTable({ orders, onEditClick, onDelete, onCreateOrder, embe
   const table = (
     <div className="table">
       <div className="table__row table__head">
-        <span>Название</span>
-        <span>Получатель</span>
-        <span>Авианакладная</span>
-        <span>Кол-во</span>
-        <span>Вес</span>
-        <span>Таможня</span>
-        <span>Папка Drive</span>
-        <span>Действия</span>
+        <span>{RU.ordersTable.name}</span>
+        <span>{RU.ordersTable.recipient}</span>
+        <span>{RU.ordersTable.awb}</span>
+        <span>{RU.ordersTable.quantity}</span>
+        <span>{RU.ordersTable.weight}</span>
+        <span>{RU.ordersTable.customs}</span>
+        <span>{RU.ordersTable.driveFolder}</span>
+        <span>{RU.ordersTable.actions}</span>
       </div>
       <div className="table__body">
         {orders.length === 0 ? (
-          <div className="table__empty">Пока нет созданных заказов.</div>
+          <div className="table__empty">{RU.ordersTable.empty}</div>
         ) : (
           orders.map((order) => (
             <div className="table__row" key={order.id}>
@@ -527,10 +528,10 @@ export function OrdersTable({ orders, onEditClick, onDelete, onCreateOrder, embe
               <span>{order.quantity}</span>
               <span>{order.weight}</span>
               <span>{order.customsName}</span>
-              <span>{order.driveFolder || "—"}</span>
+              <span>{order.driveFolder || RU.common.emDash}</span>
               <span style={{ display: "flex", gap: "0.5rem" }}>
-                <button type="button" style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem", cursor: "pointer", backgroundColor: "#0066cc", color: "#fff", border: "none", borderRadius: "3px" }} onClick={() => onEditClick(order)}>Ред.</button>
-                <button type="button" style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem", cursor: "pointer", backgroundColor: "#cc0000", color: "#fff", border: "none", borderRadius: "3px" }} onClick={() => onDelete(order.id)}>Удалить</button>
+                <button type="button" style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem", cursor: "pointer", backgroundColor: "#0066cc", color: "#fff", border: "none", borderRadius: "3px" }} onClick={() => onEditClick(order)}>{RU.ordersTable.editShort}</button>
+                <button type="button" style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem", cursor: "pointer", backgroundColor: "#cc0000", color: "#fff", border: "none", borderRadius: "3px" }} onClick={() => onDelete(order.id)}>{RU.ordersTable.delete}</button>
               </span>
             </div>
           ))
@@ -544,9 +545,9 @@ export function OrdersTable({ orders, onEditClick, onDelete, onCreateOrder, embe
   return (
     <section className="card">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-        <h2 style={{ margin: 0 }}>Реестр заказов</h2>
+        <h2 style={{ margin: 0 }}>{RU.ordersTable.title}</h2>
         <button type="button" className="primary" onClick={onCreateOrder}>
-          Создать заказ
+          {RU.ordersTable.create}
         </button>
       </div>
       {table}

@@ -1,4 +1,5 @@
 ﻿import React from "react";
+import { RU } from "../i18n/ru";
 
 function RequestsIcon() {
   return (
@@ -29,9 +30,9 @@ function SettingsIcon() {
 
 export function HeaderNavigation({ activeView, onSelectView }) {
   const items = [
-    { id: "orders", label: "Заказы", icon: <RequestsIcon /> },
-    { id: "trips", label: "Рейсы", icon: <TripsIcon /> },
-    { id: "settings", label: "Настройки", icon: <SettingsIcon /> },
+    { id: "orders", label: RU.workspaceNav.orders, icon: <RequestsIcon /> },
+    { id: "trips", label: RU.workspaceNav.trips, icon: <TripsIcon /> },
+    { id: "settings", label: RU.workspaceNav.settings, icon: <SettingsIcon /> },
   ];
 
   return (
@@ -43,7 +44,7 @@ export function HeaderNavigation({ activeView, onSelectView }) {
           className="topbar__logo"
         />
       </a>
-      <nav className="topbar__nav" aria-label="Разделы приложения">
+      <nav className="topbar__nav" aria-label={RU.workspaceNav.ariaLabel}>
         {items.map((item) => (
           <button
             key={item.id}
@@ -177,7 +178,7 @@ export function WorkflowBoard({
     if (!createdStageId) return;
     setActiveStageId(createdStageId);
     setEditingStageId(createdStageId);
-    setEditingStageName("Новый этап");
+    setEditingStageName(RU.workflow.newStage);
   };
 
   const handleDragStart = (event, itemId) => {
@@ -272,7 +273,7 @@ export function WorkflowBoard({
                       {stageTotalWeight.toLocaleString("ru-RU", {
                         minimumFractionDigits: 0,
                         maximumFractionDigits: 2,
-                      })} кг
+                      })} {RU.workflow.weightUnit}
                     </div>
                   </div>
                 )}
@@ -281,7 +282,7 @@ export function WorkflowBoard({
                     <button
                       type="button"
                       className="workflow-column__icon-btn workflow-column__icon-btn--delete"
-                      title="Удалить этап"
+                      title={RU.workflow.deleteStage}
                       onClick={() => openDeleteModal(stage.id)}
                       disabled={stages.length <= 1}
                     >
@@ -291,7 +292,7 @@ export function WorkflowBoard({
                     <button
                       type="button"
                       className="workflow-column__icon-btn workflow-column__icon-btn--edit"
-                      title="Редактировать"
+                      title={RU.workflow.edit}
                       onClick={() => openRenameModal(stage)}
                     >
                       ✎
@@ -300,7 +301,7 @@ export function WorkflowBoard({
               </header>
               <div className="workflow-column__body">
                 {stageItems.length === 0 ? (
-                  <div className="workflow-column__empty">Нет карточек</div>
+                  <div className="workflow-column__empty">{RU.workflow.empty}</div>
                 ) : (
                   stageItems.map((item) => (
                     <div
@@ -326,7 +327,7 @@ export function WorkflowBoard({
                 <button
                   type="button"
                   className="workflow-column__add-next"
-                  title="Добавить этап справа"
+                  title={RU.workflow.addStageRight}
                   onClick={() => handleInsertStage(stage.id)}
                 >
                   +
@@ -338,18 +339,18 @@ export function WorkflowBoard({
       </div>
 
       {allowStageManagement && Boolean(deleteStageId) && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label="Подтверждение удаления этапа">
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={RU.workflow.deleteDialogAria}>
           <div className="modal-card workflow-modal">
             <div className="modal-card__header">
-              <h2>Удалить этап?</h2>
+              <h2>{RU.workflow.deleteDialogTitle}</h2>
             </div>
             <div className="modal-card__body">
-              <p>Этап будет удален, карточки переместятся в первый этап.</p>
+              <p>{RU.workflow.deleteDialogDescription}</p>
               <div className="workflow-confirm-actions">
                 <button type="button" className="primary" onClick={confirmDeleteStage}>
-                  Удалить этап
+                  {RU.workflow.deleteStage}
                 </button>
-                <button type="button" onClick={closeDeleteModal}>Отмена</button>
+                <button type="button" onClick={closeDeleteModal}>{RU.common.cancel}</button>
               </div>
             </div>
           </div>
@@ -366,7 +367,7 @@ export function TripFormCard({
   onSubmit,
   onPrint,
   onCancel,
-  submitLabel = "Создать рейс",
+  submitLabel = RU.tripForm.defaultSubmit,
   orders,
   carNumbers,
   driverNames,
@@ -382,19 +383,19 @@ export function TripFormCard({
   const content = (
     <form onSubmit={onSubmit} className="trip-form">
       <div className="field trip-form__left">
-        <label htmlFor="trip-number">Номер рейса *</label>
+        <label htmlFor="trip-number">{RU.tripForm.tripNumber}</label>
         <input
           id="trip-number"
           type="text"
           required
           value={formData.tripNumber}
           onChange={onFieldChange("tripNumber")}
-          placeholder="Например, R-120"
+          placeholder={RU.tripForm.tripNumberPlaceholder}
         />
       </div>
 
       <div className="field trip-form__right">
-        <label htmlFor="trip-date">Дата</label>
+        <label htmlFor="trip-date">{RU.tripForm.tripDate}</label>
         <input
           id="trip-date"
           type="date"
@@ -404,7 +405,7 @@ export function TripFormCard({
       </div>
 
       <div className="field trip-form__left">
-        <label htmlFor="car-number">Автомобиль *</label>
+        <label htmlFor="car-number">{RU.tripForm.carNumber}</label>
         <div className="trip-car-row">
           <select
             id="car-number"
@@ -413,7 +414,7 @@ export function TripFormCard({
             onChange={onFieldChange("carNumber")}
           >
             <option value="" disabled>
-              Выберите автомобиль
+              {RU.tripForm.selectCar}
             </option>
             {carNumbers.map((car) => (
               <option key={car} value={car}>
@@ -427,13 +428,13 @@ export function TripFormCard({
               checked={Boolean(formData.hasTrailer)}
               onChange={onFieldChange("hasTrailer")}
             />
-            <span>Прицеп</span>
+            <span>{RU.tripForm.trailer}</span>
           </label>
         </div>
       </div>
 
       <div className="field trip-form__right">
-        <label htmlFor="driver-name">Водитель *</label>
+        <label htmlFor="driver-name">{RU.tripForm.driver}</label>
         <select
           id="driver-name"
           required
@@ -441,7 +442,7 @@ export function TripFormCard({
           onChange={onFieldChange("driverName")}
         >
           <option value="" disabled>
-            Выберите водителя
+            {RU.tripForm.selectDriver}
           </option>
           {driverNames.map((driver) => (
             <option key={driver} value={driver}>
@@ -452,11 +453,11 @@ export function TripFormCard({
       </div>
 
       <div className="field trip-form__orders">
-        <span>Заказы для рейса *</span>
+        <span>{RU.tripForm.orders}</span>
         <div className="trip-orders-list">
           {orders.length === 0 ? (
             <div className="trip-orders-list__empty">
-              Пока нет заказов На складе. Добавьте хотя бы один заказ.
+              {RU.tripForm.noWarehouseOrders}
             </div>
           ) : (
             orders.map((order) => {
@@ -469,12 +470,12 @@ export function TripFormCard({
                     onChange={() => onToggleOrder(order.id)}
                   />
                   <span className="trip-order-item__content">
-                    <span className="trip-order-item__title">{order.name || order.recipient || "Без названия"}</span>
+                    <span className="trip-order-item__title">{order.name || order.recipient || RU.tripForm.untitledOrder}</span>
                     <span className="trip-order-item__meta">
-                      AWB: {order.awb || "—"} | {order.quantity || "—"} мест | {order.weight || "—"} кг | {order.customsName || order.customsCode || "—"}
+                      AWB: {order.awb || RU.common.emDash} | {order.quantity || RU.common.emDash} {RU.tripForm.placesUnit} | {order.weight || RU.common.emDash} {RU.tripForm.weightUnit} | {order.customsName || order.customsCode || RU.common.emDash}
                     </span>
                   </span>
-                  <span className="trip-order-item__airport">{order.shipmentAirport || "—"}</span>
+                  <span className="trip-order-item__airport">{order.shipmentAirport || RU.common.emDash}</span>
                 </label>
               );
             })
@@ -485,12 +486,12 @@ export function TripFormCard({
       <div className="trip-form__footer">
         <div className="trip-form__summary">
           <div className="trip-form__summary-item">
-            <span>Выбрано заказов</span>
+            <span>{RU.tripForm.selectedOrders}</span>
             <strong>{selectedOrders.length}</strong>
           </div>
           <div className="trip-form__summary-item">
-            <span>Итоговый вес</span>
-            <strong>{totalWeight.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} кг</strong>
+            <span>{RU.tripForm.totalWeight}</span>
+            <strong>{totalWeight.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} {"\u043a\u0433"}</strong>
           </div>
         </div>
         <div className="trip-form__actions">
@@ -506,10 +507,10 @@ export function TripFormCard({
             }}
             disabled={orders.length === 0 || isPrintLoading}
           >
-            {isPrintLoading ? "Готовим печать..." : "Печать заявки"}
+            {isPrintLoading ? RU.tripForm.printPreparing : RU.tripForm.print}
           </button>
           <button type="button" onClick={() => onCancel?.()} disabled={isPrintLoading}>
-            Отменить
+            {RU.common.cancel}
           </button>
         </div>
       </div>
@@ -520,7 +521,7 @@ export function TripFormCard({
 
   return (
     <section className="card">
-      <h3>Форма рейса</h3>
+      <h3>{RU.tripForm.title}</h3>
       {content}
     </section>
   );
@@ -530,15 +531,15 @@ export function TripsTable({ trips, embedded = false }) {
   const table = (
     <div className="table">
       <div className="table__row table__head table__row--trips">
-        <span>Номер рейса</span>
-        <span>Дата</span>
-        <span>Автомобиль</span>
-        <span>Водитель</span>
-        <span>Заказы</span>
+        <span>{RU.tripView.tripNumber}</span>
+        <span>{RU.tripView.date}</span>
+        <span>{RU.tripView.car}</span>
+        <span>{RU.tripView.driver}</span>
+        <span>{RU.tripView.orders}</span>
       </div>
       <div className="table__body">
         {trips.length === 0 ? (
-          <div className="table__empty">Пока нет созданных рейсов.</div>
+          <div className="table__empty">{RU.tripView.empty}</div>
         ) : (
           trips.map((trip) => (
             <div className="table__row table__row--trips" key={trip.id}>
@@ -546,7 +547,7 @@ export function TripsTable({ trips, embedded = false }) {
               <span>{trip.tripDate}</span>
               <span>{trip.carNumber}</span>
               <span>{trip.driverName}</span>
-              <span>{trip.ordersSummary || `Заказов: ${trip.orderIds.length}`}</span>
+              <span>{trip.ordersSummary || `${RU.tripView.ordersCount}: ${trip.orderIds.length}`}</span>
             </div>
           ))
         )}
@@ -558,7 +559,7 @@ export function TripsTable({ trips, embedded = false }) {
 
   return (
     <section className="card">
-      <h3>Список рейсов</h3>
+      <h3>{RU.tripView.listTitle}</h3>
       {table}
     </section>
   );
@@ -567,13 +568,11 @@ export function TripsTable({ trips, embedded = false }) {
 export function SettingsSection({ onOpenSettings }) {
   return (
     <section className="card">
-      <h3>Настройки</h3>
-      <p>Выберите раздел настроек приложения.</p>
+      <h3>{RU.settingsSection.title}</h3>
+      <p>{RU.settingsSection.description}</p>
       <button type="button" className="primary" onClick={onOpenSettings}>
-        Открыть настройки
+        {RU.settingsSection.open}
       </button>
     </section>
   );
 }
-
-
