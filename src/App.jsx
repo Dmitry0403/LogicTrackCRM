@@ -318,6 +318,12 @@ const normalizeTripStages = (stages) =>
 const normalizeAirport = (airport) => AIRPORT_ALIASES.get(airport) || airport;
 
 const normalizeTerminal = (terminal) => TERMINAL_ALIASES.get(terminal) || terminal;
+const MANUAL_CARGO_CHECK_AIRPORTS = new Set([
+  RU.domain.airports.vnukovo,
+  RU.domain.airports.domodedovo,
+]);
+const isManualCargoCheckAirport = (airport) =>
+  MANUAL_CARGO_CHECK_AIRPORTS.has(String(airport || "").trim());
 
 const hasPlusMark = (value) => {
   if (typeof value === "boolean") return value;
@@ -539,6 +545,8 @@ const buildTripDriveFolderName = ({ carNumber, driverName }) => {
 const App = () => {
   const SHEREMETYEVO_VALUES = new Set([RU.domain.airports.sheremetyevo]);
   const DEFAULT_SHEREMETYEVO_TERMINAL = RU.domain.terminals.moscowCargo;
+  const ORDER_FORM_ID = "order-form-panel";
+  const TRIP_FORM_ID = "trip-form-panel";
 
   const [orders, setOrders] = React.useState(loadOrders);
   const [trips, setTrips] = React.useState(loadTrips);
@@ -582,6 +590,11 @@ const App = () => {
     isOpen: false,
     screenshotId: "",
     screenshotUrl: "",
+  });
+  const [manualCargoCheckModal, setManualCargoCheckModal] = React.useState({
+    isOpen: false,
+    manualUrl: "",
+    awbNumber: "",
   });
   const [isTripPrintLoading, setIsTripPrintLoading] = React.useState(false);
   const [isDeleteCardLoading, setIsDeleteCardLoading] = React.useState(false);
@@ -1236,6 +1249,26 @@ const App = () => {
       return;
     }
 
+    if (isManualCargoCheckAirport(shipmentAirport)) {
+      const manualUrl = CARGO_TERMINAL_URLS[terminalKey] || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/";
+      setAwbStatusCheck({
+        loading: false,
+        error: "",
+        data: null,
+      });
+      setManualCargoCheckModal({
+        isOpen: true,
+        manualUrl,
+        awbNumber: String(awbNumber || "").replace(/\D/g, "").slice(0, 10),
+      });
+      setCargoScreenshotModal({
+        isOpen: false,
+        screenshotId: "",
+        screenshotUrl: "",
+      });
+      return;
+    }
+
     setAwbStatusCheck({
       loading: true,
       error: "",
@@ -1328,12 +1361,17 @@ const App = () => {
   };
 
   const checkOrderAwbStatus = async (order) => {
-    if (String(order?.shipmentAirport || "").trim() === RU.domain.airports.vnukovo) {
-      window.open(
-        "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/",
-        "_blank",
-        "noopener,noreferrer",
-      );
+    if (isManualCargoCheckAirport(order?.shipmentAirport)) {
+      const terminalKey = resolveCargoTerminalKey({
+        shipmentAirport: String(order?.shipmentAirport || ""),
+        shipmentTerminal: String(order?.shipmentTerminal || ""),
+      });
+      const awbParts = splitAwb(String(order?.awb || "").trim());
+      setManualCargoCheckModal({
+        isOpen: true,
+        manualUrl: CARGO_TERMINAL_URLS[terminalKey] || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/",
+        awbNumber: String(awbParts.awbNumber || "").replace(/\D/g, "").slice(0, 10),
+      });
       return;
     }
 
@@ -1396,11 +1434,16 @@ const App = () => {
     });
   };
 
-  const openManualCargoCheck = async () => {
-    const payload = awbStatusCheck?.data;
-    if (!payload?.manualRequired) return;
+  const closeManualCargoCheckModal = () => {
+    setManualCargoCheckModal({
+      isOpen: false,
+      manualUrl: "",
+      awbNumber: "",
+    });
+  };
 
-    const awbNumber = String(formData.awbNumber || "").replace(/\D/g, "").slice(0, 10);
+  const confirmManualCargoCheck = async () => {
+    const awbNumber = String(manualCargoCheckModal.awbNumber || "").replace(/\D/g, "").slice(0, 10);
     if (awbNumber) {
       try {
         await navigator.clipboard.writeText(awbNumber);
@@ -1409,7 +1452,9 @@ const App = () => {
       }
     }
 
-    const baseUrl = payload.manualUrl || payload.sourceUrl || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/";
+    const baseUrl =
+      manualCargoCheckModal.manualUrl || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/";
+    closeManualCargoCheckModal();
     window.open(baseUrl, "_blank", "noopener,noreferrer");
   };
 
@@ -3227,6 +3272,7 @@ const App = () => {
                   title={editingOrderId ? RU.orderView.editTitle : RU.orderView.createTitle}
                 >
                   <OrderFormCard
+                    formId={ORDER_FORM_ID}
                     formData={formData}
                     customsName={customsName}
                     customsSuggestions={customsSuggestions}
@@ -3236,7 +3282,6 @@ const App = () => {
                     isAwbCheckAvailable={isCargoCheckAvailable}
                     isPowerOfAttorneySyncLoading={isPowerOfAttorneySyncLoading}
                     onCheckAwbStatus={checkAwbStatus}
-                    onOpenManualCheck={openManualCargoCheck}
                     onOpenCargoTerminalFromError={openCargoTerminalFromError}
                     onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}
                     onFieldChange={handleFieldChange}
@@ -3340,6 +3385,7 @@ const App = () => {
                   title={editingTripId ? RU.tripView.editTitle : RU.tripView.createTitle}
                 >
                   <TripFormCard
+                    formId={TRIP_FORM_ID}
                     formData={tripFormData}
                     onFieldChange={handleTripFieldChange}
                     onToggleOrder={handleToggleTripOrder}
@@ -3404,6 +3450,38 @@ const App = () => {
         onPrintSignerChange={handlePrintSignerChange}
         onClose={closeSignatureSettingsModal}
       />
+
+      {manualCargoCheckModal.isOpen && (
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={RU.manualCargoModal.aria}
+        >
+          <div className="modal-card workflow-modal">
+            <div className="modal-card__header">
+              <h2>{RU.manualCargoModal.title}</h2>
+            </div>
+            <div className="modal-card__body">
+              <p>{RU.manualCargoModal.descriptionPrefix}</p>
+              <p>
+                <span className="manual-cargo-modal__awb-badge">
+                  {manualCargoCheckModal.awbNumber || RU.common.emDash}
+                </span>{" "}
+                {RU.manualCargoModal.descriptionSuffix}
+              </p>
+              <div className="workflow-confirm-actions">
+                <button type="button" className="primary" onClick={confirmManualCargoCheck}>
+                  {RU.manualCargoModal.ok}
+                </button>
+                <button type="button" onClick={closeManualCargoCheckModal}>
+                  {RU.common.cancel}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {deleteCardModal.isOpen && (
         <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={RU.deleteCardModal.aria}>
@@ -3494,7 +3572,5 @@ const App = () => {
   );
 };
 export default App;
-
-
 
 

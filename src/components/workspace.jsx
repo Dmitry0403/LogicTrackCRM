@@ -61,16 +61,18 @@ export function HeaderNavigation({ activeView, onSelectView }) {
   );
 }
 
-export function WorkPanel({ title, actionLabel, onAction, children }) {
+export function WorkPanel({ title, actionLabel, onAction, headerActions, children }) {
   return (
     <section className="card panel-section">
       <div className="section-header">
         <h2>{title}</h2>
-        {actionLabel && (
-          <button type="button" className="primary" onClick={onAction}>
-            {actionLabel}
-          </button>
-        )}
+        <div className="section-header__actions">
+          {headerActions || (actionLabel && (
+            <button type="button" className="primary" onClick={onAction}>
+              {actionLabel}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="panel-section__body">{children}</div>
     </section>
@@ -372,6 +374,8 @@ export function TripFormCard({
   carNumbers,
   driverNames,
   isPrintLoading = false,
+  formId,
+  showFooterActions = true,
   embedded = false,
 }) {
   const selectedOrders = orders.filter((order) => formData.orderIds.includes(order.id));
@@ -381,7 +385,7 @@ export function TripFormCard({
   }, 0);
 
   const content = (
-    <form onSubmit={onSubmit} className="trip-form">
+    <form id={formId} onSubmit={onSubmit} className="trip-form">
       <div className="field trip-form__left">
         <label htmlFor="trip-number">{RU.tripForm.tripNumber}</label>
         <input
@@ -494,25 +498,27 @@ export function TripFormCard({
             <strong>{totalWeight.toLocaleString("ru-RU", { minimumFractionDigits: 0, maximumFractionDigits: 2 })} {"\u043a\u0433"}</strong>
           </div>
         </div>
-        <div className="trip-form__actions">
-          <button type="submit" className="primary" disabled={orders.length === 0 || isPrintLoading}>
-            {submitLabel}
-          </button>
-          <button
-            type="button"
-            onClick={(event) => {
-              const form = event.currentTarget.form;
-              if (form && !form.reportValidity()) return;
-              onPrint?.();
-            }}
-            disabled={orders.length === 0 || isPrintLoading}
-          >
-            {isPrintLoading ? RU.tripForm.printPreparing : RU.tripForm.print}
-          </button>
-          <button type="button" onClick={() => onCancel?.()} disabled={isPrintLoading}>
-            {RU.common.cancel}
-          </button>
-        </div>
+        {showFooterActions && (
+          <div className="trip-form__actions">
+            <button type="submit" className="primary" disabled={orders.length === 0 || isPrintLoading}>
+              {submitLabel}
+            </button>
+            <button
+              type="button"
+              onClick={(event) => {
+                const form = event.currentTarget.form;
+                if (form && !form.reportValidity()) return;
+                onPrint?.();
+              }}
+              disabled={orders.length === 0 || isPrintLoading}
+            >
+              {isPrintLoading ? RU.tripForm.printPreparing : RU.tripForm.print}
+            </button>
+            <button type="button" onClick={() => onCancel?.()} disabled={isPrintLoading}>
+              {RU.common.cancel}
+            </button>
+          </div>
+        )}
       </div>
     </form>
   );
