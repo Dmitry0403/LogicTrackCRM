@@ -15,7 +15,11 @@ export function AppHeader({ driveConnected, onOpenSettings }) {
         <div className={`app__status ${driveConnected ? "app__status--connected" : ""}`}>
           {RU.appHeader.driveLabel}: {driveConnected ? RU.appHeader.driveConnected : RU.appHeader.driveDisconnected}
         </div>
-        <button type="button" onClick={onOpenSettings}>
+        <button
+          type="button"
+          onClick={onOpenSettings}
+          className={`app__settings-button ${driveConnected ? "app__settings-button--connected" : "app__settings-button--disconnected"}`}
+        >
           {RU.appHeader.settings}
         </button>
       </div>

@@ -194,6 +194,11 @@ const DRIVE_MODAL_RESTORE_STORAGE_KEY = "logictrack_restore_drive_modal";
 const DRIVE_OPS_QUEUE_STORAGE_KEY = "logictrack_drive_ops_queue";
 const DRIVE_OP_RETRY_BASE_MS = 1500;
 const DRIVE_OP_RETRY_MAX_MS = 60000;
+const DRIVE_BACKEND_READY_TTL_MS = 60000;
+const DRIVE_BACKEND_WAKE_TIMEOUT_MS = 25000;
+const DRIVE_BACKEND_WAKE_REQUEST_TIMEOUT_MS = 7000;
+const DRIVE_BACKEND_WAKE_POLL_MS = 1500;
+const DRIVE_OP_AUTORETRY_COUNT = 1;
 const resolveCargoApiUrl = (urlPath) => {
   if (!urlPath) return "";
   if (/^https?:\/\//i.test(urlPath)) return urlPath;
@@ -658,6 +663,8 @@ const App = () => {
   const driveOpsQueueRef = React.useRef(driveOpsQueue);
   const driveOpsProcessingRef = React.useRef(false);
   const backendWarmupAtRef = React.useRef(0);
+  const backendReadyAtRef = React.useRef(0);
+  const backendWakePromiseRef = React.useRef(null);
   const cloudSaveTimeoutRef = React.useRef(null);
   const lastCloudUpdatedAtRef = React.useRef(0);
   const isApplyingCloudStateRef = React.useRef(false);
@@ -703,26 +710,43 @@ const App = () => {
     return findTripStageIdByCode(TRIP_STAGE_CODES.COMPLETED, TRIP_STAGE_COMPLETED_ID);
   }, [findTripStageIdByCode]);
 
+  const pingBackendHealth = React.useCallback(async ({ timeoutMs = DRIVE_BACKEND_WAKE_REQUEST_TIMEOUT_MS } = {}) => {
+    if (!API_BASE_URL || typeof window === "undefined") return true;
+
+    const abortController = new AbortController();
+    const timeoutId = setTimeout(() => abortController.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(`${CARGO_API_BASE_URL}/health`, {
+        method: "GET",
+        cache: "no-store",
+        signal: abortController.signal,
+      });
+      if (!response.ok) {
+        const error = new Error(`backend_health_${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      backendReadyAtRef.current = Date.now();
+      return true;
+    } catch (error) {
+      const wrappedError = new Error(error?.name === "AbortError" ? "backend_wake_timeout" : error?.message || "backend_unavailable");
+      wrappedError.status = error?.status;
+      throw wrappedError;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }, []);
+
   const warmupBackend = React.useCallback(() => {
     if (typeof window === "undefined") return;
     const now = Date.now();
-    if (now - backendWarmupAtRef.current < 60000) return;
+    if (now - backendWarmupAtRef.current < DRIVE_BACKEND_READY_TTL_MS) return;
     backendWarmupAtRef.current = now;
-    const abortController = new AbortController();
-    const timeoutId = setTimeout(() => abortController.abort(), 7000);
-    void fetch(`${CARGO_API_BASE_URL}/health`, {
-      method: "GET",
-      cache: "no-store",
-      signal: abortController.signal,
-    })
-      .catch(() => {
-        // Warmup request is best-effort.
-      })
-      .finally(() => {
-        clearTimeout(timeoutId);
-      });
-  }, []);
-
+    void pingBackendHealth().catch(() => {
+      // Warmup request is best-effort.
+    });
+  }, [pingBackendHealth]);
   React.useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return undefined;
     let mounted = true;
@@ -2120,6 +2144,67 @@ const App = () => {
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
+  const ensureBackendAwake = React.useCallback(async ({ force = false, timeoutMs = DRIVE_BACKEND_WAKE_TIMEOUT_MS } = {}) => {
+    if (!API_BASE_URL || typeof window === "undefined") return true;
+
+    const now = Date.now();
+    if (!force && now - backendReadyAtRef.current < DRIVE_BACKEND_READY_TTL_MS) return true;
+    if (backendWakePromiseRef.current) return backendWakePromiseRef.current;
+
+    const wakePromise = (async () => {
+      const startedAt = Date.now();
+      let lastError = null;
+
+      while (Date.now() - startedAt < timeoutMs) {
+        try {
+          await pingBackendHealth({
+            timeoutMs: Math.min(DRIVE_BACKEND_WAKE_REQUEST_TIMEOUT_MS, Math.max(1500, timeoutMs - (Date.now() - startedAt))),
+          });
+          return true;
+        } catch (error) {
+          lastError = error;
+          if (Date.now() - startedAt >= timeoutMs) break;
+          await sleep(DRIVE_BACKEND_WAKE_POLL_MS);
+        }
+      }
+
+      throw lastError || new Error("backend_wake_timeout");
+    })().finally(() => {
+      if (backendWakePromiseRef.current === wakePromise) {
+        backendWakePromiseRef.current = null;
+      }
+    });
+
+    backendWakePromiseRef.current = wakePromise;
+    return wakePromise;
+  }, [pingBackendHealth]);
+
+  const isDriveTransientError = (error) => {
+    const message = String(error?.message || "").toLowerCase();
+    return (
+      [408, 409, 425, 429, 500, 502, 503, 504].includes(Number(error?.status)) ||
+      /network|fetch|timeout|timed out|failed to fetch|backend_wake_timeout|backend_unavailable|backend_health_/i.test(message)
+    );
+  };
+
+  const runDriveOpWithWakeRetry = React.useCallback(async (operation) => {
+    let lastError = null;
+
+    for (let attempt = 0; attempt <= DRIVE_OP_AUTORETRY_COUNT; attempt += 1) {
+      try {
+        await ensureBackendAwake({ force: attempt > 0 });
+        return await operation();
+      } catch (error) {
+        lastError = error;
+        if (attempt >= DRIVE_OP_AUTORETRY_COUNT || isDrivePermissionError(error) || !isDriveTransientError(error)) {
+          throw error;
+        }
+        await sleep(getDriveRetryDelayMs(attempt));
+      }
+    }
+
+    throw lastError || new Error("drive_operation_failed");
+  }, [ensureBackendAwake]);
   const escapeDriveQueryValue = (value) =>
     String(value || "")
       .replace(/\\/g, "\\\\")
@@ -2172,6 +2257,7 @@ const App = () => {
     }
 
     if (toks && toks.refresh_token) {
+      await ensureBackendAwake();
       const res = await fetch(`${API_BASE_URL}/oauth/token`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -2372,12 +2458,12 @@ const App = () => {
   const createDriveFolderForOrder = async (orderName, orderId) => {
     const parentId = selectedDriveFolder?.id || null;
     try {
-      const created = await createDriveFolderRaw({
+      const created = await runDriveOpWithWakeRetry(() => createDriveFolderRaw({
         name: orderName,
         parentId,
         entityType: 'order',
         entityId: String(orderId || ''),
-      });
+      }));
       setOrders((prev) =>
         prev.map((o) => (o.id === orderId ? { ...o, driveFolder: created.folderUrl, driveFolderId: created.folderId } : o)),
       );
@@ -2403,12 +2489,12 @@ const App = () => {
     const parentId = selectedDriveFolder?.id || null;
 
     try {
-      const created = await createDriveFolderRaw({
+      const created = await runDriveOpWithWakeRetry(() => createDriveFolderRaw({
         name: tripFolderName,
         parentId,
         entityType: 'trip',
         entityId: String(trip.id || ''),
-      });
+      }));
 
       setTrips((prev) =>
         prev.map((item) =>
@@ -2433,7 +2519,7 @@ const App = () => {
 
   const moveDriveFolderToParent = async (folderId, parentId = null) => {
     try {
-      await moveDriveFolderToParentRaw(folderId, parentId);
+      await runDriveOpWithWakeRetry(() => moveDriveFolderToParentRaw(folderId, parentId));
       removeDriveOpByKey('move_folder', { folderId, parentId: parentId || null });
       return true;
     } catch (err) {
@@ -2501,7 +2587,7 @@ const App = () => {
   const updateDriveFolderName = async (folderId, newName) => {
     if (!folderId) return;
     try {
-      await updateDriveFolderNameRaw(folderId, newName);
+      await runDriveOpWithWakeRetry(() => updateDriveFolderNameRaw(folderId, newName));
       removeDriveOpByKey('rename_folder', { folderId });
     } catch (err) {
       console.error('Drive rename folder failed:', err);
@@ -2517,7 +2603,7 @@ const App = () => {
   const deleteDriveFolder = async (folderId) => {
     if (!folderId) return true;
     try {
-      await deleteDriveFolderRaw(folderId);
+      await runDriveOpWithWakeRetry(() => deleteDriveFolderRaw(folderId));
       removeDriveOpByKey('delete_folder', { folderId });
       return true;
     } catch (err) {
@@ -2547,12 +2633,12 @@ const App = () => {
           if (dueOp.type === 'create_order_folder') {
             const liveOrder = orders.find((item) => item.id === dueOp.payload?.orderId);
             if (liveOrder) {
-              const created = await createDriveFolderRaw({
+              const created = await runDriveOpWithWakeRetry(() => createDriveFolderRaw({
                 name: liveOrder.name || liveOrder.recipient || dueOp.payload?.orderName || 'Order',
                 parentId: selectedDriveFolder?.id || dueOp.payload?.parentId || null,
                 entityType: 'order',
                 entityId: String(liveOrder.id || ''),
-              });
+              }));
               setOrders((prev) =>
                 prev.map((item) =>
                   item.id === liveOrder.id
@@ -2568,12 +2654,12 @@ const App = () => {
                 carNumber: liveTrip.carNumberBase || liveTrip.carNumber,
                 driverName: liveTrip.driverName,
               });
-              const created = await createDriveFolderRaw({
+              const created = await runDriveOpWithWakeRetry(() => createDriveFolderRaw({
                 name: folderName,
                 parentId: selectedDriveFolder?.id || dueOp.payload?.parentId || null,
                 entityType: 'trip',
                 entityId: String(liveTrip.id || ''),
-              });
+              }));
               setTrips((prev) =>
                 prev.map((item) =>
                   item.id === liveTrip.id
@@ -2583,11 +2669,11 @@ const App = () => {
               );
             }
           } else if (dueOp.type === 'move_folder') {
-            await moveDriveFolderToParentRaw(dueOp.payload?.folderId, dueOp.payload?.parentId || null);
+            await runDriveOpWithWakeRetry(() => moveDriveFolderToParentRaw(dueOp.payload?.folderId, dueOp.payload?.parentId || null));
           } else if (dueOp.type === 'rename_folder') {
-            await updateDriveFolderNameRaw(dueOp.payload?.folderId, dueOp.payload?.newName || '');
+            await runDriveOpWithWakeRetry(() => updateDriveFolderNameRaw(dueOp.payload?.folderId, dueOp.payload?.newName || ''));
           } else if (dueOp.type === 'delete_folder') {
-            await deleteDriveFolderRaw(dueOp.payload?.folderId);
+            await runDriveOpWithWakeRetry(() => deleteDriveFolderRaw(dueOp.payload?.folderId));
           }
 
           setDriveOpsQueue((prev) => prev.filter((item) => item.id !== dueOp.id));
@@ -3185,7 +3271,7 @@ const App = () => {
     <div className="app">
 
       <main className="workspace">
-        <HeaderNavigation activeView={activeView} onSelectView={handleSelectView} />
+        <HeaderNavigation activeView={activeView} onSelectView={handleSelectView} driveConnected={driveConnected} />
 
         <section className="workspace__content workspace__content--full">
           {activeView === "orders" && (

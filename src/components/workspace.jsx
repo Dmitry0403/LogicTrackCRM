@@ -28,7 +28,7 @@ function SettingsIcon() {
   );
 }
 
-export function HeaderNavigation({ activeView, onSelectView }) {
+export function HeaderNavigation({ activeView, onSelectView, driveConnected }) {
   const items = [
     { id: "orders", label: RU.workspaceNav.orders, icon: <RequestsIcon /> },
     { id: "trips", label: RU.workspaceNav.trips, icon: <TripsIcon /> },
@@ -49,7 +49,7 @@ export function HeaderNavigation({ activeView, onSelectView }) {
           <button
             key={item.id}
             type="button"
-            className={`topbar__link ${activeView === item.id ? "topbar__link--active" : ""}`}
+            className={`topbar__link ${activeView === item.id ? "topbar__link--active" : ""} ${item.id === "settings" ? (driveConnected ? "topbar__link--drive-connected" : "topbar__link--drive-disconnected") : ""}`}
             onClick={() => onSelectView(item.id)}
           >
             <span className="topbar__icon">{item.icon}</span>
