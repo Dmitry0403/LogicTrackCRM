@@ -185,6 +185,7 @@ export function OrderFormCard({
             <button
               type="button"
               onClick={onCheckAwbStatus}
+              data-testid="awb-check-action"
               disabled={
                 awbStatusCheck?.loading ||
                 !isAwbCheckAvailable ||
@@ -339,7 +340,10 @@ export function SettingsModal({
   const [hoveredSectionId, setHoveredSectionId] = React.useState("");
 
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div
+      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      data-testid="settings-modal"
+    >
       <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
         <h2>{RU.settingsModal.title}</h2>
         <p>{RU.settingsModal.description}</p>
@@ -369,6 +373,7 @@ export function SettingsModal({
               backgroundColor: hoveredSectionId === section.id ? "#eef2f7" : "#fff",
               transition: "background-color 0.15s ease",
             }}
+            data-testid={`settings-section-${section.id}`}
           >
             <div>
               <strong>{section.title}</strong>
@@ -379,7 +384,7 @@ export function SettingsModal({
           </div>
         ))}
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
-          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
+          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="settings-close">
             {RU.common.close}
           </button>
         </div>
@@ -398,20 +403,23 @@ export function AccountSettingsModal({
   if (!isOpen) return null;
 
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div
+      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      data-testid="account-settings-modal"
+    >
       <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
         <h2>{RU.accountModal.title}</h2>
         <p>{RU.common.currentUser}: <strong>{accountEmail || RU.common.emDash}</strong></p>
         <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.9rem" }}>
-          <button type="button" className="primary" onClick={onOpenChangePassword}>
+          <button type="button" className="primary" onClick={onOpenChangePassword} data-testid="account-change-password">
             {RU.accountModal.changePassword}
           </button>
-          <button type="button" onClick={onSignOut}>
+          <button type="button" onClick={onSignOut} data-testid="account-sign-out">
             {RU.accountModal.signOut}
           </button>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
-          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
+          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="account-settings-close">
             {RU.common.close}
           </button>
         </div>
@@ -429,7 +437,10 @@ export function SignatureSettingsModal({
   if (!isOpen) return null;
 
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div
+      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      data-testid="signature-settings-modal"
+    >
       <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
         <h2>{RU.signatureModal.title}</h2>
         <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.9rem" }}>
@@ -440,6 +451,7 @@ export function SignatureSettingsModal({
               value={printSignerSettings?.signerRole || ""}
               onChange={(event) => onPrintSignerChange?.("signerRole", event.target.value)}
               placeholder={RU.signatureModal.rolePlaceholder}
+              data-testid="signature-role-input"
             />
           </label>
           <label style={{ display: "grid", gap: "0.35rem" }}>
@@ -449,11 +461,14 @@ export function SignatureSettingsModal({
               value={printSignerSettings?.signerName || ""}
               onChange={(event) => onPrintSignerChange?.("signerName", event.target.value)}
               placeholder={RU.signatureModal.namePlaceholder}
+              data-testid="signature-name-input"
             />
           </label>
         </div>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
-          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>{RU.common.save}</button>
+          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="signature-save">
+            {RU.common.save}
+          </button>
         </div>
       </div>
     </div>
@@ -473,20 +488,23 @@ export function DriveSettingsModal({
   if (!isOpen) return null;
 
   return (
-    <div style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}>
+    <div
+      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      data-testid="drive-settings-modal"
+    >
       <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
         <h2>{RU.driveModal.title}</h2>
         <p>
           {RU.driveModal.description}
         </p>
         <div className="drive-actions">
-          <button type="button" onClick={onConnectGoogleDrive}>
+          <button type="button" onClick={onConnectGoogleDrive} data-testid="drive-connect">
             {RU.driveModal.connect}
           </button>
-          <button type="button" className="primary" disabled={!driveConnected} onClick={onSelectDriveFolder}>
+          <button type="button" className="primary" disabled={!driveConnected} onClick={onSelectDriveFolder} data-testid="drive-select-folder">
             {RU.driveModal.chooseFolder}
           </button>
-          <button type="button" onClick={onDisconnectGoogleDrive} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
+          <button type="button" onClick={onDisconnectGoogleDrive} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="drive-disconnect">
             {RU.driveModal.signOut}
           </button>
         </div>
@@ -495,9 +513,9 @@ export function DriveSettingsModal({
             <strong>{RU.driveModal.selectedFolder}:</strong> <a href={selectedDriveFolder.url} target="_blank" rel="noopener noreferrer">{selectedDriveFolder.name}</a>
           </div>
         )}
-        <div className="drive-hint">{driveHint}</div>
+        <div className="drive-hint" data-testid="drive-hint">{driveHint}</div>
         <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
-          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }}>
+          <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="drive-settings-close">
             {RU.common.close}
           </button>
         </div>

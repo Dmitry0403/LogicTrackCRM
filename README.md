@@ -1,5 +1,7 @@
 # LogicTrack CRM
 
+[![CI](https://github.com/Dmitry0403/LogicTrackCRM/actions/workflows/ci.yml/badge.svg)](https://github.com/Dmitry0403/LogicTrackCRM/actions/workflows/ci.yml)
+
 React CRM для ведения заказов и интеграции с Google Drive.
 
 ## Текущая структура

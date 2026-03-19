@@ -51,6 +51,7 @@ export function HeaderNavigation({ activeView, onSelectView, driveConnected }) {
             type="button"
             className={`topbar__link ${activeView === item.id ? "topbar__link--active" : ""} ${item.id === "settings" ? (driveConnected ? "topbar__link--drive-connected" : "topbar__link--drive-disconnected") : ""}`}
             onClick={() => onSelectView(item.id)}
+            data-testid={`nav-${item.id}`}
           >
             <span className="topbar__icon">{item.icon}</span>
             <span>{item.label}</span>
@@ -61,14 +62,14 @@ export function HeaderNavigation({ activeView, onSelectView, driveConnected }) {
   );
 }
 
-export function WorkPanel({ title, actionLabel, onAction, headerActions, children }) {
+export function WorkPanel({ title, actionLabel, onAction, actionTestId, headerActions, children }) {
   return (
     <section className="card panel-section">
       <div className="section-header">
         <h2>{title}</h2>
         <div className="section-header__actions">
           {headerActions || (actionLabel && (
-            <button type="button" className="primary" onClick={onAction}>
+            <button type="button" className="primary" onClick={onAction} data-testid={actionTestId}>
               {actionLabel}
             </button>
           ))}
@@ -81,6 +82,7 @@ export function WorkPanel({ title, actionLabel, onAction, headerActions, childre
 
 export function WorkflowBoard({
   boardTitle,
+  boardTestId,
   stages,
   items,
   getItemId,
@@ -174,9 +176,9 @@ export function WorkflowBoard({
     }
   };
 
-  const handleInsertStage = (afterStageId) => {
+  const handleInsertStage = async (afterStageId) => {
     if (!allowStageManagement || !onInsertStage) return;
-    const createdStageId = onInsertStage(afterStageId);
+    const createdStageId = await onInsertStage(afterStageId);
     if (!createdStageId) return;
     setActiveStageId(createdStageId);
     setEditingStageId(createdStageId);
@@ -232,7 +234,7 @@ export function WorkflowBoard({
   }, [editingStageId, deleteStageId, commitRenameStage]);
 
   return (
-    <div className="workflow-board">
+    <div className="workflow-board" data-testid={boardTestId ? `${boardTestId}-board` : undefined}>
       <div className="workflow-columns">
         {stages.map((stage) => {
           const stageItems = items.filter((item) => getItemStageId(item) === stage.id);
@@ -247,6 +249,7 @@ export function WorkflowBoard({
             <section
               className={`workflow-column ${dragOverStageId === stage.id ? "workflow-column--drop-target" : ""}`}
               key={stage.id}
+              data-testid={boardTestId ? `${boardTestId}-stage-${stage.id}` : undefined}
               onDragOver={(event) => handleDragOverStage(event, stage.id)}
               onDragLeave={(event) => handleDragLeaveStage(event, stage.id)}
               onDrop={(event) => handleDropToStage(event, stage.id)}
@@ -256,6 +259,7 @@ export function WorkflowBoard({
                   <form ref={renameFormRef} className="workflow-column__title-edit" onSubmit={submitRenameStage}>
                     <input
                       type="text"
+                      data-testid={boardTestId ? `${boardTestId}-stage-rename-input` : undefined}
                       value={editingStageName}
                       onChange={(event) => setEditingStageName(event.target.value)}
                       onKeyDown={(event) => {
@@ -286,6 +290,7 @@ export function WorkflowBoard({
                       className="workflow-column__icon-btn workflow-column__icon-btn--delete"
                       title={RU.workflow.deleteStage}
                       onClick={() => openDeleteModal(stage.id)}
+                      data-testid={boardTestId ? `${boardTestId}-stage-delete-${stage.id}` : undefined}
                       disabled={stages.length <= 1}
                     >
                       🗑
@@ -296,6 +301,7 @@ export function WorkflowBoard({
                       className="workflow-column__icon-btn workflow-column__icon-btn--edit"
                       title={RU.workflow.edit}
                       onClick={() => openRenameModal(stage)}
+                      data-testid={boardTestId ? `${boardTestId}-stage-edit-${stage.id}` : undefined}
                     >
                       ✎
                     </button>
@@ -331,6 +337,7 @@ export function WorkflowBoard({
                   className="workflow-column__add-next"
                   title={RU.workflow.addStageRight}
                   onClick={() => handleInsertStage(stage.id)}
+                  data-testid={boardTestId ? `${boardTestId}-stage-add-after-${stage.id}` : undefined}
                 >
                   +
                 </button>
@@ -341,7 +348,13 @@ export function WorkflowBoard({
       </div>
 
       {allowStageManagement && Boolean(deleteStageId) && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={RU.workflow.deleteDialogAria}>
+        <div
+          className="modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-label={RU.workflow.deleteDialogAria}
+          data-testid={boardTestId ? `${boardTestId}-delete-stage-modal` : undefined}
+        >
           <div className="modal-card workflow-modal">
             <div className="modal-card__header">
               <h2>{RU.workflow.deleteDialogTitle}</h2>
@@ -349,10 +362,21 @@ export function WorkflowBoard({
             <div className="modal-card__body">
               <p>{RU.workflow.deleteDialogDescription}</p>
               <div className="workflow-confirm-actions">
-                <button type="button" className="primary" onClick={confirmDeleteStage}>
+                <button
+                  type="button"
+                  className="primary"
+                  onClick={confirmDeleteStage}
+                  data-testid={boardTestId ? `${boardTestId}-delete-stage-confirm` : undefined}
+                >
                   {RU.workflow.deleteStage}
                 </button>
-                <button type="button" onClick={closeDeleteModal}>{RU.common.cancel}</button>
+                <button
+                  type="button"
+                  onClick={closeDeleteModal}
+                  data-testid={boardTestId ? `${boardTestId}-delete-stage-cancel` : undefined}
+                >
+                  {RU.common.cancel}
+                </button>
               </div>
             </div>
           </div>
@@ -467,7 +491,11 @@ export function TripFormCard({
             orders.map((order) => {
               const checked = formData.orderIds.includes(order.id);
               return (
-                <label className={`trip-order-item ${checked ? "trip-order-item--checked" : ""}`} key={order.id}>
+                <label
+                  className={`trip-order-item ${checked ? "trip-order-item--checked" : ""}`}
+                  key={order.id}
+                  data-testid={`trip-order-option-${order.id}`}
+                >
                   <input
                     type="checkbox"
                     checked={checked}

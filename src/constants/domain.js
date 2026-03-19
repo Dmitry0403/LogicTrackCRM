@@ -59,7 +59,7 @@ export const TRIP_DRIVER_NAMES = [
   "Шамко Дмитрий",
 ];
 
-export const TRAILER_NUMBER = "\u0410 1482 \u0415-5";
+export const TRAILER_NUMBER = "A 1482 E-5";
 
 export const DEFAULT_ORDER_STAGES = [
   { id: "order-stage-plan", code: "plan", name: "\u041f\u043b\u0430\u043d" },

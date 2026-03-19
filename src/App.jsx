@@ -17,6 +17,41 @@ import {
   isSupabaseConfigured,
   SUPABASE_WORKSPACE_KEY,
 } from "./lib/supabase";
+import {
+  composeAwb,
+  createManualCargoCheckAirportSet,
+  getCustomsName as cargoGetCustomsName,
+  getCustomsSuggestions as cargoGetCustomsSuggestions,
+  isManualCargoCheckAirport as cargoIsManualCargoCheckAirport,
+  resolveCargoTerminalKey as cargoResolveCargoTerminalKey,
+  splitAwb,
+} from "./lib/cargo";
+import {
+  getPowerOfAttorneyStatus as poaGetPowerOfAttorneyStatus,
+  getRecipientSuggestions as poaGetRecipientSuggestions,
+  parseDate,
+} from "./lib/powerOfAttorney";
+import {
+  buildTripDriveFolderName as tripsBuildTripDriveFolderName,
+  getTripsWithoutOrderIds as tripsGetTripsWithoutOrderIds,
+  parseTripCarNumber as tripsParseTripCarNumber,
+} from "./lib/trips";
+import {
+  buildCloudPayload,
+  normalizeCloudSnapshot,
+  parseCloudUpdatedAt,
+  reassignItemsToValidStage,
+  shouldApplyRemoteSnapshot,
+} from "./lib/cloudState";
+import {
+  DRIVE_BACKEND_READY_TTL_MS,
+  DRIVE_BACKEND_WAKE_REQUEST_TIMEOUT_MS,
+  createDriveOpKey,
+  createDriveOpRunner,
+  createEnsureBackendAwake,
+  getDriveRetryDelayMs,
+  sleep,
+} from "./lib/driveSync";
 import { RU } from "./i18n/ru";
 import {
   AIRPORT_ALIASES,
@@ -60,6 +95,36 @@ const DRIVE_PERMISSION_HINT = RU.drive.permissionHint;
 const API_BASE_URL = normalizeEnvValue(
   import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:3001" : ""),
 ).replace(/\/+$/, "");
+const CARGO_API_BASE_URL = API_BASE_URL;
+const CARGO_STATUS_URL = `${CARGO_API_BASE_URL}/cargo/status`;
+const POWER_OF_ATTORNEY_REGISTRY_URL = `${API_BASE_URL}/poa/registry`;
+const POWER_OF_ATTORNEY_FALLBACK_URL = "/power-of-attorney-registry.json";
+const ORDER_STAGES_STORAGE_KEY = "logictrack_order_stages";
+const TRIP_STAGES_STORAGE_KEY = "logictrack_trip_stages";
+const PRINT_SIGNER_STORAGE_KEY = "logictrack_print_signer";
+const DRIVE_OPS_QUEUE_STORAGE_KEY = "gdrive_ops_queue";
+const DRIVE_MODAL_RESTORE_STORAGE_KEY = "gdrive_restore_modal";
+const RENDER_KEEPALIVE_INTERVAL_MS = 14 * 60 * 1000;
+
+const stripAnsiCodes = (value) => {
+  const escape = String.fromCharCode(27);
+  return String(value || "").replace(
+    // Remove terminal ANSI escape sequences from backend error details.
+    new RegExp(`${escape}\\[[0-9;?]*[ -/]*[@-~]`, "g"),
+    "",
+  );
+};
+
+const resolveCargoApiUrl = (pathOrUrl) => {
+  const value = String(pathOrUrl || "").trim();
+  if (!value) return "";
+  if (/^https?:\/\//i.test(value)) return value;
+  if (!CARGO_API_BASE_URL) return value;
+  if (value.startsWith("/")) {
+    return `${CARGO_API_BASE_URL}${value}`;
+  }
+  return `${CARGO_API_BASE_URL}/${value}`;
+};
 
 let pickerApiLoadPromise = null;
 
@@ -166,307 +231,6 @@ const localizeAuthErrorMessage = (error, fallbackMessage) => {
 };
 
 
-const getCustomsName = (code) => CUSTOMS_CODE_MAP[code] || RU.domain.invalidCustomsCode;
-
-const getCustomsSuggestions = (typedValue) => {
-  const typed = normalizeText(typedValue);
-
-  return Object.entries(CUSTOMS_CODE_MAP)
-    .filter(([code, name]) => {
-      if (!typed) return true;
-      return code.includes(typed) || normalizeText(name).includes(typed);
-    })
-    .map(([code, name]) => ({
-      value: code,
-      label: `${code} - ${name}`,
-    }));
-};
-
-const POWER_OF_ATTORNEY_REGISTRY_URL = `${API_BASE_URL}/poa/registry`;
-const POWER_OF_ATTORNEY_FALLBACK_URL = "/power-of-attorney-registry.json";
-const CARGO_STATUS_URL = `${API_BASE_URL}/cargo/status`;
-const CARGO_API_BASE_URL = API_BASE_URL;
-const RENDER_KEEPALIVE_INTERVAL_MS = 14 * 60 * 1000;
-const PRINT_SIGNER_STORAGE_KEY = "logictrack_print_signer";
-const ORDER_STAGES_STORAGE_KEY = "logictrack_order_stages";
-const TRIP_STAGES_STORAGE_KEY = "logictrack_trip_stages";
-const DRIVE_MODAL_RESTORE_STORAGE_KEY = "logictrack_restore_drive_modal";
-const DRIVE_OPS_QUEUE_STORAGE_KEY = "logictrack_drive_ops_queue";
-const DRIVE_OP_RETRY_BASE_MS = 1500;
-const DRIVE_OP_RETRY_MAX_MS = 60000;
-const DRIVE_BACKEND_READY_TTL_MS = 60000;
-const DRIVE_BACKEND_WAKE_TIMEOUT_MS = 25000;
-const DRIVE_BACKEND_WAKE_REQUEST_TIMEOUT_MS = 7000;
-const DRIVE_BACKEND_WAKE_POLL_MS = 1500;
-const DRIVE_OP_AUTORETRY_COUNT = 1;
-const resolveCargoApiUrl = (urlPath) => {
-  if (!urlPath) return "";
-  if (/^https?:\/\//i.test(urlPath)) return urlPath;
-  return `${CARGO_API_BASE_URL}${urlPath.startsWith("/") ? "" : "/"}${urlPath}`;
-};
-
-const stripAnsiCodes = (value) =>
-  // eslint-disable-next-line no-control-regex
-  String(value || "").replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-ntqry=><~]))/g, "");
-
-
-const resolveCargoTerminalKey = ({ shipmentAirport, shipmentTerminal }) => {
-  if (shipmentAirport === RU.domain.airports.sheremetyevo) {
-    if (shipmentTerminal === RU.domain.terminals.moscowCargo) return "svo_moscow";
-    if (shipmentTerminal === RU.domain.terminals.sheremetyevoCargo) return "svo_sher";
-    return "";
-  }
-  if (shipmentAirport === RU.domain.airports.vnukovo) return "vko";
-  if (shipmentAirport === RU.domain.airports.domodedovo) return "dme";
-  if (shipmentAirport === RU.domain.airports.zhukovsky) return "zia";
-  return "";
-};
-
-const composeAwb = (prefix, number, hawb = "") => {
-  const p = String(prefix || "").replace(/\D/g, "").slice(0, 3);
-  const n = String(number || "").replace(/\D/g, "").slice(0, 10);
-  const hawbPart = String(hawb || "").trim().replace(/\//g, "");
-  if (p && n) {
-    return hawbPart ? `${p}-${n}/${hawbPart}` : `${p}-${n}`;
-  }
-  if (p) return p;
-  if (n) return n;
-  return "";
-};
-
-const splitAwb = (awb) => {
-  const clean = String(awb || "").trim();
-  const slashIndex = clean.indexOf("/");
-  const baseAwb = slashIndex >= 0 ? clean.slice(0, slashIndex).trim() : clean;
-  const hawb = slashIndex >= 0 ? clean.slice(slashIndex + 1).trim() : "";
-  const match = baseAwb.match(/^(\d{3})-(\d{1,10})$/);
-  if (match) {
-    return { awbPrefix: match[1], awbNumber: match[2], hasHawb: Boolean(hawb), hawb };
-  }
-  return {
-    awbPrefix: "",
-    awbNumber: baseAwb.replace(/\D/g, "").slice(0, 10),
-    hasHawb: Boolean(hawb),
-    hawb,
-  };
-};
-
-const normalizeText = (value) =>
-  String(value || "")
-    .toLowerCase()
-    .replace(/ё/g, "е")
-    .replace(/\s+/g, " ")
-    .trim();
-
-const resolveOrderStageCode = (stage) => {
-  const rawCode = String(stage?.code || "").trim();
-  if (DEFAULT_ORDER_STAGE_CODES.has(rawCode)) return rawCode;
-
-  const byLegacyId = new Map([
-    [ORDER_STAGE_PLAN_ID, ORDER_STAGE_CODES.PLAN],
-    [ORDER_STAGE_WAREHOUSE_ID, ORDER_STAGE_CODES.WAREHOUSE],
-    [ORDER_STAGE_IN_CAR_ID, ORDER_STAGE_CODES.IN_CAR],
-    [ORDER_STAGE_DELIVERED_ID, ORDER_STAGE_CODES.DELIVERED],
-  ]);
-  const legacyIdCode = byLegacyId.get(String(stage?.id || "").trim());
-  if (legacyIdCode) return legacyIdCode;
-
-  const normalizedName = normalizeText(stage?.name || "");
-  if (normalizedName === normalizeText(RU.domain.orderStages.plan)) return ORDER_STAGE_CODES.PLAN;
-  if (normalizedName === normalizeText(RU.domain.orderStages.warehouse)) return ORDER_STAGE_CODES.WAREHOUSE;
-  if (normalizedName === normalizeText(RU.domain.orderStages.inCar)) return ORDER_STAGE_CODES.IN_CAR;
-  if (
-    normalizedName === normalizeText(RU.domain.orderStages.delivered) ||
-    normalizedName === normalizeText(RU.domain.orderStages.deliveredAlt)
-  ) {
-    return ORDER_STAGE_CODES.DELIVERED;
-  }
-  return "";
-};
-
-const resolveTripStageCode = (stage) => {
-  const rawCode = String(stage?.code || "").trim();
-  if (DEFAULT_TRIP_STAGE_CODES.has(rawCode)) return rawCode;
-
-  const byLegacyId = new Map([
-    ["trip-stage-plan", TRIP_STAGE_CODES.PLAN],
-    ["trip-stage-in-route", TRIP_STAGE_CODES.IN_ROUTE],
-    [TRIP_STAGE_COMPLETED_ID, TRIP_STAGE_CODES.COMPLETED],
-  ]);
-  const legacyIdCode = byLegacyId.get(String(stage?.id || "").trim());
-  if (legacyIdCode) return legacyIdCode;
-
-  const normalizedName = normalizeText(stage?.name || "");
-  if (normalizedName === normalizeText(RU.domain.tripStages.plan)) return TRIP_STAGE_CODES.PLAN;
-  if (normalizedName === normalizeText(RU.domain.tripStages.inRoute)) return TRIP_STAGE_CODES.IN_ROUTE;
-  if (
-    normalizedName === normalizeText(RU.domain.tripStages.completed) ||
-    normalizedName === normalizeText(RU.domain.tripStages.completedAlt)
-  ) {
-    return TRIP_STAGE_CODES.COMPLETED;
-  }
-  return "";
-};
-
-const normalizeOrderStages = (stages) =>
-  (Array.isArray(stages) ? stages : []).map((stage) => {
-    const code = resolveOrderStageCode(stage);
-    return code ? { ...stage, code } : { ...stage };
-  });
-
-const normalizeTripStages = (stages) =>
-  (Array.isArray(stages) ? stages : []).map((stage) => {
-    const code = resolveTripStageCode(stage);
-    return code ? { ...stage, code } : { ...stage };
-  });
-
-const normalizeAirport = (airport) => AIRPORT_ALIASES.get(airport) || airport;
-
-const normalizeTerminal = (terminal) => TERMINAL_ALIASES.get(terminal) || terminal;
-const MANUAL_CARGO_CHECK_AIRPORTS = new Set([
-  RU.domain.airports.vnukovo,
-  RU.domain.airports.domodedovo,
-]);
-const isManualCargoCheckAirport = (airport) =>
-  MANUAL_CARGO_CHECK_AIRPORTS.has(String(airport || "").trim());
-
-const hasPlusMark = (value) => {
-  if (typeof value === "boolean") return value;
-  if (value == null) return false;
-  return String(value).includes("+");
-};
-
-const parseDate = (rawDate) => {
-  if (!rawDate) return null;
-  const value = String(rawDate).trim();
-  if (!value) return null;
-
-  const dotMatch = value.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})$/);
-  if (dotMatch) {
-    const [, d, m, y] = dotMatch;
-    return new Date(Number(y), Number(m) - 1, Number(d));
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-};
-
-const formatRuDate = (date) =>
-  `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")}.${date.getFullYear()}`;
-
-const formatTripDateShort = (rawDate) => {
-  const value = String(rawDate || "").trim();
-  if (!value) return "—";
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (match) {
-    const [, year, month, day] = match;
-    return `${day}.${month}.${year}`;
-  }
-  const parsed = parseDate(value);
-  if (!parsed) return value;
-  return `${String(parsed.getDate()).padStart(2, "0")}.${String(parsed.getMonth() + 1).padStart(2, "0")}.${String(parsed.getFullYear())}`;
-};
-
-const getPowerOfAttorneyStatus = ({ shipmentAirport, shipmentTerminal, recipient, registry }) => {
-  const normalizedRecipient = normalizeText(recipient);
-  if (!normalizedRecipient) return null;
-
-  const airportKey = normalizeAirport(shipmentAirport);
-  const airportRegistry = registry[airportKey];
-  if (!airportRegistry) {
-    return { type: "danger", message: RU.domain.poa.missing };
-  }
-
-  let records = [];
-  if (airportKey === RU.domain.airports.sheremetyevo) {
-    const terminalKey = normalizeTerminal(shipmentTerminal) || RU.domain.terminals.moscowCargo;
-    records = airportRegistry[terminalKey] || [];
-  } else if (Array.isArray(airportRegistry)) {
-    records = airportRegistry;
-  }
-
-  const matchedRecords = records.filter(
-    (record) =>
-      normalizeText(record.recipient) === normalizedRecipient &&
-      hasPlusMark(record.hasAttorney),
-  );
-  if (matchedRecords.length === 0) {
-    return { type: "danger", message: RU.domain.poa.missing };
-  }
-
-  const validUntilDates = matchedRecords
-    .map((record) => parseDate(record.validUntil))
-    .filter(Boolean);
-
-  if (validUntilDates.length > 0) {
-    const latestValidUntil = validUntilDates.reduce((latest, current) =>
-      current > latest ? current : latest,
-    );
-    const today = new Date();
-    const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    if (latestValidUntil < todayStart) {
-      return {
-        type: "danger",
-        message: `${RU.domain.poa.expiredPrefix} ${formatRuDate(latestValidUntil)}.`,
-      };
-    }
-    return {
-      type: "success",
-      message: `${RU.domain.poa.validUntilPrefix} ${formatRuDate(latestValidUntil)}.`,
-    };
-  }
-
-  return { type: "success", message: RU.domain.poa.validUntilUnknown };
-};
-
-const getRecipientSuggestions = ({ shipmentAirport, shipmentTerminal, recipient, registry }) => {
-  const airportKey = normalizeAirport(shipmentAirport);
-  const airportRegistry = registry[airportKey];
-  if (!airportRegistry) return [];
-
-  let records = [];
-  if (airportKey === RU.domain.airports.sheremetyevo) {
-    const terminalKey = normalizeTerminal(shipmentTerminal) || RU.domain.terminals.moscowCargo;
-    records = airportRegistry[terminalKey] || [];
-  } else if (Array.isArray(airportRegistry)) {
-    records = airportRegistry;
-  }
-
-  const typed = normalizeText(recipient);
-  const uniq = new Set();
-  const nameCounts = new Map();
-  const suggestions = [];
-
-  records.forEach((record) => {
-    const name = String(record?.recipient || "").trim();
-    if (!name) return;
-    const normalizedName = normalizeText(name);
-    nameCounts.set(normalizedName, (nameCounts.get(normalizedName) || 0) + 1);
-  });
-
-  records.forEach((record) => {
-    const name = String(record?.recipient || "").trim();
-    if (!name) return;
-    const normalizedName = normalizeText(name);
-    if (typed && !normalizedName.includes(typed)) return;
-
-    const validUntilRaw = String(record?.validUntil || "").trim();
-    const dedupeKey = `${normalizedName}::${validUntilRaw}`;
-    if (uniq.has(dedupeKey)) return;
-    uniq.add(dedupeKey);
-
-    const hasMultipleByName = (nameCounts.get(normalizedName) || 0) > 1;
-    const label = hasMultipleByName
-      ? (validUntilRaw ? `${name} - ${RU.domain.poa.labelUntil} ${validUntilRaw}` : `${name} - ${RU.domain.poa.labelUnknown}`)
-      : name;
-
-    suggestions.push({ value: name, label });
-  });
-
-  return suggestions;
-};
-
 const loadOrders = () => {
   const stored = localStorage.getItem("logictrack_orders");
   return stored ? JSON.parse(stored) : [];
@@ -519,36 +283,75 @@ const getTodayIsoDate = () => {
   return now.toISOString().slice(0, 10);
 };
 
-const parseTripCarNumber = (rawValue) => {
-  const value = String(rawValue || "").trim();
-  if (!value) {
-    return { carNumber: "", hasTrailer: false, trailerNumber: "" };
+const formatTripDateShort = (rawDate) => {
+  const value = String(rawDate || "").trim();
+  if (!value) return "?";
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (match) {
+    const [, year, month, day] = match;
+    return `${day}.${month}.${year}`;
   }
-  const parts = value.split("/");
-  if (parts.length < 2) {
-    return { carNumber: value, hasTrailer: false, trailerNumber: "" };
-  }
-  return {
-    carNumber: String(parts[0] || "").trim(),
-    hasTrailer: true,
-    trailerNumber: String(parts.slice(1).join("/") || "").trim(),
-  };
+  const parsed = parseDate(value);
+  if (!parsed) return value;
+  return `${String(parsed.getDate()).padStart(2, "0")}.${String(parsed.getMonth() + 1).padStart(2, "0")}.${String(parsed.getFullYear())}`;
 };
 
-const extractDriverSurname = (driverName) => {
-  const value = String(driverName || "").trim();
-  if (!value) return "";
-  return value.split(/\s+/)[0] || "";
+const getCustomsNameLabel = (code) => cargoGetCustomsName(code, CUSTOMS_CODE_MAP, RU.domain.invalidCustomsCode);
+const getCustomsSuggestionItems = (typedValue) => cargoGetCustomsSuggestions(typedValue, CUSTOMS_CODE_MAP);
+const resolveCargoTerminal = (args) => cargoResolveCargoTerminalKey({ ...args, ru: RU });
+const getPowerOfAttorneyState = (args) => poaGetPowerOfAttorneyStatus({
+  ...args,
+  ru: RU,
+  airportAliases: AIRPORT_ALIASES,
+  terminalAliases: TERMINAL_ALIASES,
+});
+const getRecipientSuggestionItems = (args) => poaGetRecipientSuggestions({
+  ...args,
+  ru: RU,
+  airportAliases: AIRPORT_ALIASES,
+  terminalAliases: TERMINAL_ALIASES,
+});
+const buildTripFolderName = (args) => tripsBuildTripDriveFolderName({ ...args, tripFallbackName: TRIP_FALLBACK_NAME });
+const isManualCargoCheckAirport = (airport, manualAirports) =>
+  cargoIsManualCargoCheckAirport(airport, manualAirports);
+const normalizeStages = (stages, defaultStages) => {
+  const defaultStagesById = new Map(defaultStages.map((stage) => [stage.id, stage]));
+
+  return (Array.isArray(stages) ? stages : [])
+    .map((stage) => {
+      if (!stage || typeof stage !== "object") return null;
+      const fallbackStage = defaultStagesById.get(String(stage.id || "").trim());
+      const id = String(stage.id || "").trim();
+      const name = String(stage.name || fallbackStage?.name || "").trim();
+      const code = String(stage.code || fallbackStage?.code || "").trim();
+      if (!id || !name) return null;
+      return code ? { id, name, code } : { id, name };
+    })
+    .filter(Boolean);
+};
+const normalizeOrderStages = (stages) => normalizeStages(stages, DEFAULT_ORDER_STAGES);
+const normalizeTripStages = (stages) => normalizeStages(stages, DEFAULT_TRIP_STAGES);
+const getE2EMode = () => {
+  if (typeof window === "undefined") return "";
+  return new URLSearchParams(window.location.search).get("e2e") || "";
 };
 
-const buildTripDriveFolderName = ({ carNumber, driverName }) => {
-  const car = String(carNumber || "").trim();
-  const surname = extractDriverSurname(driverName);
-  return [car, surname].filter(Boolean).join(" ").trim() || TRIP_FALLBACK_NAME;
+const E2E_WORKSPACE_USER = {
+  id: "e2e-workspace-user",
+  email: "e2e-user@logictrack.test",
+};
+
+const E2E_DRIVE_ACCOUNT = {
+  email: "e2e-drive@logictrack.test",
+  name: "E2E Drive",
 };
 
 const App = () => {
+  const e2eMode = getE2EMode();
+  const isE2EWorkspace = e2eMode === "workspace";
+  const isSupabaseEnabled = isSupabaseConfigured && e2eMode !== "workspace";
   const SHEREMETYEVO_VALUES = new Set([RU.domain.airports.sheremetyevo]);
+  const MANUAL_CARGO_CHECK_AIRPORTS = React.useMemo(() => createManualCargoCheckAirportSet(RU), []);
   const DEFAULT_SHEREMETYEVO_TERMINAL = RU.domain.terminals.moscowCargo;
   const ORDER_FORM_ID = "order-form-panel";
   const TRIP_FORM_ID = "trip-form-panel";
@@ -618,8 +421,8 @@ const App = () => {
   const [showSignatureSettingsModal, setShowSignatureSettingsModal] = React.useState(false);
   const [showAccountSettingsModal, setShowAccountSettingsModal] = React.useState(false);
   const [printSignerSettings, setPrintSignerSettings] = React.useState(loadPrintSignerSettings);
-  const [isCloudStateReady, setIsCloudStateReady] = React.useState(!isSupabaseConfigured);
-  const [authReady, setAuthReady] = React.useState(!isSupabaseConfigured);
+  const [isCloudStateReady, setIsCloudStateReady] = React.useState(!isSupabaseEnabled);
+  const [authReady, setAuthReady] = React.useState(!isSupabaseEnabled);
   const [currentUser, setCurrentUser] = React.useState(null);
   const [authForm, setAuthForm] = React.useState({ email: "", password: "" });
   const [authScreen, setAuthScreen] = React.useState("login");
@@ -673,6 +476,13 @@ const App = () => {
     () => (currentUser?.id ? `${currentUser.id}:${SUPABASE_WORKSPACE_KEY}` : ""),
     [currentUser],
   );
+
+  React.useEffect(() => {
+    if (!isE2EWorkspace) return;
+    setCurrentUser((prev) => prev || E2E_WORKSPACE_USER);
+    setAuthReady(true);
+  }, [isE2EWorkspace]);
+
   const findOrderStageIdByCode = React.useCallback(
     (stageCode, fallbackId) => {
       const byCode = orderStages.find((stage) => stage.code === stageCode);
@@ -747,8 +557,20 @@ const App = () => {
       // Warmup request is best-effort.
     });
   }, [pingBackendHealth]);
+  const isDrivePermissionError = (error) => {
+    const reason = String(error?.reason || "").toLowerCase();
+    const message = String(error?.message || "").toLowerCase();
+    return (
+      reason === "appnotauthorizedtochild" ||
+      reason === "insufficientfilepermissions" ||
+      reason === "insufficientpermissions" ||
+      message.includes("appnotauthorizedtochild") ||
+      message.includes("insufficient file permissions") ||
+      message.includes("insufficientpermissions")
+    );
+  };
   React.useEffect(() => {
-    if (!isSupabaseConfigured || !supabase) return undefined;
+    if (!isSupabaseEnabled || !supabase) return undefined;
     let mounted = true;
 
     const initAuth = async () => {
@@ -819,49 +641,37 @@ const App = () => {
     localStorage.setItem(PRINT_SIGNER_STORAGE_KEY, JSON.stringify(printSignerSettings));
   }, [printSignerSettings]);
 
-  const parseCloudUpdatedAt = React.useCallback((value) => {
-    const ts = Date.parse(String(value || ""));
-    return Number.isFinite(ts) ? ts : 0;
-  }, []);
-
   const applyCloudSnapshot = React.useCallback((data) => {
-    const cloudOrders = Array.isArray(data?.orders) ? data.orders : [];
-    const cloudTrips = Array.isArray(data?.trips) ? data.trips : [];
-    const cloudOrderStages = Array.isArray(data?.order_stages) && data.order_stages.length > 0
-      ? normalizeOrderStages(data.order_stages)
-      : DEFAULT_ORDER_STAGES;
-    const cloudTripStages = Array.isArray(data?.trip_stages) && data.trip_stages.length > 0
-      ? normalizeTripStages(data.trip_stages)
-      : DEFAULT_TRIP_STAGES;
-    const cloudPrintSigner = data?.print_signer && typeof data.print_signer === "object"
-      ? {
-          signerRole: String(data.print_signer.signerRole || DEFAULT_PRINT_SIGNER_SETTINGS.signerRole).trim(),
-          signerName: String(data.print_signer.signerName || DEFAULT_PRINT_SIGNER_SETTINGS.signerName).trim(),
-        }
-      : DEFAULT_PRINT_SIGNER_SETTINGS;
+    const normalizedSnapshot = normalizeCloudSnapshot(data, {
+      normalizeOrderStages,
+      normalizeTripStages,
+      defaultOrderStages: DEFAULT_ORDER_STAGES,
+      defaultTripStages: DEFAULT_TRIP_STAGES,
+      defaultPrintSignerSettings: DEFAULT_PRINT_SIGNER_SETTINGS,
+    });
 
     isApplyingCloudStateRef.current = true;
     skipNextCloudSaveRef.current = true;
-    setOrders(cloudOrders);
-    setTrips(cloudTrips);
-    setOrderStages(cloudOrderStages);
-    setTripStages(cloudTripStages);
-    setPrintSignerSettings(cloudPrintSigner);
+    setOrders(normalizedSnapshot.orders);
+    setTrips(normalizedSnapshot.trips);
+    setOrderStages(normalizedSnapshot.orderStages);
+    setTripStages(normalizedSnapshot.tripStages);
+    setPrintSignerSettings(normalizedSnapshot.printSignerSettings);
     setTimeout(() => {
       isApplyingCloudStateRef.current = false;
     }, 0);
   }, []);
 
   React.useEffect(() => {
-    if (!isSupabaseConfigured) return;
+    if (!isSupabaseEnabled) return;
     if (!authReady || !currentUser?.id) {
       setIsCloudStateReady(false);
       lastCloudUpdatedAtRef.current = 0;
     }
-  }, [isSupabaseConfigured, authReady, currentUser]);
+  }, [isSupabaseEnabled, authReady, currentUser]);
 
   React.useEffect(() => {
-    if (!isSupabaseConfigured || !supabase || !authReady || !currentUser?.id) return undefined;
+    if (!isSupabaseEnabled || !supabase || !authReady || !currentUser?.id) return undefined;
     let cancelled = false;
 
     const bootstrapCloudState = async () => {
@@ -914,7 +724,7 @@ const App = () => {
       cancelled = true;
     };
   }, [
-    isSupabaseConfigured,
+    isSupabaseEnabled,
     authReady,
     currentUser,
     userScopedAppStateId,
@@ -923,7 +733,7 @@ const App = () => {
   ]);
 
   const saveCloudSnapshotNow = React.useCallback(async (snapshot) => {
-    if (!isSupabaseConfigured || !supabase || !authReady || !currentUser?.id || !isCloudStateReady) {
+    if (!isSupabaseEnabled || !supabase || !authReady || !currentUser?.id || !isCloudStateReady) {
       return { skipped: true };
     }
 
@@ -938,9 +748,10 @@ const App = () => {
 
       const remoteUpdatedAtMs = parseCloudUpdatedAt(remoteMeta?.updated_at);
       if (
-        remoteMeta &&
-        lastCloudUpdatedAtRef.current > 0 &&
-        remoteUpdatedAtMs > lastCloudUpdatedAtRef.current + 500
+        shouldApplyRemoteSnapshot({
+          remoteUpdatedAt: remoteUpdatedAtMs,
+          lastCloudUpdatedAt: lastCloudUpdatedAtRef.current,
+        })
       ) {
         console.warn("Cloud conflict detected. Applying newer server snapshot.");
         applyCloudSnapshot(remoteMeta);
@@ -948,14 +759,10 @@ const App = () => {
         return { conflict: true };
       }
 
-      const payload = {
-        owner_user_id: currentUser.id,
-        orders: snapshot.orders,
-        trips: snapshot.trips,
-        order_stages: snapshot.orderStages,
-        trip_stages: snapshot.tripStages,
-        print_signer: snapshot.printSignerSettings,
-      };
+      const payload = buildCloudPayload({
+        currentUserId: currentUser.id,
+        snapshot,
+      });
 
       if (!remoteMeta) {
         const { data: inserted, error: insertError } = await supabase
@@ -1004,7 +811,7 @@ const App = () => {
       return { error };
     }
   }, [
-    isSupabaseConfigured,
+    isSupabaseEnabled,
     supabase,
     authReady,
     currentUser,
@@ -1015,7 +822,7 @@ const App = () => {
   ]);
 
   React.useEffect(() => {
-    if (!isSupabaseConfigured || !supabase || !authReady || !currentUser?.id || !isCloudStateReady) {
+    if (!isSupabaseEnabled || !supabase || !authReady || !currentUser?.id || !isCloudStateReady) {
       return undefined;
     }
     if (isApplyingCloudStateRef.current) return undefined;
@@ -1060,25 +867,13 @@ const App = () => {
   React.useEffect(() => {
     const fallbackStageId = orderStages[0]?.id;
     if (!fallbackStageId) return;
-    const valid = new Set(orderStages.map((s) => s.id));
-    setOrders((prev) =>
-      prev.map((order) => ({
-        ...order,
-        stageId: valid.has(order.stageId) ? order.stageId : fallbackStageId,
-      })),
-    );
+    setOrders((prev) => reassignItemsToValidStage(prev, orderStages, fallbackStageId));
   }, [orderStages]);
 
   React.useEffect(() => {
     const fallbackStageId = tripStages[0]?.id;
     if (!fallbackStageId) return;
-    const valid = new Set(tripStages.map((s) => s.id));
-    setTrips((prev) =>
-      prev.map((trip) => ({
-        ...trip,
-        stageId: valid.has(trip.stageId) ? trip.stageId : fallbackStageId,
-      })),
-    );
+    setTrips((prev) => reassignItemsToValidStage(prev, tripStages, fallbackStageId));
   }, [tripStages]);
 
   const loadPowerOfAttorneyRegistry = React.useCallback(async (forceRefresh = false) => {
@@ -1239,18 +1034,18 @@ const App = () => {
 
 
   const customsName = formData.customsCode
-    ? getCustomsName(formData.customsCode.trim())
+    ? getCustomsNameLabel(formData.customsCode.trim())
     : RU.appMessages.enterCustomsCode;
-  const powerOfAttorneyStatus = getPowerOfAttorneyStatus({
+  const powerOfAttorneyStatus = getPowerOfAttorneyState({
     ...formData,
     registry: powerOfAttorneyRegistry,
   });
-  const recipientSuggestions = getRecipientSuggestions({
+  const recipientSuggestions = getRecipientSuggestionItems({
     ...formData,
     registry: powerOfAttorneyRegistry,
   });
-  const customsSuggestions = getCustomsSuggestions(formData.customsCode);
-  const cargoTerminalKey = resolveCargoTerminalKey(formData);
+  const customsSuggestions = getCustomsSuggestionItems(formData.customsCode);
+  const cargoTerminalKey = resolveCargoTerminal(formData);
   const isCargoCheckAvailable = Boolean(cargoTerminalKey);
 
   const runAwbStatusCheck = async ({ awb, awbPrefix, awbNumber, shipmentAirport, shipmentTerminal }) => {
@@ -1263,7 +1058,7 @@ const App = () => {
       return;
     }
 
-    const terminalKey = resolveCargoTerminalKey({ shipmentAirport, shipmentTerminal });
+    const terminalKey = resolveCargoTerminal({ shipmentAirport, shipmentTerminal });
     if (!terminalKey) {
       setAwbStatusCheck({
         loading: false,
@@ -1273,7 +1068,7 @@ const App = () => {
       return;
     }
 
-    if (isManualCargoCheckAirport(shipmentAirport)) {
+    if (isManualCargoCheckAirport(shipmentAirport, MANUAL_CARGO_CHECK_AIRPORTS)) {
       const manualUrl = CARGO_TERMINAL_URLS[terminalKey] || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/";
       setAwbStatusCheck({
         loading: false,
@@ -1385,8 +1180,8 @@ const App = () => {
   };
 
   const checkOrderAwbStatus = async (order) => {
-    if (isManualCargoCheckAirport(order?.shipmentAirport)) {
-      const terminalKey = resolveCargoTerminalKey({
+    if (isManualCargoCheckAirport(order?.shipmentAirport, MANUAL_CARGO_CHECK_AIRPORTS)) {
+      const terminalKey = resolveCargoTerminal({
         shipmentAirport: String(order?.shipmentAirport || ""),
         shipmentTerminal: String(order?.shipmentTerminal || ""),
       });
@@ -1483,7 +1278,7 @@ const App = () => {
   };
 
   const openCargoTerminalFromError = async () => {
-    const terminalKey = resolveCargoTerminalKey({
+    const terminalKey = resolveCargoTerminal({
       shipmentAirport: formData.shipmentAirport,
       shipmentTerminal: formData.shipmentTerminal,
     });
@@ -1559,7 +1354,7 @@ const App = () => {
       quantity: formData.quantity.trim(),
       weight: formData.weight.trim(),
       customsCode: formData.customsCode.trim(),
-      customsName: getCustomsName(formData.customsCode.trim()),
+      customsName: getCustomsNameLabel(formData.customsCode.trim()),
       notes: formData.notes.trim(),
       driveFolder: null,
       driveFolderId: null,
@@ -1608,7 +1403,7 @@ const App = () => {
     });
     setOrdersScreenMode("list");
 
-    if (isSupabaseConfigured && authReady && currentUser?.id && isCloudStateReady) {
+    if (isSupabaseEnabled && authReady && currentUser?.id && isCloudStateReady) {
       setIsOrderCloudSaving(true);
       try {
         await saveCloudSnapshotNow({
@@ -1763,11 +1558,11 @@ const App = () => {
     setOrders(nextOrders);
 
     if (editingTripId) {
-      const previousTripFolderName = buildTripDriveFolderName({
+      const previousTripFolderName = buildTripFolderName({
         carNumber: editingTrip?.carNumberBase || editingTrip?.carNumber,
         driverName: editingTrip?.driverName,
       });
-      const nextTripFolderName = buildTripDriveFolderName({
+      const nextTripFolderName = buildTripFolderName({
         carNumber: trip.carNumberBase || trip.carNumber,
         driverName: trip.driverName,
       });
@@ -1819,7 +1614,7 @@ const App = () => {
             awb: order.awb,
             recipient: order.recipient,
             shipmentAirport: order.shipmentAirport,
-            customsName: String(order.customsName || "").trim() || getCustomsName(String(order.customsCode || "").trim()),
+            customsName: String(order.customsName || "").trim() || getCustomsNameLabel(String(order.customsCode || "").trim()),
             customsCode: String(order.customsCode || "").trim(),
             quantity: order.quantity,
             weight: order.weight,
@@ -1899,32 +1694,6 @@ const App = () => {
 
   const shouldRemoveOrderFromTrip = (stageId) =>
     stageId === planStageId || stageId === warehouseStageId;
-  const buildTripOrdersSummary = (orderIds, sourceOrders) => {
-    const selectedOrders = sourceOrders.filter((order) => orderIds.includes(order.id));
-    const summaryHead = selectedOrders
-      .slice(0, 3)
-      .map((order) => order.name || order.recipient || order.id)
-      .join(", ");
-    return selectedOrders.length > 3
-      ? `${summaryHead} (+${selectedOrders.length - 3})`
-      : summaryHead;
-  };
-  const getTripsWithoutOrderIds = (sourceTrips, orderIdsToRemove, sourceOrders, excludedTripId = "") => {
-    const idsToRemove = new Set(orderIdsToRemove);
-    if (idsToRemove.size === 0) return sourceTrips;
-    return sourceTrips.map((trip) => {
-      if (excludedTripId && trip.id === excludedTripId) return trip;
-      const currentOrderIds = Array.isArray(trip.orderIds) ? trip.orderIds : [];
-      const nextOrderIds = currentOrderIds.filter((tripOrderId) => !idsToRemove.has(tripOrderId));
-      if (nextOrderIds.length === currentOrderIds.length) return trip;
-      return {
-        ...trip,
-        orderIds: nextOrderIds,
-        ordersSummary: buildTripOrdersSummary(nextOrderIds, sourceOrders),
-      };
-    });
-  };
-
   const handleMoveOrderToStage = async (orderId, stageId) => {
     const currentOrder = orders.find((order) => order.id === orderId);
     if (!currentOrder || currentOrder.stageId === stageId) return;
@@ -1933,7 +1702,7 @@ const App = () => {
       order.id === orderId ? { ...order, stageId } : order,
     );
     const nextTrips = shouldRemoveOrderFromTrip(stageId)
-      ? getTripsWithoutOrderIds(trips, [orderId], nextOrders)
+      ? tripsGetTripsWithoutOrderIds(trips, [orderId], nextOrders)
       : trips;
 
     setOrders(nextOrders);
@@ -2108,6 +1877,19 @@ const App = () => {
   }, []);
 
   const connectGoogleDrive = async () => {
+    if (isE2EWorkspace) {
+      setStoredTokens({
+        access_token: "e2e-access-token",
+        refresh_token: "e2e-refresh-token",
+        expires_at: Date.now() + 3600 * 1000,
+      });
+      setStoredDriveAccount(E2E_DRIVE_ACCOUNT);
+      setDriveConnected(true);
+      setDriveAccount(E2E_DRIVE_ACCOUNT);
+      setDriveHint(RU.appMessages.driveConnected);
+      return;
+    }
+
     const currentTokens = getStoredTokens();
     const hasSavedSession = Boolean(currentTokens?.access_token || currentTokens?.refresh_token);
     if (driveConnected || selectedDriveFolder || hasSavedSession) {
@@ -2140,85 +1922,29 @@ const App = () => {
     }
   };
 
-  const getDriveRetryDelayMs = (attempt) => Math.min(DRIVE_OP_RETRY_MAX_MS, DRIVE_OP_RETRY_BASE_MS * (2 ** attempt));
+  const ensureBackendAwake = React.useMemo(
+    () =>
+      createEnsureBackendAwake({
+        apiBaseUrl: API_BASE_URL,
+        pingBackendHealth,
+        backendReadyAtRef,
+        backendWakePromiseRef,
+      }),
+    [pingBackendHealth],
+  );
 
-  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-  const ensureBackendAwake = React.useCallback(async ({ force = false, timeoutMs = DRIVE_BACKEND_WAKE_TIMEOUT_MS } = {}) => {
-    if (!API_BASE_URL || typeof window === "undefined") return true;
-
-    const now = Date.now();
-    if (!force && now - backendReadyAtRef.current < DRIVE_BACKEND_READY_TTL_MS) return true;
-    if (backendWakePromiseRef.current) return backendWakePromiseRef.current;
-
-    const wakePromise = (async () => {
-      const startedAt = Date.now();
-      let lastError = null;
-
-      while (Date.now() - startedAt < timeoutMs) {
-        try {
-          await pingBackendHealth({
-            timeoutMs: Math.min(DRIVE_BACKEND_WAKE_REQUEST_TIMEOUT_MS, Math.max(1500, timeoutMs - (Date.now() - startedAt))),
-          });
-          return true;
-        } catch (error) {
-          lastError = error;
-          if (Date.now() - startedAt >= timeoutMs) break;
-          await sleep(DRIVE_BACKEND_WAKE_POLL_MS);
-        }
-      }
-
-      throw lastError || new Error("backend_wake_timeout");
-    })().finally(() => {
-      if (backendWakePromiseRef.current === wakePromise) {
-        backendWakePromiseRef.current = null;
-      }
-    });
-
-    backendWakePromiseRef.current = wakePromise;
-    return wakePromise;
-  }, [pingBackendHealth]);
-
-  const isDriveTransientError = (error) => {
-    const message = String(error?.message || "").toLowerCase();
-    return (
-      [408, 409, 425, 429, 500, 502, 503, 504].includes(Number(error?.status)) ||
-      /network|fetch|timeout|timed out|failed to fetch|backend_wake_timeout|backend_unavailable|backend_health_/i.test(message)
-    );
-  };
-
-  const runDriveOpWithWakeRetry = React.useCallback(async (operation) => {
-    let lastError = null;
-
-    for (let attempt = 0; attempt <= DRIVE_OP_AUTORETRY_COUNT; attempt += 1) {
-      try {
-        await ensureBackendAwake({ force: attempt > 0 });
-        return await operation();
-      } catch (error) {
-        lastError = error;
-        if (attempt >= DRIVE_OP_AUTORETRY_COUNT || isDrivePermissionError(error) || !isDriveTransientError(error)) {
-          throw error;
-        }
-        await sleep(getDriveRetryDelayMs(attempt));
-      }
-    }
-
-    throw lastError || new Error("drive_operation_failed");
-  }, [ensureBackendAwake]);
+  const runDriveOpWithWakeRetry = React.useMemo(
+    () =>
+      createDriveOpRunner({
+        ensureBackendAwake,
+        isDrivePermissionError,
+      }),
+    [ensureBackendAwake],
+  );
   const escapeDriveQueryValue = (value) =>
     String(value || "")
       .replace(/\\/g, "\\\\")
       .replace(/'/g, "\\'");
-
-  const createDriveOpKey = (type, payload) => {
-    if (!payload || typeof payload !== "object") return type;
-    if (type === "create_order_folder") return `${type}:${payload.orderId || ""}`;
-    if (type === "create_trip_folder") return `${type}:${payload.tripId || ""}`;
-    if (type === "move_folder") return `${type}:${payload.folderId || ""}:${payload.parentId || "root"}`;
-    if (type === "rename_folder") return `${type}:${payload.folderId || ""}`;
-    if (type === "delete_folder") return `${type}:${payload.folderId || ""}`;
-    return `${type}:${JSON.stringify(payload)}`;
-  };
 
   const upsertDriveOp = React.useCallback((type, payload, lastError = "") => {
     const opKey = createDriveOpKey(type, payload);
@@ -2276,20 +2002,7 @@ const App = () => {
       setDriveConnected(true);
       return newTokens.access_token;
     }
-
     throw new Error('Drive authorization is required');
-  };
-  const isDrivePermissionError = (error) => {
-    const reason = String(error?.reason || "").toLowerCase();
-    const message = String(error?.message || "").toLowerCase();
-    return (
-      reason === "appnotauthorizedtochild" ||
-      reason === "insufficientfilepermissions" ||
-      reason === "insufficientpermissions" ||
-      message.includes("appnotauthorizedtochild") ||
-      message.includes("insufficient file permissions") ||
-      message.includes("insufficientpermissions")
-    );
   };
   const driveRequest = async (url, { method = 'GET', body = null, retries = 2, allow404 = false } = {}) => {
     let forceRefresh = false;
@@ -2482,7 +2195,7 @@ const App = () => {
   };
 
   const createDriveFolderForTrip = async (trip) => {
-    const tripFolderName = buildTripDriveFolderName({
+    const tripFolderName = buildTripFolderName({
       carNumber: trip.carNumberBase || trip.carNumber,
       driverName: trip.driverName,
     });
@@ -2650,7 +2363,7 @@ const App = () => {
           } else if (dueOp.type === 'create_trip_folder') {
             const liveTrip = trips.find((item) => item.id === dueOp.payload?.tripId);
             if (liveTrip) {
-              const folderName = buildTripDriveFolderName({
+              const folderName = buildTripFolderName({
                 carNumber: liveTrip.carNumberBase || liveTrip.carNumber,
                 driverName: liveTrip.driverName,
               });
@@ -2813,7 +2526,7 @@ const App = () => {
           await deleteDriveFolder(orderToDelete.driveFolderId);
         }
         const nextOrders = orders.filter((o) => o.id !== id);
-        const nextTrips = getTripsWithoutOrderIds(trips, [id], nextOrders);
+        const nextTrips = tripsGetTripsWithoutOrderIds(trips, [id], nextOrders);
         setOrders(nextOrders);
         setTrips(nextTrips);
         await saveCloudSnapshotNow({
@@ -2842,7 +2555,7 @@ const App = () => {
             }
           }
           nextOrders = orders.filter((order) => !tripOrderIds.has(order.id));
-          nextTrips = getTripsWithoutOrderIds(nextTrips, Array.from(tripOrderIds), nextOrders);
+          nextTrips = tripsGetTripsWithoutOrderIds(nextTrips, Array.from(tripOrderIds), nextOrders);
         } else {
           const tripOrders = orders.filter((order) => tripOrderIds.has(order.id));
           for (const order of tripOrders) {
@@ -2926,7 +2639,7 @@ const App = () => {
   };
 
   const handleEditTripClick = (trip) => {
-    const parsedCar = parseTripCarNumber(trip.carNumber);
+    const parsedCar = tripsParseTripCarNumber(trip.carNumber);
     setTripFormData({
       tripNumber: trip.tripNumber || "",
       tripDate: trip.tripDate || getTodayIsoDate(),
@@ -3046,6 +2759,18 @@ const App = () => {
   };
 
   const handleSignOut = async () => {
+    if (isE2EWorkspace) {
+      setAuthError("");
+      setAuthInfo("");
+      setIsChangePasswordScreenOpen(false);
+      setChangePasswordError("");
+      setChangePasswordInfo("");
+      setChangePasswordForm({ password: "", confirmPassword: "" });
+      setShowAccountSettingsModal(false);
+      setShowSettingsModal(false);
+      setCurrentUser(null);
+      return;
+    }
     if (!supabase) return;
     setAuthError("");
     setAuthInfo("");
@@ -3062,6 +2787,28 @@ const App = () => {
   };
 
   const handleChangePasswordSubmit = async () => {
+    if (isE2EWorkspace) {
+      setChangePasswordError("");
+      setChangePasswordInfo("");
+      setIsChangePasswordSubmitting(true);
+      try {
+        const password = String(changePasswordForm.password || "");
+        const confirmPassword = String(changePasswordForm.confirmPassword || "");
+        if (password.length < 6) {
+          throw new Error(RU.authFlow.passwordTooShort);
+        }
+        if (password !== confirmPassword) {
+          throw new Error(RU.authFlow.passwordsMismatch);
+        }
+        setChangePasswordInfo(RU.authFlow.passwordChanged);
+        setChangePasswordForm({ password: "", confirmPassword: "" });
+      } catch (error) {
+        setChangePasswordError(localizeAuthErrorMessage(error, RU.authFlow.changePasswordFailed));
+      } finally {
+        setIsChangePasswordSubmitting(false);
+      }
+      return;
+    }
     if (!supabase) return;
     setChangePasswordError("");
     setChangePasswordInfo("");
@@ -3128,7 +2875,7 @@ const App = () => {
     [],
   );
 
-  if (isSupabaseConfigured && !authReady) {
+  if (isSupabaseEnabled && !authReady) {
     return (
       <div className="app">
         <main className="workspace">
@@ -3141,7 +2888,7 @@ const App = () => {
     );
   }
 
-  if (isSupabaseConfigured && !currentUser) {
+  if (isSupabaseEnabled && !currentUser) {
     return (
       <div className="app">
         <main className="workspace">
@@ -3172,7 +2919,13 @@ const App = () => {
               <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
                 {authScreen === "recover" ? (
                   <>
-                    <button type="button" className="primary" onClick={handleRequestPasswordReset} disabled={isAuthSubmitting}>
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={handleRequestPasswordReset}
+                      disabled={isAuthSubmitting}
+                      data-testid="auth-send-link"
+                    >
                       {isAuthSubmitting ? RU.authUi.processing : RU.authUi.sendLink}
                     </button>
                     <button
@@ -3183,16 +2936,28 @@ const App = () => {
                         setAuthInfo("");
                       }}
                       disabled={isAuthSubmitting}
+                      data-testid="auth-back-to-login"
                     >
                       {RU.authUi.backToLogin}
                     </button>
                   </>
                 ) : (
                   <>
-                    <button type="button" className="primary" onClick={handleSignIn} disabled={isAuthSubmitting}>
+                    <button
+                      type="button"
+                      className="primary"
+                      onClick={handleSignIn}
+                      disabled={isAuthSubmitting}
+                      data-testid="auth-sign-in"
+                    >
                       {isAuthSubmitting ? RU.authUi.processing : RU.authUi.signIn}
                     </button>
-                    <button type="button" onClick={handleSignUp} disabled={isAuthSubmitting}>
+                    <button
+                      type="button"
+                      onClick={handleSignUp}
+                      disabled={isAuthSubmitting}
+                      data-testid="auth-sign-up"
+                    >
                       {isAuthSubmitting ? RU.authUi.processing : RU.authUi.signUp}
                     </button>
                     <button
@@ -3203,6 +2968,7 @@ const App = () => {
                         setAuthInfo("");
                       }}
                       disabled={isAuthSubmitting}
+                      data-testid="auth-recover"
                     >
                       {RU.authUi.recoverByEmail}
                     </button>
@@ -3216,7 +2982,7 @@ const App = () => {
     );
   }
 
-  if (isSupabaseConfigured && currentUser && isChangePasswordScreenOpen) {
+  if ((isSupabaseEnabled || isE2EWorkspace) && currentUser && isChangePasswordScreenOpen) {
     return (
       <div className="app">
         <main className="workspace">
@@ -3230,6 +2996,7 @@ const App = () => {
                   value={changePasswordForm.password}
                   onChange={handleChangePasswordField("password")}
                   placeholder={RU.authUi.minPassword}
+                  data-testid="change-password-input"
                 />
               </label>
               <label style={{ display: "grid", gap: "0.35rem" }}>
@@ -3239,12 +3006,13 @@ const App = () => {
                   value={changePasswordForm.confirmPassword}
                   onChange={handleChangePasswordField("confirmPassword")}
                   placeholder={RU.authUi.repeatPasswordPlaceholder}
+                  data-testid="change-password-confirm-input"
                 />
               </label>
-              {changePasswordError && <small style={{ color: "#b91c1c" }}>{changePasswordError}</small>}
-              {changePasswordInfo && <small style={{ color: "#0f5132" }}>{changePasswordInfo}</small>}
+              {changePasswordError && <small style={{ color: "#b91c1c" }} data-testid="change-password-error">{changePasswordError}</small>}
+              {changePasswordInfo && <small style={{ color: "#0f5132" }} data-testid="change-password-info">{changePasswordInfo}</small>}
               <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap" }}>
-                <button type="button" className="primary" onClick={handleChangePasswordSubmit} disabled={isChangePasswordSubmitting}>
+                <button type="button" className="primary" onClick={handleChangePasswordSubmit} disabled={isChangePasswordSubmitting} data-testid="change-password-submit">
                   {isChangePasswordSubmitting ? RU.common.saveInProgress : RU.authUi.savePassword}
                 </button>
                 <button
@@ -3256,6 +3024,7 @@ const App = () => {
                     setChangePasswordForm({ password: "", confirmPassword: "" });
                   }}
                   disabled={isChangePasswordSubmitting}
+                  data-testid="change-password-back"
                 >
                   {RU.authUi.back}
                 </button>
@@ -3280,12 +3049,14 @@ const App = () => {
                 <WorkPanel
                   title={RU.ordersTable.title}
                   actionLabel={RU.ordersTable.create}
+                  actionTestId="orders-create-action"
                   onAction={() => {
                     setEditingOrderId(null);
                     setOrdersScreenMode("create");
                   }}
                 >
                   <WorkflowBoard
+                    boardTestId="orders-workflow"
                     boardTitle={RU.workflow.boardTitle}
                     stages={orderStages}
                     items={orders}
@@ -3299,7 +3070,7 @@ const App = () => {
                     allowStageManagement
                     isStageDefault={isDefaultOrderStage}
                     renderItemCard={(order) => {
-                      const orderPowerOfAttorneyStatus = getPowerOfAttorneyStatus({
+                      const orderPowerOfAttorneyStatus = getPowerOfAttorneyState({
                         shipmentAirport: order.shipmentAirport,
                         shipmentTerminal: order.shipmentTerminal,
                         recipient: order.recipient,
@@ -3312,13 +3083,27 @@ const App = () => {
                       return (
                       <div className="workflow-card">
                         <div className="workflow-card__top-actions">
-                          <button type="button" className="workflow-card__icon-btn" title={RU.orderCard.edit} onClick={() => handleEditClick(order)} aria-label={RU.orderCard.edit}>
+                          <button
+                            type="button"
+                            className="workflow-card__icon-btn"
+                            title={RU.orderCard.edit}
+                            onClick={() => handleEditClick(order)}
+                            aria-label={RU.orderCard.edit}
+                            data-testid={`order-edit-${order.id}`}
+                          >
                             <span aria-hidden="true">&#9998;</span>
                           </button>
                           <button type="button" className="workflow-card__icon-btn" title={RU.orderCard.copy} onClick={() => handleCopyOrderClick(order)} aria-label={RU.orderCard.copy}>
                             <span aria-hidden="true">&#128203;</span>
                           </button>
-                          <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title={RU.orderCard.delete} onClick={() => openDeleteOrderConfirm(order)} aria-label={RU.orderCard.delete}>
+                          <button
+                            type="button"
+                            className="workflow-card__icon-btn workflow-card__icon-btn--danger"
+                            title={RU.orderCard.delete}
+                            onClick={() => openDeleteOrderConfirm(order)}
+                            aria-label={RU.orderCard.delete}
+                            data-testid={`order-delete-${order.id}`}
+                          >
                             <span aria-hidden="true">&#128465;</span>
                           </button>
                         </div>
@@ -3387,9 +3172,11 @@ const App = () => {
                 <WorkPanel
                   title={RU.tripView.listTitle}
                   actionLabel={RU.tripView.createAction}
+                  actionTestId="trips-create-action"
                   onAction={openCreateTripForm}
                 >
                   <WorkflowBoard
+                    boardTestId="trips-workflow"
                     boardTitle={RU.tripView.boardTitle}
                     stages={tripStages}
                     items={trips}
@@ -3417,7 +3204,14 @@ const App = () => {
                       return (
                         <div className="workflow-card">
                           <div className="workflow-card__top-actions">
-                            <button type="button" className="workflow-card__icon-btn" title={RU.tripCard.edit} onClick={() => handleEditTripClick(trip)} aria-label={RU.tripCard.edit}>
+                            <button
+                              type="button"
+                              className="workflow-card__icon-btn"
+                              title={RU.tripCard.edit}
+                              onClick={() => handleEditTripClick(trip)}
+                              aria-label={RU.tripCard.edit}
+                              data-testid={`trip-edit-${trip.id}`}
+                            >
                               <span aria-hidden="true">&#9998;</span>
                             </button>
                             <button
@@ -3430,7 +3224,14 @@ const App = () => {
                             >
                               <span aria-hidden="true">&#128424;</span>
                             </button>
-                            <button type="button" className="workflow-card__icon-btn workflow-card__icon-btn--danger" title={RU.tripCard.delete} onClick={() => openDeleteTripConfirm(trip)} aria-label={RU.tripCard.delete}>
+                            <button
+                              type="button"
+                              className="workflow-card__icon-btn workflow-card__icon-btn--danger"
+                              title={RU.tripCard.delete}
+                              onClick={() => openDeleteTripConfirm(trip)}
+                              aria-label={RU.tripCard.delete}
+                              data-testid={`trip-delete-${trip.id}`}
+                            >
                               <span aria-hidden="true">&#128465;</span>
                             </button>
                           </div>
@@ -3543,6 +3344,7 @@ const App = () => {
           role="dialog"
           aria-modal="true"
           aria-label={RU.manualCargoModal.aria}
+          data-testid="manual-cargo-modal"
         >
           <div className="modal-card workflow-modal">
             <div className="modal-card__header">
@@ -3551,16 +3353,16 @@ const App = () => {
             <div className="modal-card__body">
               <p>{RU.manualCargoModal.descriptionPrefix}</p>
               <p>
-                <span className="manual-cargo-modal__awb-badge">
+                <span className="manual-cargo-modal__awb-badge" data-testid="manual-cargo-awb-number">
                   {manualCargoCheckModal.awbNumber || RU.common.emDash}
                 </span>{" "}
                 {RU.manualCargoModal.descriptionSuffix}
               </p>
               <div className="workflow-confirm-actions">
-                <button type="button" className="primary" onClick={confirmManualCargoCheck}>
+                <button type="button" className="primary" onClick={confirmManualCargoCheck} data-testid="manual-cargo-confirm">
                   {RU.manualCargoModal.ok}
                 </button>
-                <button type="button" onClick={closeManualCargoCheckModal}>
+                <button type="button" onClick={closeManualCargoCheckModal} data-testid="manual-cargo-cancel">
                   {RU.common.cancel}
                 </button>
               </div>
@@ -3570,7 +3372,7 @@ const App = () => {
       )}
 
       {deleteCardModal.isOpen && (
-        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={RU.deleteCardModal.aria}>
+        <div className="modal-overlay" role="dialog" aria-modal="true" aria-label={RU.deleteCardModal.aria} data-testid="delete-card-modal">
           <div className="modal-card workflow-modal">
             <div className="modal-card__header">
               <h2>{RU.deleteCardModal.title}</h2>
@@ -3585,10 +3387,11 @@ const App = () => {
                   className="primary"
                   onClick={confirmDeleteCard}
                   disabled={isDeleteCardLoading}
+                  data-testid="delete-card-confirm"
                 >
                   {isDeleteCardLoading ? RU.deleteCardModal.deleting : RU.deleteCardModal.delete}
                 </button>
-                <button type="button" onClick={closeDeleteCardModal} disabled={isDeleteCardLoading}>
+                <button type="button" onClick={closeDeleteCardModal} disabled={isDeleteCardLoading} data-testid="delete-card-cancel">
                   {RU.common.cancel}
                 </button>
               </div>
@@ -3658,5 +3461,3 @@ const App = () => {
   );
 };
 export default App;
-
-
