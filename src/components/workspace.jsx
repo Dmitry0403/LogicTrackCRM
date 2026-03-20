@@ -435,21 +435,22 @@ export function TripFormCard({
       <div className="field trip-form__left">
         <label htmlFor="car-number">{RU.tripForm.carNumber}</label>
         <div className="trip-car-row">
-          <select
+          <input
             id="car-number"
+            name="carNumber"
+            type="text"
+            list="trip-car-suggestions"
             required
             value={formData.carNumber}
             onChange={onFieldChange("carNumber")}
-          >
-            <option value="" disabled>
-              {RU.tripForm.selectCar}
-            </option>
+            placeholder={RU.tripForm.selectCar}
+            autoComplete="off"
+          />
+          <datalist id="trip-car-suggestions">
             {carNumbers.map((car) => (
-              <option key={car} value={car}>
-                {car}
-              </option>
+              <option key={car} value={car} />
             ))}
-          </select>
+          </datalist>
           <label className="trip-car-row__checkbox">
             <input
               type="checkbox"
@@ -463,21 +464,22 @@ export function TripFormCard({
 
       <div className="field trip-form__right">
         <label htmlFor="driver-name">{RU.tripForm.driver}</label>
-        <select
+        <input
           id="driver-name"
+          name="driverName"
+          type="text"
+          list="trip-driver-suggestions"
           required
           value={formData.driverName}
           onChange={onFieldChange("driverName")}
-        >
-          <option value="" disabled>
-            {RU.tripForm.selectDriver}
-          </option>
+          placeholder={RU.tripForm.selectDriver}
+          autoComplete="off"
+        />
+        <datalist id="trip-driver-suggestions">
           {driverNames.map((driver) => (
-            <option key={driver} value={driver}>
-              {driver}
-            </option>
+            <option key={driver} value={driver} />
           ))}
-        </select>
+        </datalist>
       </div>
 
       <div className="field trip-form__orders">

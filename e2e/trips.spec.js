@@ -33,11 +33,12 @@ const openTripsView = async (page) => {
 };
 
 const createTripViaForm = async (page, tripNumber, orderId) => {
+  const suffix = Date.now();
   await page.getByTestId("trips-create-action").click();
   await expect(page.locator("form#trip-form-panel")).toBeVisible();
   await page.locator("#trip-number").fill(tripNumber);
-  await page.locator("#car-number").selectOption({ index: 1 });
-  await page.locator("#driver-name").selectOption({ index: 1 });
+  await page.locator("#car-number").fill(`E2E-CAR-${suffix}`);
+  await page.locator("#driver-name").fill(`E2E Driver ${suffix}`);
   await page.getByTestId(`trip-order-option-${orderId}`).click();
   await page.locator("form#trip-form-panel button[type='submit']").click();
   await expect(page.getByTestId("trips-create-action")).toBeVisible();
