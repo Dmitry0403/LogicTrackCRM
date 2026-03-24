@@ -23,7 +23,10 @@ import {
   getCustomsName as cargoGetCustomsName,
   getCustomsSuggestions as cargoGetCustomsSuggestions,
   isManualCargoCheckAirport as cargoIsManualCargoCheckAirport,
+  isStrictNumericAwbTerminal as cargoIsStrictNumericAwbTerminal,
+  isValidAwbForTerminal as cargoIsValidAwbForTerminal,
   resolveCargoTerminalKey as cargoResolveCargoTerminalKey,
+  sanitizeAwbPartsForTerminal as cargoSanitizeAwbPartsForTerminal,
   splitAwb,
 } from "./lib/cargo";
 import {
@@ -299,6 +302,9 @@ const formatTripDateShort = (rawDate) => {
 const getCustomsNameLabel = (code) => cargoGetCustomsName(code, CUSTOMS_CODE_MAP, RU.domain.invalidCustomsCode);
 const getCustomsSuggestionItems = (typedValue) => cargoGetCustomsSuggestions(typedValue, CUSTOMS_CODE_MAP);
 const resolveCargoTerminal = (args) => cargoResolveCargoTerminalKey({ ...args, ru: RU });
+const isStrictNumericAwbTerminal = (terminalKey) => cargoIsStrictNumericAwbTerminal(terminalKey);
+const sanitizeAwbPartsForTerminal = (args) => cargoSanitizeAwbPartsForTerminal(args);
+const isValidAwbForTerminal = (args) => cargoIsValidAwbForTerminal(args);
 const getPowerOfAttorneyState = (args) => poaGetPowerOfAttorneyStatus({
   ...args,
   ru: RU,
@@ -1068,6 +1074,17 @@ const App = () => {
       return;
     }
 
+    if (!isValidAwbForTerminal({ terminalKey, prefix: awbPrefix, number: awbNumber })) {
+      setAwbStatusCheck({
+        loading: false,
+        error: isStrictNumericAwbTerminal(terminalKey)
+          ? "\u0414\u043b\u044f \u041c\u043e\u0441\u043a\u0432\u0430-\u043a\u0430\u0440\u0433\u043e \u0443\u043a\u0430\u0436\u0438\u0442\u0435 \u0447\u0438\u0441\u043b\u043e\u0432\u043e\u0439 \u043f\u0440\u0435\u0444\u0438\u043a\u0441 \u0438 \u0447\u0438\u0441\u043b\u043e\u0432\u043e\u0439 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u043d\u043e\u043c\u0435\u0440."
+          : RU.appMessages.enterAwb,
+        data: null,
+      });
+      return;
+    }
+
     if (isManualCargoCheckAirport(shipmentAirport, MANUAL_CARGO_CHECK_AIRPORTS)) {
       const manualUrl = CARGO_TERMINAL_URLS[terminalKey] || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/";
       setAwbStatusCheck({
@@ -1169,11 +1186,17 @@ const App = () => {
   };
 
   const checkAwbStatus = async () => {
-    const awb = composeAwb(formData.awbPrefix, formData.awbNumber) || formData.awb.trim();
+    const terminalKey = resolveCargoTerminal(formData);
+    const sanitizedAwb = sanitizeAwbPartsForTerminal({
+      terminalKey,
+      prefix: formData.awbPrefix,
+      number: formData.awbNumber,
+    });
+    const awb = composeAwb(sanitizedAwb.awbPrefix, sanitizedAwb.awbNumber) || formData.awb.trim();
     await runAwbStatusCheck({
       awb,
-      awbPrefix: formData.awbPrefix,
-      awbNumber: formData.awbNumber,
+      awbPrefix: sanitizedAwb.awbPrefix,
+      awbNumber: sanitizedAwb.awbNumber,
       shipmentAirport: formData.shipmentAirport,
       shipmentTerminal: formData.shipmentTerminal,
     });
@@ -1304,13 +1327,33 @@ const App = () => {
       if (field === "shipmentAirport") {
         next.shipmentTerminal = SHEREMETYEVO_VALUES.has(value) ? DEFAULT_SHEREMETYEVO_TERMINAL : "";
       }
+      if (field === "shipmentAirport" || field === "shipmentTerminal" || field === "awbPrefix" || field === "awbNumber") {
+        const terminalKey = resolveCargoTerminal({
+          shipmentAirport: field === "shipmentAirport" ? value : next.shipmentAirport,
+          shipmentTerminal: field === "shipmentTerminal" ? value : next.shipmentTerminal,
+        });
+        const sanitizedAwb = sanitizeAwbPartsForTerminal({
+          terminalKey,
+          prefix: field === "awbPrefix" ? value : next.awbPrefix,
+          number: field === "awbNumber" ? value : next.awbNumber,
+        });
+        next.awbPrefix = sanitizedAwb.awbPrefix;
+        next.awbNumber = sanitizedAwb.awbNumber;
+      }
       if (field === "hasHawb" && !value) {
         next.hawb = "";
       }
-      if (field === "awbPrefix" || field === "awbNumber" || field === "hasHawb" || field === "hawb") {
+      if (
+        field === "awbPrefix" ||
+        field === "awbNumber" ||
+        field === "hasHawb" ||
+        field === "hawb" ||
+        field === "shipmentAirport" ||
+        field === "shipmentTerminal"
+      ) {
         next.awb = composeAwb(
-          field === "awbPrefix" ? value : next.awbPrefix,
-          field === "awbNumber" ? value : next.awbNumber,
+          next.awbPrefix,
+          next.awbNumber,
           next.hasHawb ? (field === "hawb" ? value : next.hawb) : "",
         );
       }
@@ -3159,6 +3202,7 @@ const App = () => {
                     onSubmit={handleSubmit}
                     onCancel={cancelOrderForm}
                     isSaving={isOrderCloudSaving}
+                    isStrictNumericAwb={isStrictNumericAwbTerminal(cargoTerminalKey)}
                     embedded
                   />
                 </WorkPanel>

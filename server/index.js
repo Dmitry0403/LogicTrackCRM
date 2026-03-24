@@ -2249,6 +2249,17 @@ app.post('/cargo/status', async (req, res) => {
       });
     }
 
+    if (terminalConfig.key === 'svo_moscow') {
+      const hasStrictPrefix = /^\d{3}$/.test(awbPrefix);
+      const hasStrictNumber = /^\d+$/.test(awbNumber);
+      if (!hasStrictPrefix || !hasStrictNumber) {
+        return res.status(400).json({
+          error: 'awb_format_invalid',
+          details: 'Moscow Cargo requires numeric prefix and numeric AWB number.',
+        });
+      }
+    }
+
     if (terminalConfig.key === 'vko') {
       return res.json({
         terminal: terminalConfig.label,

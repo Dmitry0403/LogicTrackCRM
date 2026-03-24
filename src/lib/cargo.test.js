@@ -5,9 +5,12 @@ import {
   createManualCargoCheckAirportSet,
   getCustomsName,
   getCustomsSuggestions,
+  isStrictNumericAwbTerminal,
+  isValidAwbForTerminal,
   isManualCargoCheckAirport,
   normalizeText,
   resolveCargoTerminalKey,
+  sanitizeAwbPartsForTerminal,
   splitAwb,
 } from "./cargo";
 import { RU } from "../i18n/ru";
@@ -40,6 +43,51 @@ describe("cargo helpers", () => {
       hasHawb: false,
       hawb: "",
     });
+  });
+
+  it("sanitizes and validates AWB by terminal mode", () => {
+    expect(isStrictNumericAwbTerminal("svo_moscow")).toBe(true);
+    expect(isStrictNumericAwbTerminal("svo_sher")).toBe(false);
+
+    expect(
+      sanitizeAwbPartsForTerminal({
+        terminalKey: "svo_moscow",
+        prefix: "77A1",
+        number: "AB12 34CD",
+      }),
+    ).toEqual({
+      awbPrefix: "771",
+      awbNumber: "1234",
+    });
+
+    expect(
+      sanitizeAwbPartsForTerminal({
+        terminalKey: "svo_sher",
+        prefix: "",
+        number: "AB12 34CD",
+      }),
+    ).toEqual({
+      awbPrefix: "",
+      awbNumber: "AB1234CD",
+    });
+
+    expect(isValidAwbForTerminal({
+      terminalKey: "svo_moscow",
+      prefix: "771",
+      number: "11061551",
+    })).toBe(true);
+
+    expect(isValidAwbForTerminal({
+      terminalKey: "svo_moscow",
+      prefix: "",
+      number: "CRR26030046",
+    })).toBe(false);
+
+    expect(isValidAwbForTerminal({
+      terminalKey: "svo_sher",
+      prefix: "",
+      number: "CRR26030046",
+    })).toBe(true);
   });
 
   it("resolves cargo terminal keys by airport and terminal", () => {

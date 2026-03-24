@@ -46,6 +46,7 @@ export function OrderFormCard({
   formId,
   showFooterActions = true,
   embedded = false,
+  isStrictNumericAwb = false,
 }) {
   const handleAwbPrefixChange = (event) => {
     const digits = String(event.target.value || "").replace(/\D/g, "").slice(0, 3);
@@ -56,7 +57,9 @@ export function OrderFormCard({
   };
 
   const handleAwbNumberChange = (event) => {
-    const value = String(event.target.value || "").replace(/\s+/g, "").slice(0, 32);
+    const value = isStrictNumericAwb
+      ? String(event.target.value || "").replace(/\D/g, "").slice(0, 32)
+      : String(event.target.value || "").replace(/\s+/g, "").slice(0, 32);
     onFieldChange("awbNumber")({ target: { value } });
   };
 
@@ -160,6 +163,7 @@ export function OrderFormCard({
               name="awbPrefix"
               type="text"
               placeholder="876"
+              required={isStrictNumericAwb}
               value={formData.awbPrefix || ""}
               onChange={handleAwbPrefixChange}
               inputMode="numeric"
@@ -172,10 +176,11 @@ export function OrderFormCard({
               id="awb-number"
               name="awbNumber"
               type="text"
-              placeholder="14889696"
+              placeholder={isStrictNumericAwb ? "14889696" : "14889696 / CRR26030046"}
               required
               value={formData.awbNumber || ""}
               onChange={handleAwbNumberChange}
+              inputMode={isStrictNumericAwb ? "numeric" : "text"}
               autoComplete="off"
               maxLength={32}
               style={{ flex: "1 1 160px", minWidth: "140px" }}
@@ -187,6 +192,7 @@ export function OrderFormCard({
               disabled={
                 awbStatusCheck?.loading ||
                 !isAwbCheckAvailable ||
+                (isStrictNumericAwb && !String(formData.awbPrefix || "").trim()) ||
                 !String(formData.awbNumber || "").trim()
               }
             >
@@ -224,6 +230,9 @@ export function OrderFormCard({
           </div>
           {!isAwbCheckAvailable && (
             <small className="hint">{RU.orderForm.airportTerminalHint}</small>
+          )}
+          {isStrictNumericAwb && (
+            <small className="hint">{"\u0414\u043b\u044f \u041c\u043e\u0441\u043a\u0432\u0430-\u043a\u0430\u0440\u0433\u043e \u0443\u043a\u0430\u0436\u0438\u0442\u0435 \u0447\u0438\u0441\u043b\u043e\u0432\u043e\u0439 \u043f\u0440\u0435\u0444\u0438\u043a\u0441 \u0438 \u0447\u0438\u0441\u043b\u043e\u0432\u043e\u0439 \u043d\u043e\u043c\u0435\u0440."}</small>
           )}
           <div className="order-form__awb-status-slot" aria-live="polite">
             {awbStatusCheck?.error && (

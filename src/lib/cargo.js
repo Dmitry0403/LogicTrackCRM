@@ -20,6 +20,28 @@ export const resolveCargoTerminalKey = ({ shipmentAirport, shipmentTerminal, ru 
   return "";
 };
 
+export const isStrictNumericAwbTerminal = (terminalKey) => String(terminalKey || "").trim() === "svo_moscow";
+
+export const sanitizeAwbPartsForTerminal = ({ terminalKey, prefix, number }) => {
+  if (isStrictNumericAwbTerminal(terminalKey)) {
+    return {
+      awbPrefix: String(prefix || "").replace(/\D/g, "").slice(0, 3),
+      awbNumber: String(number || "").replace(/\D/g, "").slice(0, 32),
+    };
+  }
+
+  return {
+    awbPrefix: String(prefix || "").replace(/\D/g, "").slice(0, 3),
+    awbNumber: String(number || "").trim().replace(/\s+/g, "").slice(0, 32),
+  };
+};
+
+export const isValidAwbForTerminal = ({ terminalKey, prefix, number }) => {
+  if (!String(number || "").trim()) return false;
+  if (!isStrictNumericAwbTerminal(terminalKey)) return true;
+  return /^\d{3}$/.test(String(prefix || "")) && /^\d+$/.test(String(number || ""));
+};
+
 export const composeAwb = (prefix, number, hawb = "") => {
   const p = String(prefix || "").replace(/\D/g, "").slice(0, 3);
   const n = String(number || "").trim().replace(/\s+/g, "").slice(0, 32);
