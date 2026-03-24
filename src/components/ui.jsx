@@ -56,8 +56,8 @@ export function OrderFormCard({
   };
 
   const handleAwbNumberChange = (event) => {
-    const digits = String(event.target.value || "").replace(/\D/g, "").slice(0, 10);
-    onFieldChange("awbNumber")({ target: { value: digits } });
+    const value = String(event.target.value || "").replace(/\s+/g, "").slice(0, 32);
+    onFieldChange("awbNumber")({ target: { value } });
   };
 
   const form = (
@@ -160,7 +160,6 @@ export function OrderFormCard({
               name="awbPrefix"
               type="text"
               placeholder="876"
-              required
               value={formData.awbPrefix || ""}
               onChange={handleAwbPrefixChange}
               inputMode="numeric"
@@ -177,9 +176,8 @@ export function OrderFormCard({
               required
               value={formData.awbNumber || ""}
               onChange={handleAwbNumberChange}
-              inputMode="numeric"
               autoComplete="off"
-              maxLength={10}
+              maxLength={32}
               style={{ flex: "1 1 160px", minWidth: "140px" }}
             />
             <button
@@ -189,7 +187,6 @@ export function OrderFormCard({
               disabled={
                 awbStatusCheck?.loading ||
                 !isAwbCheckAvailable ||
-                !String(formData.awbPrefix || "").trim() ||
                 !String(formData.awbNumber || "").trim()
               }
             >

@@ -1078,7 +1078,7 @@ const App = () => {
       setManualCargoCheckModal({
         isOpen: true,
         manualUrl,
-        awbNumber: String(awbNumber || "").replace(/\D/g, "").slice(0, 10),
+        awbNumber: String(awbNumber || "").trim().replace(/\s+/g, "").slice(0, 32),
       });
       setCargoScreenshotModal({
         isOpen: false,
@@ -1189,7 +1189,7 @@ const App = () => {
       setManualCargoCheckModal({
         isOpen: true,
         manualUrl: CARGO_TERMINAL_URLS[terminalKey] || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/",
-        awbNumber: String(awbParts.awbNumber || "").replace(/\D/g, "").slice(0, 10),
+        awbNumber: String(awbParts.awbNumber || "").trim().replace(/\s+/g, "").slice(0, 32),
       });
       return;
     }
@@ -1262,7 +1262,7 @@ const App = () => {
   };
 
   const confirmManualCargoCheck = async () => {
-    const awbNumber = String(manualCargoCheckModal.awbNumber || "").replace(/\D/g, "").slice(0, 10);
+    const awbNumber = String(manualCargoCheckModal.awbNumber || "").trim().replace(/\s+/g, "").slice(0, 32);
     if (awbNumber) {
       try {
         await navigator.clipboard.writeText(awbNumber);
@@ -1282,7 +1282,7 @@ const App = () => {
       shipmentAirport: formData.shipmentAirport,
       shipmentTerminal: formData.shipmentTerminal,
     });
-    const awbNumberOnly = String(formData.awbNumber || "").replace(/\D/g, "").slice(0, 10);
+    const awbNumberOnly = String(formData.awbNumber || "").trim().replace(/\s+/g, "").slice(0, 32);
     if (awbNumberOnly) {
       try {
         await navigator.clipboard.writeText(awbNumberOnly);

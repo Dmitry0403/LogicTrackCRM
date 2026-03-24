@@ -22,6 +22,7 @@ describe("cargo helpers", () => {
 
   it("composes AWB with optional HAWB", () => {
     expect(composeAwb("771", "11061551")).toBe("771-11061551");
+    expect(composeAwb("", "AB12345")).toBe("AB12345");
     expect(composeAwb("771", "11061551", "HAWB/1")).toBe("771-11061551/HAWB1");
   });
 
@@ -31,6 +32,13 @@ describe("cargo helpers", () => {
       awbNumber: "11061551",
       hasHawb: true,
       hawb: "REF-1",
+    });
+
+    expect(splitAwb("AB12345")).toEqual({
+      awbPrefix: "",
+      awbNumber: "AB12345",
+      hasHawb: false,
+      hawb: "",
     });
   });
 

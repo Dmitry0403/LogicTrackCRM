@@ -22,7 +22,7 @@ export const resolveCargoTerminalKey = ({ shipmentAirport, shipmentTerminal, ru 
 
 export const composeAwb = (prefix, number, hawb = "") => {
   const p = String(prefix || "").replace(/\D/g, "").slice(0, 3);
-  const n = String(number || "").replace(/\D/g, "").slice(0, 10);
+  const n = String(number || "").trim().replace(/\s+/g, "").slice(0, 32);
   const hawbPart = String(hawb || "").trim().replace(/\//g, "");
   if (p && n) {
     return hawbPart ? `${p}-${n}/${hawbPart}` : `${p}-${n}`;
@@ -37,13 +37,18 @@ export const splitAwb = (awb) => {
   const slashIndex = clean.indexOf("/");
   const baseAwb = slashIndex >= 0 ? clean.slice(0, slashIndex).trim() : clean;
   const hawb = slashIndex >= 0 ? clean.slice(slashIndex + 1).trim() : "";
-  const match = baseAwb.match(/^(\d{3})-(\d{1,10})$/);
+  const match = baseAwb.match(/^(\d{3})-(.+)$/);
   if (match) {
-    return { awbPrefix: match[1], awbNumber: match[2], hasHawb: Boolean(hawb), hawb };
+    return {
+      awbPrefix: match[1],
+      awbNumber: String(match[2] || "").trim().replace(/\s+/g, "").slice(0, 32),
+      hasHawb: Boolean(hawb),
+      hawb,
+    };
   }
   return {
     awbPrefix: "",
-    awbNumber: baseAwb.replace(/\D/g, "").slice(0, 10),
+    awbNumber: baseAwb.replace(/\s+/g, "").slice(0, 32),
     hasHawb: Boolean(hawb),
     hawb,
   };

@@ -117,7 +117,8 @@ const normalizeText = (value) =>
     .trim();
 
 const normalizeAwb = (value) => String(value || '').replace(/\s+/g, '').trim();
-const normalizeAwbPart = (value, maxLen) => String(value || '').replace(/\D/g, '').slice(0, maxLen);
+const normalizeAwbPrefixPart = (value, maxLen) => String(value || '').replace(/\D/g, '').slice(0, maxLen);
+const normalizeAwbNumberPart = (value, maxLen) => String(value || '').replace(/\s+/g, '').trim().slice(0, maxLen);
 // eslint-disable-next-line no-control-regex
 const stripAnsi = (value) => String(value || '').replace(/[\u001B\u009B][[\]()#;?]*(?:(?:(?:[a-zA-Z\d]*(?:;[a-zA-Z\d]*)*)?\u0007)|(?:(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-ntqry=><~]))/g, '');
 const normalizeCargoErrorDetails = (error) => {
@@ -1066,8 +1067,6 @@ const fillSplitAwbInputsRobust = async ({ firstInput, secondInput, prefix, numbe
 };
 const searchShercargoStatus = async ({ page, awb, awbParts }) => {
   const resolvedAwbParts = awbParts || splitAwbParts(awb);
-  const numberValue = resolvedAwbParts ? resolvedAwbParts.number : awb.replace(/\D/g, '').slice(3);
-  const prefixValue = resolvedAwbParts ? resolvedAwbParts.prefix : awb.replace(/\D/g, '').slice(0, 3);
 
   const tryContext = async (ctx) => {
     const inputs = ctx.locator('input[type="text"], input[type="search"], input[type="tel"], input:not([type])');
@@ -1088,7 +1087,7 @@ const searchShercargoStatus = async ({ page, awb, awbParts }) => {
       }
     }
 
-    if (visible.length < 2) return false;
+    if (visible.length < 2 || !resolvedAwbParts) return false;
 
     visible.sort((a, b) => (a.box.y - b.box.y) || (a.box.x - b.box.x));
     const pair = (() => {
@@ -1114,8 +1113,8 @@ const searchShercargoStatus = async ({ page, awb, awbParts }) => {
     const typed = await fillSplitAwbInputsRobust({
       firstInput: first.input,
       secondInput: second.input,
-      prefix: prefixValue,
-      number: numberValue,
+      prefix: resolvedAwbParts.prefix,
+      number: resolvedAwbParts.number,
       typeDelay: 40,
     });
     if (!typed) return false;
@@ -1808,17 +1807,11 @@ const splitAwbParts = (awbRaw) => {
   const raw = String(awbRaw || '').trim();
   if (!raw) return null;
 
-  const direct = raw.match(/^(\d{3})\D*(\d{6,10})$/);
+  const direct = raw.match(/^(\d{3})\D+(.+)$/);
   if (direct) {
-    return { prefix: direct[1], number: direct[2] };
+    return { prefix: direct[1], number: String(direct[2] || '').replace(/\s+/g, '').trim() };
   }
-
-  const digits = raw.replace(/\D/g, '');
-  if (digits.length < 9) return null;
-  return {
-    prefix: digits.slice(0, 3),
-    number: digits.slice(3),
-  };
+  return null;
 };
 
 const resolveMoscowCargoTrackingWidget = async (page) => {
@@ -2150,13 +2143,17 @@ app.post('/oauth/token', async (req, res) => {
 
 app.post('/cargo/status', async (req, res) => {
   try {
-    const awbPrefix = normalizeAwbPart(req.body?.awbPrefix, 3);
-    const awbNumber = normalizeAwbPart(req.body?.awbNumber, 10);
-    const awbFromParts = awbPrefix && awbNumber ? `${awbPrefix}${awbNumber}` : '';
+    const awbPrefix = normalizeAwbPrefixPart(req.body?.awbPrefix, 3);
+    const awbNumber = normalizeAwbNumberPart(req.body?.awbNumber, 32);
+    const hasExplicitAwbPrefix = Boolean(awbPrefix);
+    const hasExplicitAwbNumber = Boolean(awbNumber);
+    const awbFromParts = hasExplicitAwbPrefix && hasExplicitAwbNumber
+      ? `${awbPrefix}-${awbNumber}`
+      : (hasExplicitAwbNumber ? awbNumber : '');
     const awb = normalizeAwb(req.body?.awb || awbFromParts);
-    const awbParts = awbPrefix && awbNumber
+    const awbParts = hasExplicitAwbPrefix && hasExplicitAwbNumber
       ? { prefix: awbPrefix, number: awbNumber }
-      : splitAwbParts(awb);
+      : (hasExplicitAwbNumber ? null : splitAwbParts(awb));
     const terminal = String(req.body?.terminal || '').trim();
     const terminalKey = String(req.body?.terminalKey || '').trim();
     const forceRefresh = req.body?.force === true;
