@@ -1000,6 +1000,7 @@ const clickFirstVisibleBySelectors = async (page, selectors) => {
 };
 
 const readInputDigits = async (locator) => String((await locator.inputValue()) || '').replace(/\D/g, '');
+const readInputCompactText = async (locator) => String((await locator.inputValue()) || '').replace(/\s+/g, '').trim();
 
 const fillInputDigitsRobust = async (locator, value, options = {}) => {
   const target = String(value || '').replace(/\D/g, '');
@@ -1053,17 +1054,75 @@ const fillInputDigitsRobust = async (locator, value, options = {}) => {
   return false;
 };
 
+const fillInputTextRobust = async (locator, value, options = {}) => {
+  const target = String(value || '').replace(/\s+/g, '').trim();
+  const {
+    maxAttempts = 3,
+    typeDelay = 35,
+  } = options;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      await locator.click({ clickCount: 3, timeout: 3000 }).catch(() => {});
+      await locator.press('ControlOrMeta+a').catch(() => {});
+      await locator.press('Backspace').catch(() => {});
+      await locator.fill('').catch(() => {});
+      if (target) {
+        await locator.type(target, { delay: typeDelay }).catch(async () => {
+          await locator.fill(target);
+        });
+      }
+      await locator.dispatchEvent('input').catch(() => {});
+      await locator.dispatchEvent('change').catch(() => {});
+      await locator.blur().catch(() => {});
+    } catch (error) {
+      // Try JS fallback below.
+    }
+
+    let actual = '';
+    try {
+      actual = await readInputCompactText(locator);
+    } catch (error) {
+      actual = '';
+    }
+    if (actual === target) return true;
+
+    try {
+      await locator.evaluate((element, nextValue) => {
+        element.focus();
+        element.value = nextValue;
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+        element.blur();
+      }, target);
+    } catch (error) {
+      // Ignore and retry if attempts remain.
+    }
+
+    actual = await readInputCompactText(locator).catch(() => '');
+    if (actual === target) return true;
+  }
+
+  return false;
+};
+
 const fillSplitAwbInputsRobust = async ({ firstInput, secondInput, prefix, number, typeDelay = 35 }) => {
-  const prefixOk = await fillInputDigitsRobust(firstInput, prefix, { typeDelay });
+  const normalizedPrefix = String(prefix || '').replace(/\D/g, '');
+  const normalizedNumber = String(number || '').replace(/\s+/g, '').trim();
+
+  const prefixOk = normalizedPrefix
+    ? await fillInputDigitsRobust(firstInput, normalizedPrefix, { typeDelay })
+    : await fillInputTextRobust(firstInput, '', { typeDelay });
   if (!prefixOk) return false;
 
-  const numberOk = await fillInputDigitsRobust(secondInput, number, { typeDelay });
+  const numberOk = await fillInputTextRobust(secondInput, normalizedNumber, { typeDelay });
   if (!numberOk) return false;
 
-  const firstVal = await readInputDigits(firstInput).catch(() => '');
-  const secondVal = await readInputDigits(secondInput).catch(() => '');
-  return firstVal === String(prefix || '').replace(/\D/g, '')
-    && secondVal === String(number || '').replace(/\D/g, '');
+  const firstVal = normalizedPrefix
+    ? await readInputDigits(firstInput).catch(() => '')
+    : await readInputCompactText(firstInput).catch(() => '');
+  const secondVal = await readInputCompactText(secondInput).catch(() => '');
+  return firstVal === normalizedPrefix && secondVal === normalizedNumber;
 };
 const searchShercargoStatus = async ({ page, awb, awbParts }) => {
   const resolvedAwbParts = awbParts || splitAwbParts(awb);
@@ -2151,9 +2210,9 @@ app.post('/cargo/status', async (req, res) => {
       ? `${awbPrefix}-${awbNumber}`
       : (hasExplicitAwbNumber ? awbNumber : '');
     const awb = normalizeAwb(req.body?.awb || awbFromParts);
-    const awbParts = hasExplicitAwbPrefix && hasExplicitAwbNumber
+    const awbParts = hasExplicitAwbNumber
       ? { prefix: awbPrefix, number: awbNumber }
-      : (hasExplicitAwbNumber ? null : splitAwbParts(awb));
+      : splitAwbParts(awb);
     const terminal = String(req.body?.terminal || '').trim();
     const terminalKey = String(req.body?.terminalKey || '').trim();
     const forceRefresh = req.body?.force === true;
