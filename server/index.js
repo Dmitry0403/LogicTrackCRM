@@ -1583,6 +1583,23 @@ const runSpecificTerminalSearch = async ({ page, awb, awbParts, terminalConfig }
   return false;
 };
 
+const openCargoPageRobust = async (page, url) => {
+  try {
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: CARGO_NAV_TIMEOUT_MS });
+    return;
+  } catch (error) {
+    if (!/timeout/i.test(String(error?.message || ''))) {
+      throw error;
+    }
+  }
+
+  await page.goto(url, {
+    waitUntil: 'commit',
+    timeout: Math.min(CARGO_NAV_TIMEOUT_MS, 20000),
+  });
+  await page.waitForLoadState('domcontentloaded', { timeout: 12000 }).catch(() => {});
+};
+
 const scrapeGenericCargoStatus = async ({ awb, awbParts, terminalConfig }) => {
   const playwright = getPlaywright();
   if (!playwright || !playwright.chromium) {
@@ -1598,7 +1615,7 @@ const scrapeGenericCargoStatus = async ({ awb, awbParts, terminalConfig }) => {
   const checkedAt = Date.now();
 
   try {
-    await page.goto(terminalConfig.url, { waitUntil: 'domcontentloaded', timeout: CARGO_NAV_TIMEOUT_MS });
+    await openCargoPageRobust(page, terminalConfig.url);
     await page.waitForTimeout(1200);
 
     let submitted = await runSpecificTerminalSearch({ page, awb, awbParts, terminalConfig });
@@ -2094,7 +2111,7 @@ const scrapeMoscowCargoStatus = async ({ awb, awbParts, terminalLabel }) => {
   const checkedAt = Date.now();
 
   try {
-    await page.goto(MOSCOW_CARGO_URL, { waitUntil: 'domcontentloaded', timeout: CARGO_NAV_TIMEOUT_MS });
+    await openCargoPageRobust(page, MOSCOW_CARGO_URL);
 
     const resolvedAwbParts = awbParts || splitAwbParts(awb);
     if (!resolvedAwbParts) {
