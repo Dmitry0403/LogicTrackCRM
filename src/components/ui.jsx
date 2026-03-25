@@ -33,11 +33,9 @@ export function OrderFormCard({
   customsSuggestions,
   powerOfAttorneyStatus,
   recipientSuggestions,
-  awbStatusCheck,
   isAwbCheckAvailable,
   isPowerOfAttorneySyncLoading,
   onCheckAwbStatus,
-  onOpenCargoTerminalFromError,
   onRefreshPowerOfAttorneyRegistry,
   onFieldChange,
   onSubmit,
@@ -46,7 +44,6 @@ export function OrderFormCard({
   formId,
   showFooterActions = true,
   embedded = false,
-  isStrictNumericAwb = false,
 }) {
   const handleAwbPrefixChange = (event) => {
     const digits = String(event.target.value || "").replace(/\D/g, "").slice(0, 3);
@@ -57,9 +54,7 @@ export function OrderFormCard({
   };
 
   const handleAwbNumberChange = (event) => {
-    const value = isStrictNumericAwb
-      ? String(event.target.value || "").replace(/\D/g, "").slice(0, 32)
-      : String(event.target.value || "").replace(/\s+/g, "").slice(0, 32);
+    const value = String(event.target.value || "").replace(/\s+/g, "").slice(0, 32);
     onFieldChange("awbNumber")({ target: { value } });
   };
 
@@ -163,7 +158,6 @@ export function OrderFormCard({
               name="awbPrefix"
               type="text"
               placeholder="876"
-              required={isStrictNumericAwb}
               value={formData.awbPrefix || ""}
               onChange={handleAwbPrefixChange}
               inputMode="numeric"
@@ -176,11 +170,11 @@ export function OrderFormCard({
               id="awb-number"
               name="awbNumber"
               type="text"
-              placeholder={isStrictNumericAwb ? "14889696" : "14889696 / CRR26030046"}
+              placeholder="14889696 / CRR26030046"
               required
               value={formData.awbNumber || ""}
               onChange={handleAwbNumberChange}
-              inputMode={isStrictNumericAwb ? "numeric" : "text"}
+              inputMode="text"
               autoComplete="off"
               maxLength={32}
               style={{ flex: "1 1 160px", minWidth: "140px" }}
@@ -190,13 +184,11 @@ export function OrderFormCard({
               onClick={onCheckAwbStatus}
               data-testid="awb-check-action"
               disabled={
-                awbStatusCheck?.loading ||
                 !isAwbCheckAvailable ||
-                (isStrictNumericAwb && !String(formData.awbPrefix || "").trim()) ||
                 !String(formData.awbNumber || "").trim()
               }
             >
-              {awbStatusCheck?.loading ? RU.orderForm.checking : RU.orderForm.check}
+              {RU.orderForm.check}
             </button>
           </div>
           <div
@@ -231,17 +223,6 @@ export function OrderFormCard({
           {!isAwbCheckAvailable && (
             <small className="hint">{RU.orderForm.airportTerminalHint}</small>
           )}
-          {isStrictNumericAwb && (
-            <small className="hint">{"\u0414\u043b\u044f \u041c\u043e\u0441\u043a\u0432\u0430-\u043a\u0430\u0440\u0433\u043e \u0443\u043a\u0430\u0436\u0438\u0442\u0435 \u0447\u0438\u0441\u043b\u043e\u0432\u043e\u0439 \u043f\u0440\u0435\u0444\u0438\u043a\u0441 \u0438 \u0447\u0438\u0441\u043b\u043e\u0432\u043e\u0439 \u043d\u043e\u043c\u0435\u0440."}</small>
-          )}
-          <div className="order-form__awb-status-slot" aria-live="polite">
-            {awbStatusCheck?.error && (
-              <div className="order-form__awb-status">
-                <small className="order-form__awb-status-text">{awbStatusCheck.error}</small>
-                <button type="button" onClick={onOpenCargoTerminalFromError}>{RU.orderForm.goToSite}</button>
-              </div>
-            )}
-          </div>
         </div>
       </div>
       <div className="order-form__column">

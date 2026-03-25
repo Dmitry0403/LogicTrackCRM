@@ -19,14 +19,9 @@ import {
 } from "./lib/supabase";
 import {
   composeAwb,
-  createManualCargoCheckAirportSet,
   getCustomsName as cargoGetCustomsName,
   getCustomsSuggestions as cargoGetCustomsSuggestions,
-  isManualCargoCheckAirport as cargoIsManualCargoCheckAirport,
-  isStrictNumericAwbTerminal as cargoIsStrictNumericAwbTerminal,
-  isValidAwbForTerminal as cargoIsValidAwbForTerminal,
   resolveCargoTerminalKey as cargoResolveCargoTerminalKey,
-  sanitizeAwbPartsForTerminal as cargoSanitizeAwbPartsForTerminal,
   splitAwb,
 } from "./lib/cargo";
 import {
@@ -99,7 +94,6 @@ const API_BASE_URL = normalizeEnvValue(
   import.meta.env.VITE_API_BASE_URL || (import.meta.env.DEV ? "http://localhost:3001" : ""),
 ).replace(/\/+$/, "");
 const CARGO_API_BASE_URL = API_BASE_URL;
-const CARGO_STATUS_URL = `${CARGO_API_BASE_URL}/cargo/status`;
 const POWER_OF_ATTORNEY_REGISTRY_URL = `${API_BASE_URL}/poa/registry`;
 const POWER_OF_ATTORNEY_FALLBACK_URL = "/power-of-attorney-registry.json";
 const ORDER_STAGES_STORAGE_KEY = "logictrack_order_stages";
@@ -108,15 +102,6 @@ const PRINT_SIGNER_STORAGE_KEY = "logictrack_print_signer";
 const DRIVE_OPS_QUEUE_STORAGE_KEY = "gdrive_ops_queue";
 const DRIVE_MODAL_RESTORE_STORAGE_KEY = "gdrive_restore_modal";
 const RENDER_KEEPALIVE_INTERVAL_MS = 14 * 60 * 1000;
-
-const stripAnsiCodes = (value) => {
-  const escape = String.fromCharCode(27);
-  return String(value || "").replace(
-    // Remove terminal ANSI escape sequences from backend error details.
-    new RegExp(`${escape}\\[[0-9;?]*[ -/]*[@-~]`, "g"),
-    "",
-  );
-};
 
 const resolveCargoApiUrl = (pathOrUrl) => {
   const value = String(pathOrUrl || "").trim();
@@ -302,9 +287,6 @@ const formatTripDateShort = (rawDate) => {
 const getCustomsNameLabel = (code) => cargoGetCustomsName(code, CUSTOMS_CODE_MAP, RU.domain.invalidCustomsCode);
 const getCustomsSuggestionItems = (typedValue) => cargoGetCustomsSuggestions(typedValue, CUSTOMS_CODE_MAP);
 const resolveCargoTerminal = (args) => cargoResolveCargoTerminalKey({ ...args, ru: RU });
-const isStrictNumericAwbTerminal = (terminalKey) => cargoIsStrictNumericAwbTerminal(terminalKey);
-const sanitizeAwbPartsForTerminal = (args) => cargoSanitizeAwbPartsForTerminal(args);
-const isValidAwbForTerminal = (args) => cargoIsValidAwbForTerminal(args);
 const getPowerOfAttorneyState = (args) => poaGetPowerOfAttorneyStatus({
   ...args,
   ru: RU,
@@ -318,8 +300,6 @@ const getRecipientSuggestionItems = (args) => poaGetRecipientSuggestions({
   terminalAliases: TERMINAL_ALIASES,
 });
 const buildTripFolderName = (args) => tripsBuildTripDriveFolderName({ ...args, tripFallbackName: TRIP_FALLBACK_NAME });
-const isManualCargoCheckAirport = (airport, manualAirports) =>
-  cargoIsManualCargoCheckAirport(airport, manualAirports);
 const normalizeStages = (stages, defaultStages) => {
   const defaultStagesById = new Map(defaultStages.map((stage) => [stage.id, stage]));
 
@@ -357,7 +337,6 @@ const App = () => {
   const isE2EWorkspace = e2eMode === "workspace";
   const isSupabaseEnabled = isSupabaseConfigured && e2eMode !== "workspace";
   const SHEREMETYEVO_VALUES = new Set([RU.domain.airports.sheremetyevo]);
-  const MANUAL_CARGO_CHECK_AIRPORTS = React.useMemo(() => createManualCargoCheckAirportSet(RU), []);
   const DEFAULT_SHEREMETYEVO_TERMINAL = RU.domain.terminals.moscowCargo;
   const ORDER_FORM_ID = "order-form-panel";
   const TRIP_FORM_ID = "trip-form-panel";
@@ -395,17 +374,7 @@ const App = () => {
     customsCode: "",
     notes: "",
   });
-  const [awbStatusCheck, setAwbStatusCheck] = React.useState({
-    loading: false,
-    error: "",
-    data: null,
-  });
-  const [cargoScreenshotModal, setCargoScreenshotModal] = React.useState({
-    isOpen: false,
-    screenshotId: "",
-    screenshotUrl: "",
-  });
-  const [manualCargoCheckModal, setManualCargoCheckModal] = React.useState({
+  const [cargoCheckNoticeModal, setCargoCheckNoticeModal] = React.useState({
     isOpen: false,
     manualUrl: "",
     awbNumber: "",
@@ -413,7 +382,7 @@ const App = () => {
   const [isTripPrintLoading, setIsTripPrintLoading] = React.useState(false);
   const [isDeleteCardLoading, setIsDeleteCardLoading] = React.useState(false);
   const [isOrderCloudSaving, setIsOrderCloudSaving] = React.useState(false);
-  const awbCheckAbortRef = React.useRef(null);
+  const cargoCheckNoticeTimeoutRef = React.useRef(null);
   const [editingOrderId, setEditingOrderId] = React.useState(null);
   const [editingTripId, setEditingTripId] = React.useState(null);
   const [deleteCardModal, setDeleteCardModal] = React.useState({
@@ -1054,267 +1023,87 @@ const App = () => {
   const cargoTerminalKey = resolveCargoTerminal(formData);
   const isCargoCheckAvailable = Boolean(cargoTerminalKey);
 
-  const runAwbStatusCheck = async ({ awb, awbPrefix, awbNumber, shipmentAirport, shipmentTerminal }) => {
-    if (!awb) {
-      setAwbStatusCheck({
-        loading: false,
-        error: RU.appMessages.enterAwb,
-        data: null,
-      });
-      return;
-    }
-
-    const terminalKey = resolveCargoTerminal({ shipmentAirport, shipmentTerminal });
-    if (!terminalKey) {
-      setAwbStatusCheck({
-        loading: false,
-        error: RU.appMessages.selectAirportTerminal,
-        data: null,
-      });
-      return;
-    }
-
-    if (!isValidAwbForTerminal({ terminalKey, prefix: awbPrefix, number: awbNumber })) {
-      setAwbStatusCheck({
-        loading: false,
-        error: isStrictNumericAwbTerminal(terminalKey)
-          ? "\u0414\u043b\u044f \u041c\u043e\u0441\u043a\u0432\u0430-\u043a\u0430\u0440\u0433\u043e \u0443\u043a\u0430\u0436\u0438\u0442\u0435 \u0447\u0438\u0441\u043b\u043e\u0432\u043e\u0439 \u043f\u0440\u0435\u0444\u0438\u043a\u0441 \u0438 \u0447\u0438\u0441\u043b\u043e\u0432\u043e\u0439 \u043e\u0441\u043d\u043e\u0432\u043d\u043e\u0439 \u043d\u043e\u043c\u0435\u0440."
-          : RU.appMessages.enterAwb,
-        data: null,
-      });
-      return;
-    }
-
-    if (isManualCargoCheckAirport(shipmentAirport, MANUAL_CARGO_CHECK_AIRPORTS)) {
-      const manualUrl = CARGO_TERMINAL_URLS[terminalKey] || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/";
-      setAwbStatusCheck({
-        loading: false,
-        error: "",
-        data: null,
-      });
-      setManualCargoCheckModal({
-        isOpen: true,
-        manualUrl,
-        awbNumber: String(awbNumber || "").trim().replace(/\s+/g, "").slice(0, 32),
-      });
-      setCargoScreenshotModal({
-        isOpen: false,
-        screenshotId: "",
-        screenshotUrl: "",
-      });
-      return;
-    }
-
-    setAwbStatusCheck({
-      loading: true,
-      error: "",
-      data: null,
-    });
-    const abortController = new AbortController();
-    awbCheckAbortRef.current = abortController;
-
-    try {
-      const response = await fetch(CARGO_STATUS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        signal: abortController.signal,
-        body: JSON.stringify({
-          awb,
-          awbPrefix,
-          awbNumber,
-          terminal: shipmentTerminal || shipmentAirport,
-          terminalKey,
-        }),
-      });
-      const payload = await response.json();
-      if (!response.ok) {
-        const serverErrorCode = String(payload?.error || "").trim();
-        const serverDetails = stripAnsiCodes(payload?.details || "");
-        if (serverErrorCode === "cargo_status_failed") {
-          if (serverDetails) {
-            console.error("[cargo/status] cargo_status_failed:", serverDetails);
-          }
-          throw new Error(RU.appMessages.cargoCheckFailed);
-        }
-        throw new Error(serverDetails || serverErrorCode || RU.appMessages.cargoCheckError);
-      }
-
-      setAwbStatusCheck({
-        loading: false,
-        error: "",
-        data: payload,
-      });
-      const screenshotId = String(payload?.screenshotId || "");
-      const screenshotUrl = resolveCargoApiUrl(payload?.screenshotUrl || "");
-      if (screenshotId && screenshotUrl) {
-        setCargoScreenshotModal({
-          isOpen: true,
-          screenshotId,
-          screenshotUrl,
-        });
-      } else {
-        setCargoScreenshotModal({
-          isOpen: false,
-          screenshotId: "",
-          screenshotUrl: "",
-        });
-      }
-    } catch (error) {
-      if (error?.name === "AbortError") {
-        setAwbStatusCheck({
-          loading: false,
-          error: "",
-          data: null,
-        });
-        return;
-      }
-      setAwbStatusCheck({
-        loading: false,
-        error: error.message || RU.appMessages.cargoCheckFailed,
-        data: null,
-      });
-      setCargoScreenshotModal({
-        isOpen: false,
-        screenshotId: "",
-        screenshotUrl: "",
-      });
-    } finally {
-      if (awbCheckAbortRef.current === abortController) {
-        awbCheckAbortRef.current = null;
-      }
-    }
-  };
-
-  const checkAwbStatus = async () => {
-    const terminalKey = resolveCargoTerminal(formData);
-    const sanitizedAwb = sanitizeAwbPartsForTerminal({
-      terminalKey,
-      prefix: formData.awbPrefix,
-      number: formData.awbNumber,
-    });
-    const awb = composeAwb(sanitizedAwb.awbPrefix, sanitizedAwb.awbNumber) || formData.awb.trim();
-    await runAwbStatusCheck({
-      awb,
-      awbPrefix: sanitizedAwb.awbPrefix,
-      awbNumber: sanitizedAwb.awbNumber,
-      shipmentAirport: formData.shipmentAirport,
-      shipmentTerminal: formData.shipmentTerminal,
-    });
-  };
-
-  const checkOrderAwbStatus = async (order) => {
-    if (isManualCargoCheckAirport(order?.shipmentAirport, MANUAL_CARGO_CHECK_AIRPORTS)) {
-      const terminalKey = resolveCargoTerminal({
-        shipmentAirport: String(order?.shipmentAirport || ""),
-        shipmentTerminal: String(order?.shipmentTerminal || ""),
-      });
-      const awbParts = splitAwb(String(order?.awb || "").trim());
-      setManualCargoCheckModal({
-        isOpen: true,
-        manualUrl: CARGO_TERMINAL_URLS[terminalKey] || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/",
-        awbNumber: String(awbParts.awbNumber || "").trim().replace(/\s+/g, "").slice(0, 32),
-      });
-      return;
-    }
-
-    const awbText = String(order?.awb || "").trim();
-    const awbParts = splitAwb(awbText);
-    const primaryAwb = composeAwb(awbParts.awbPrefix, awbParts.awbNumber);
-    await runAwbStatusCheck({
-      awb: primaryAwb || awbText,
-      awbPrefix: awbParts.awbPrefix,
-      awbNumber: awbParts.awbNumber,
-      shipmentAirport: String(order?.shipmentAirport || ""),
-      shipmentTerminal: String(order?.shipmentTerminal || ""),
-    });
-  };
-
-  const clearCargoScreenshotsCache = async () => {
-    try {
-      await fetch(`${CARGO_API_BASE_URL}/cargo/screenshots`, {
-        method: "DELETE",
-      });
-    } catch (error) {
-      console.warn("Не удалось удалить скриншоты:", error);
-    }
-  };
-
-  const scheduleCargoScreenshotsCleanup = () => {
-    void clearCargoScreenshotsCache();
-    [1500, 5000].forEach((delayMs) => {
-      setTimeout(() => {
-        void clearCargoScreenshotsCache();
-      }, delayMs);
-    });
-  };
-
-  const cancelAwbStatusCheck = async () => {
-    if (awbCheckAbortRef.current) {
-      awbCheckAbortRef.current.abort();
-      awbCheckAbortRef.current = null;
-    }
-    scheduleCargoScreenshotsCleanup();
-    setCargoScreenshotModal({
-      isOpen: false,
-      screenshotId: "",
-      screenshotUrl: "",
-    });
-    setAwbStatusCheck({
-      loading: false,
-      error: "",
-      data: null,
-    });
-  };
-
-  const closeCargoScreenshotModal = async () => {
-    scheduleCargoScreenshotsCleanup();
-
-    setCargoScreenshotModal({
-      isOpen: false,
-      screenshotId: "",
-      screenshotUrl: "",
-    });
-  };
-
-  const closeManualCargoCheckModal = () => {
-    setManualCargoCheckModal({
+  const closeCargoCheckNoticeModal = React.useCallback(() => {
+    setCargoCheckNoticeModal({
       isOpen: false,
       manualUrl: "",
       awbNumber: "",
     });
-  };
+  }, []);
 
-  const confirmManualCargoCheck = async () => {
-    const awbNumber = String(manualCargoCheckModal.awbNumber || "").trim().replace(/\s+/g, "").slice(0, 32);
-    if (awbNumber) {
-      try {
-        await navigator.clipboard.writeText(awbNumber);
-      } catch (_error) {
-        // Clipboard can be blocked by browser policy.
-      }
+  const openCargoTerminalCheck = React.useCallback(async ({
+    awbPrefix = "",
+    awbNumber = "",
+    shipmentAirport = "",
+    shipmentTerminal = "",
+    awb = "",
+  }) => {
+    const terminalKey = resolveCargoTerminal({ shipmentAirport, shipmentTerminal });
+    if (!terminalKey) {
+      alert(RU.appMessages.selectAirportTerminal);
+      return;
     }
 
-    const baseUrl =
-      manualCargoCheckModal.manualUrl || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/";
-    closeManualCargoCheckModal();
-    window.open(baseUrl, "_blank", "noopener,noreferrer");
-  };
+    const awbText = String(awb || composeAwb(awbPrefix, awbNumber) || "").trim();
+    const awbParts = splitAwb(awbText);
+    const numberToCopy = String(awbNumber || awbParts.awbNumber || "").trim().replace(/\s+/g, "").slice(0, 32);
+    if (!numberToCopy) {
+      alert(RU.appMessages.enterAwb);
+      return;
+    }
 
-  const openCargoTerminalFromError = async () => {
-    const terminalKey = resolveCargoTerminal({
+    try {
+      await navigator.clipboard.writeText(numberToCopy);
+    } catch (_error) {
+      // Clipboard can be blocked by browser policy.
+    }
+
+    if (cargoCheckNoticeTimeoutRef.current) {
+      clearTimeout(cargoCheckNoticeTimeoutRef.current);
+      cargoCheckNoticeTimeoutRef.current = null;
+    }
+
+    const terminalUrl = CARGO_TERMINAL_URLS[terminalKey] || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/";
+    setCargoCheckNoticeModal({
+      isOpen: true,
+      manualUrl: terminalUrl,
+      awbNumber: numberToCopy,
+    });
+
+    cargoCheckNoticeTimeoutRef.current = window.setTimeout(() => {
+      window.open(terminalUrl, "_blank", "noopener,noreferrer");
+      closeCargoCheckNoticeModal();
+      cargoCheckNoticeTimeoutRef.current = null;
+    }, 1000);
+  }, [closeCargoCheckNoticeModal]);
+
+  React.useEffect(() => () => {
+    if (cargoCheckNoticeTimeoutRef.current) {
+      clearTimeout(cargoCheckNoticeTimeoutRef.current);
+      cargoCheckNoticeTimeoutRef.current = null;
+    }
+  }, []);
+
+  const checkAwbStatus = async () => {
+    await openCargoTerminalCheck({
+      awbPrefix: formData.awbPrefix,
+      awbNumber: formData.awbNumber,
       shipmentAirport: formData.shipmentAirport,
       shipmentTerminal: formData.shipmentTerminal,
+      awb: formData.awb,
     });
-    const awbNumberOnly = String(formData.awbNumber || "").trim().replace(/\s+/g, "").slice(0, 32);
-    if (awbNumberOnly) {
-      try {
-        await navigator.clipboard.writeText(awbNumberOnly);
-      } catch (_error) {
-        // Clipboard can be blocked by browser policy.
-      }
-    }
-    const terminalUrl = CARGO_TERMINAL_URLS[terminalKey] || "https://www.vnukovo.ru/ru/partneram/cargo/proverit-status-gruza/";
-    window.open(terminalUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const checkOrderAwbStatus = async (order) => {
+    const awbText = String(order?.awb || "").trim();
+    const awbParts = splitAwb(awbText);
+    await openCargoTerminalCheck({
+      awbPrefix: awbParts.awbPrefix,
+      awbNumber: awbParts.awbNumber,
+      shipmentAirport: String(order?.shipmentAirport || ""),
+      shipmentTerminal: String(order?.shipmentTerminal || ""),
+      awb: awbText,
+    });
   };
 
   const handleFieldChange = (field) => (event) => {
@@ -1327,18 +1116,11 @@ const App = () => {
       if (field === "shipmentAirport") {
         next.shipmentTerminal = SHEREMETYEVO_VALUES.has(value) ? DEFAULT_SHEREMETYEVO_TERMINAL : "";
       }
-      if (field === "shipmentAirport" || field === "shipmentTerminal" || field === "awbPrefix" || field === "awbNumber") {
-        const terminalKey = resolveCargoTerminal({
-          shipmentAirport: field === "shipmentAirport" ? value : next.shipmentAirport,
-          shipmentTerminal: field === "shipmentTerminal" ? value : next.shipmentTerminal,
-        });
-        const sanitizedAwb = sanitizeAwbPartsForTerminal({
-          terminalKey,
-          prefix: field === "awbPrefix" ? value : next.awbPrefix,
-          number: field === "awbNumber" ? value : next.awbNumber,
-        });
-        next.awbPrefix = sanitizedAwb.awbPrefix;
-        next.awbNumber = sanitizedAwb.awbNumber;
+      if (field === "awbPrefix") {
+        next.awbPrefix = String(value || "").replace(/\D/g, "").slice(0, 3);
+      }
+      if (field === "awbNumber") {
+        next.awbNumber = String(value || "").replace(/\s+/g, "").slice(0, 32);
       }
       if (field === "hasHawb" && !value) {
         next.hawb = "";
@@ -1360,21 +1142,6 @@ const App = () => {
       return next;
     });
 
-    if (
-      field === "awb" ||
-      field === "awbPrefix" ||
-      field === "awbNumber" ||
-      field === "hasHawb" ||
-      field === "hawb" ||
-      field === "shipmentAirport" ||
-      field === "shipmentTerminal"
-    ) {
-      setAwbStatusCheck({
-        loading: false,
-        error: "",
-        data: null,
-      });
-    }
   };
 
   const handleSubmit = async (event) => {
@@ -1439,11 +1206,6 @@ const App = () => {
       notes: "",
     });
     setEditingOrderId(null);
-    setAwbStatusCheck({
-      loading: false,
-      error: "",
-      data: null,
-    });
     setOrdersScreenMode("list");
 
     if (isSupabaseEnabled && authReady && currentUser?.id && isCloudStateReady) {
@@ -2659,21 +2421,11 @@ const App = () => {
   const handleEditClick = (order) => {
     setFormData(createOrderFormDataFromOrder(order));
     setEditingOrderId(order.id);
-    setAwbStatusCheck({
-      loading: false,
-      error: "",
-      data: null,
-    });
     setOrdersScreenMode("create");
   };
   const handleCopyOrderClick = (order) => {
     setFormData(createOrderFormDataFromOrder(order));
     setEditingOrderId(null);
-    setAwbStatusCheck({
-      loading: false,
-      error: "",
-      data: null,
-    });
     setOrdersScreenMode("create");
   };
   const handleEditOrderFromTripClick = (order) => {
@@ -2698,11 +2450,6 @@ const App = () => {
 
   const cancelOrderForm = () => {
     setEditingOrderId(null);
-    setAwbStatusCheck({
-      loading: false,
-      error: "",
-      data: null,
-    });
     setFormData({
       shipmentAirport: "",
       shipmentTerminal: "",
@@ -3192,17 +2939,14 @@ const App = () => {
                     customsSuggestions={customsSuggestions}
                     powerOfAttorneyStatus={powerOfAttorneyStatus}
                     recipientSuggestions={recipientSuggestions}
-                    awbStatusCheck={awbStatusCheck}
                     isAwbCheckAvailable={isCargoCheckAvailable}
                     isPowerOfAttorneySyncLoading={isPowerOfAttorneySyncLoading}
                     onCheckAwbStatus={checkAwbStatus}
-                    onOpenCargoTerminalFromError={openCargoTerminalFromError}
                     onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}
                     onFieldChange={handleFieldChange}
                     onSubmit={handleSubmit}
                     onCancel={cancelOrderForm}
                     isSaving={isOrderCloudSaving}
-                    isStrictNumericAwb={isStrictNumericAwbTerminal(cargoTerminalKey)}
                     embedded
                   />
                 </WorkPanel>
@@ -3382,7 +3126,7 @@ const App = () => {
         onClose={closeSignatureSettingsModal}
       />
 
-      {manualCargoCheckModal.isOpen && (
+      {cargoCheckNoticeModal.isOpen && (
         <div
           className="modal-overlay"
           role="dialog"
@@ -3395,21 +3139,12 @@ const App = () => {
               <h2>{RU.manualCargoModal.title}</h2>
             </div>
             <div className="modal-card__body">
-              <p>{RU.manualCargoModal.descriptionPrefix}</p>
               <p>
                 <span className="manual-cargo-modal__awb-badge" data-testid="manual-cargo-awb-number">
-                  {manualCargoCheckModal.awbNumber || RU.common.emDash}
+                  {cargoCheckNoticeModal.awbNumber || RU.common.emDash}
                 </span>{" "}
-                {RU.manualCargoModal.descriptionSuffix}
+                {"\u0441\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u043d \u0432 \u0431\u0443\u0444\u0435\u0440 \u043e\u0431\u043c\u0435\u043d\u0430."}
               </p>
-              <div className="workflow-confirm-actions">
-                <button type="button" className="primary" onClick={confirmManualCargoCheck} data-testid="manual-cargo-confirm">
-                  {RU.manualCargoModal.ok}
-                </button>
-                <button type="button" onClick={closeManualCargoCheckModal} data-testid="manual-cargo-cancel">
-                  {RU.common.cancel}
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -3453,51 +3188,11 @@ const App = () => {
         </div>
       )}
 
-      {awbStatusCheck.loading && (
-        <div className="loader-overlay" role="status" aria-live="polite" aria-label={RU.loaders.awbAria}>
-          <div className="loader-overlay__content">
-            <button
-              type="button"
-              className="loader-overlay__close"
-              aria-label={RU.loaders.awbCancel}
-              title={RU.loaders.awbCancel}
-              onClick={cancelAwbStatusCheck}
-            >
-              &times;
-            </button>
-            <div className="loader-overlay__spinner" />
-            <div className="loader-overlay__text">{RU.loaders.awbText}</div>
-          </div>
-        </div>
-      )}
-
       {isTripPrintLoading && (
         <div className="loader-overlay" role="status" aria-live="polite" aria-label={RU.loaders.printAria}>
           <div className="loader-overlay__content">
             <div className="loader-overlay__spinner" />
             <div className="loader-overlay__text">{RU.loaders.printText}</div>
-          </div>
-        </div>
-      )}
-
-      {cargoScreenshotModal.isOpen && cargoScreenshotModal.screenshotUrl && (
-        <div
-          className="screenshot-modal__overlay"
-          role="dialog"
-          aria-modal="true"
-          aria-label={RU.screenshotModal.aria}
-          onClick={closeCargoScreenshotModal}
-        >
-          <div className="screenshot-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="screenshot-modal__header">
-              <h3>{RU.screenshotModal.title}</h3>
-              <button type="button" onClick={closeCargoScreenshotModal}>
-                {RU.common.close}
-              </button>
-            </div>
-            <div className="screenshot-modal__body">
-              <img src={cargoScreenshotModal.screenshotUrl} alt={RU.screenshotModal.alt} />
-            </div>
           </div>
         </div>
       )}
