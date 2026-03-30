@@ -1180,13 +1180,21 @@ const App = () => {
       nextOrders = orders.map((item) => (item.id === editingOrderId ? order : item));
       setOrders(nextOrders);
       if (originalOrder.name !== order.name && order.driveFolderId) {
-        void updateDriveFolderName(order.driveFolderId, order.name);
+        await updateDriveFolderName(order.driveFolderId, order.name);
       }
     } else {
       nextOrders = [order, ...orders];
       setOrders(nextOrders);
       if (driveConnected) {
-        void createDriveFolderForOrder(order.name, order.id);
+        const created = await createDriveFolderForOrder(order.name, order.id);
+        if (created?.folderId) {
+          nextOrders = nextOrders.map((item) =>
+            item.id === order.id
+              ? { ...item, driveFolder: created.folderUrl, driveFolderId: created.folderId }
+              : item,
+          );
+          setOrders(nextOrders);
+        }
       }
     }
 
@@ -1372,13 +1380,13 @@ const App = () => {
         driverName: trip.driverName,
       });
       if (editingTrip?.driveFolderId && previousTripFolderName !== nextTripFolderName) {
-        void updateDriveFolderName(editingTrip.driveFolderId, nextTripFolderName);
+        await updateDriveFolderName(editingTrip.driveFolderId, nextTripFolderName);
       }
     }
 
     const addedOrderIds = selectedOrderIds.filter((orderId) => !previousOrderIds.has(orderId));
     const removedOrderIds = Array.from(previousOrderIds).filter((orderId) => !selectedOrderIdsSet.has(orderId));
-    void syncTripOrderFolders({
+    await syncTripOrderFolders({
       trip,
       previousTrip: editingTrip,
       addedOrderIds,
