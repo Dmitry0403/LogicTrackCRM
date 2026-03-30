@@ -382,6 +382,7 @@ const App = () => {
   const [isTripPrintLoading, setIsTripPrintLoading] = React.useState(false);
   const [isDeleteCardLoading, setIsDeleteCardLoading] = React.useState(false);
   const [isOrderCloudSaving, setIsOrderCloudSaving] = React.useState(false);
+  const [isTripSaving, setIsTripSaving] = React.useState(false);
   const cargoCheckNoticeTimeoutRef = React.useRef(null);
   const [editingOrderId, setEditingOrderId] = React.useState(null);
   const [editingTripId, setEditingTripId] = React.useState(null);
@@ -1146,79 +1147,79 @@ const App = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    const order = {
-      id: editingOrderId || `order-${Date.now()}`,
-      stageId: editingOrderId
-        ? orders.find((item) => item.id === editingOrderId)?.stageId || (orderStages[0]?.id || "order-stage-plan")
-        : (orderStages[0]?.id || "order-stage-plan"),
-      shipmentAirport: formData.shipmentAirport.trim(),
-      shipmentTerminal: formData.shipmentTerminal.trim(),
-      name: formData.orderName.trim(),
-      recipient: formData.recipient.trim(),
-      awb:
-        composeAwb(
-          formData.awbPrefix,
-          formData.awbNumber,
-          formData.hasHawb ? formData.hawb : "",
-        ) || formData.awb.trim(),
-      quantity: formData.quantity.trim(),
-      weight: formData.weight.trim(),
-      customsCode: formData.customsCode.trim(),
-      customsName: getCustomsNameLabel(formData.customsCode.trim()),
-      notes: formData.notes.trim(),
-      driveFolder: null,
-      driveFolderId: null,
-    };
-    const originalOrder = editingOrderId
-      ? orders.find((item) => item.id === editingOrderId)
-      : null;
+    setIsOrderCloudSaving(true);
+    try {
+      const order = {
+        id: editingOrderId || `order-${Date.now()}`,
+        stageId: editingOrderId
+          ? orders.find((item) => item.id === editingOrderId)?.stageId || (orderStages[0]?.id || "order-stage-plan")
+          : (orderStages[0]?.id || "order-stage-plan"),
+        shipmentAirport: formData.shipmentAirport.trim(),
+        shipmentTerminal: formData.shipmentTerminal.trim(),
+        name: formData.orderName.trim(),
+        recipient: formData.recipient.trim(),
+        awb:
+          composeAwb(
+            formData.awbPrefix,
+            formData.awbNumber,
+            formData.hasHawb ? formData.hawb : "",
+          ) || formData.awb.trim(),
+        quantity: formData.quantity.trim(),
+        weight: formData.weight.trim(),
+        customsCode: formData.customsCode.trim(),
+        customsName: getCustomsNameLabel(formData.customsCode.trim()),
+        notes: formData.notes.trim(),
+        driveFolder: null,
+        driveFolderId: null,
+      };
+      const originalOrder = editingOrderId
+        ? orders.find((item) => item.id === editingOrderId)
+        : null;
 
-    let nextOrders = orders;
-    if (originalOrder) {
-      order.driveFolder = originalOrder.driveFolder || null;
-      order.driveFolderId = originalOrder.driveFolderId || null;
-      nextOrders = orders.map((item) => (item.id === editingOrderId ? order : item));
-      setOrders(nextOrders);
-      if (originalOrder.name !== order.name && order.driveFolderId) {
-        await updateDriveFolderName(order.driveFolderId, order.name);
-      }
-    } else {
-      nextOrders = [order, ...orders];
-      setOrders(nextOrders);
-      if (driveConnected) {
-        const created = await createDriveFolderForOrder(order.name, order.id);
-        if (created?.folderId) {
-          nextOrders = nextOrders.map((item) =>
-            item.id === order.id
-              ? { ...item, driveFolder: created.folderUrl, driveFolderId: created.folderId }
-              : item,
-          );
-          setOrders(nextOrders);
+      let nextOrders = orders;
+      if (originalOrder) {
+        order.driveFolder = originalOrder.driveFolder || null;
+        order.driveFolderId = originalOrder.driveFolderId || null;
+        nextOrders = orders.map((item) => (item.id === editingOrderId ? order : item));
+        setOrders(nextOrders);
+        if (originalOrder.name !== order.name && order.driveFolderId) {
+          await updateDriveFolderName(order.driveFolderId, order.name);
+        }
+      } else {
+        nextOrders = [order, ...orders];
+        setOrders(nextOrders);
+        if (driveConnected) {
+          const created = await createDriveFolderForOrder(order.name, order.id);
+          if (created?.folderId) {
+            nextOrders = nextOrders.map((item) =>
+              item.id === order.id
+                ? { ...item, driveFolder: created.folderUrl, driveFolderId: created.folderId }
+                : item,
+            );
+            setOrders(nextOrders);
+          }
         }
       }
-    }
 
-    setFormData({
-      shipmentAirport: "",
-      shipmentTerminal: "",
-      recipient: "",
-      orderName: "",
-      awb: "",
-      awbPrefix: "",
-      awbNumber: "",
-      hasHawb: false,
-      hawb: "",
-      quantity: "",
-      weight: "",
-      customsCode: "",
-      notes: "",
-    });
-    setEditingOrderId(null);
-    setOrdersScreenMode("list");
+      setFormData({
+        shipmentAirport: "",
+        shipmentTerminal: "",
+        recipient: "",
+        orderName: "",
+        awb: "",
+        awbPrefix: "",
+        awbNumber: "",
+        hasHawb: false,
+        hawb: "",
+        quantity: "",
+        weight: "",
+        customsCode: "",
+        notes: "",
+      });
+      setEditingOrderId(null);
+      setOrdersScreenMode("list");
 
-    if (isSupabaseEnabled && authReady && currentUser?.id && isCloudStateReady) {
-      setIsOrderCloudSaving(true);
-      try {
+      if (isSupabaseEnabled && authReady && currentUser?.id && isCloudStateReady) {
         await saveCloudSnapshotNow({
           orders: nextOrders,
           trips,
@@ -1226,9 +1227,9 @@ const App = () => {
           tripStages,
           printSignerSettings,
         });
-      } finally {
-        setIsOrderCloudSaving(false);
       }
+    } finally {
+      setIsOrderCloudSaving(false);
     }
   };
 
@@ -1299,110 +1300,115 @@ const App = () => {
   };
 
   const saveTripFromForm = async () => {
-    const allowedOrderIds = new Set(availableOrdersForTrip.map((order) => order.id));
-    const selectedOrderIds = tripFormData.orderIds.filter((orderId) => allowedOrderIds.has(orderId));
-    if (!tripFormData.tripNumber.trim() || !tripFormData.carNumber || !tripFormData.driverName) {
-      alert(RU.appMessages.fillTripRequired);
-      return null;
-    }
-    if (selectedOrderIds.length === 0) {
-      alert(RU.appMessages.chooseTripOrders);
-      return null;
-    }
-
-    const selectedOrders = orders.filter((order) => selectedOrderIds.includes(order.id));
-    const ordersSummary = selectedOrders
-      .slice(0, 3)
-      .map((order) => order.name || order.recipient || order.id)
-      .join(", ");
-
-    const composedCarNumber = tripFormData.hasTrailer
-      ? `${tripFormData.carNumber} / ${TRAILER_NUMBER}`
-      : tripFormData.carNumber;
-
-    const trip = {
-      id: editingTripId || `trip-${Date.now()}`,
-      stageId: editingTripId
-        ? trips.find((item) => item.id === editingTripId)?.stageId || (tripStages[0]?.id || "trip-stage-plan")
-        : (tripStages[0]?.id || "trip-stage-plan"),
-      tripNumber: tripFormData.tripNumber.trim(),
-      tripDate: tripFormData.tripDate,
-      carNumberBase: tripFormData.carNumber,
-      carNumber: composedCarNumber,
-      hasTrailer: Boolean(tripFormData.hasTrailer),
-      trailerNumber: tripFormData.hasTrailer ? TRAILER_NUMBER : "",
-      driverName: tripFormData.driverName,
-      orderIds: selectedOrderIds,
-      driveFolder: editingTrip?.driveFolder || null,
-      driveFolderId: editingTrip?.driveFolderId || null,
-      ordersSummary:
-        selectedOrders.length > 3
-          ? `${ordersSummary} (+${selectedOrders.length - 3})`
-          : ordersSummary,
-    };
-
-    const nextTrips = editingTripId
-      ? trips.map((item) => (item.id === editingTripId ? trip : item))
-      : [trip, ...trips];
-
-    const previousOrderIds = new Set(editingTrip?.orderIds || []);
-    const selectedOrderIdsSet = new Set(selectedOrderIds);
-    const occupiedByOtherTrips = new Set();
-    trips.forEach((existingTrip) => {
-      if (existingTrip.id === editingTripId) return;
-      (existingTrip.orderIds || []).forEach((orderId) => occupiedByOtherTrips.add(orderId));
-    });
-    const nextOrders = orders.map((order) => {
-      if (selectedOrderIdsSet.has(order.id)) {
-        return { ...order, stageId: inCarStageId };
+    setIsTripSaving(true);
+    try {
+      const allowedOrderIds = new Set(availableOrdersForTrip.map((order) => order.id));
+      const selectedOrderIds = tripFormData.orderIds.filter((orderId) => allowedOrderIds.has(orderId));
+      if (!tripFormData.tripNumber.trim() || !tripFormData.carNumber || !tripFormData.driverName) {
+        alert(RU.appMessages.fillTripRequired);
+        return null;
       }
-      if (
-        editingTripId &&
-        previousOrderIds.has(order.id) &&
-        !occupiedByOtherTrips.has(order.id) &&
-        order.stageId === inCarStageId
-      ) {
-        return { ...order, stageId: warehouseStageId };
+      if (selectedOrderIds.length === 0) {
+        alert(RU.appMessages.chooseTripOrders);
+        return null;
       }
-      return order;
-    });
 
-    setTrips(nextTrips);
-    setOrders(nextOrders);
+      const selectedOrders = orders.filter((order) => selectedOrderIds.includes(order.id));
+      const ordersSummary = selectedOrders
+        .slice(0, 3)
+        .map((order) => order.name || order.recipient || order.id)
+        .join(", ");
 
-    if (editingTripId) {
-      const previousTripFolderName = buildTripFolderName({
-        carNumber: editingTrip?.carNumberBase || editingTrip?.carNumber,
-        driverName: editingTrip?.driverName,
+      const composedCarNumber = tripFormData.hasTrailer
+        ? `${tripFormData.carNumber} / ${TRAILER_NUMBER}`
+        : tripFormData.carNumber;
+
+      const trip = {
+        id: editingTripId || `trip-${Date.now()}`,
+        stageId: editingTripId
+          ? trips.find((item) => item.id === editingTripId)?.stageId || (tripStages[0]?.id || "trip-stage-plan")
+          : (tripStages[0]?.id || "trip-stage-plan"),
+        tripNumber: tripFormData.tripNumber.trim(),
+        tripDate: tripFormData.tripDate,
+        carNumberBase: tripFormData.carNumber,
+        carNumber: composedCarNumber,
+        hasTrailer: Boolean(tripFormData.hasTrailer),
+        trailerNumber: tripFormData.hasTrailer ? TRAILER_NUMBER : "",
+        driverName: tripFormData.driverName,
+        orderIds: selectedOrderIds,
+        driveFolder: editingTrip?.driveFolder || null,
+        driveFolderId: editingTrip?.driveFolderId || null,
+        ordersSummary:
+          selectedOrders.length > 3
+            ? `${ordersSummary} (+${selectedOrders.length - 3})`
+            : ordersSummary,
+      };
+
+      const nextTrips = editingTripId
+        ? trips.map((item) => (item.id === editingTripId ? trip : item))
+        : [trip, ...trips];
+
+      const previousOrderIds = new Set(editingTrip?.orderIds || []);
+      const selectedOrderIdsSet = new Set(selectedOrderIds);
+      const occupiedByOtherTrips = new Set();
+      trips.forEach((existingTrip) => {
+        if (existingTrip.id === editingTripId) return;
+        (existingTrip.orderIds || []).forEach((orderId) => occupiedByOtherTrips.add(orderId));
       });
-      const nextTripFolderName = buildTripFolderName({
-        carNumber: trip.carNumberBase || trip.carNumber,
-        driverName: trip.driverName,
+      const nextOrders = orders.map((order) => {
+        if (selectedOrderIdsSet.has(order.id)) {
+          return { ...order, stageId: inCarStageId };
+        }
+        if (
+          editingTripId &&
+          previousOrderIds.has(order.id) &&
+          !occupiedByOtherTrips.has(order.id) &&
+          order.stageId === inCarStageId
+        ) {
+          return { ...order, stageId: warehouseStageId };
+        }
+        return order;
       });
-      if (editingTrip?.driveFolderId && previousTripFolderName !== nextTripFolderName) {
-        await updateDriveFolderName(editingTrip.driveFolderId, nextTripFolderName);
+
+      setTrips(nextTrips);
+      setOrders(nextOrders);
+
+      if (editingTripId) {
+        const previousTripFolderName = buildTripFolderName({
+          carNumber: editingTrip?.carNumberBase || editingTrip?.carNumber,
+          driverName: editingTrip?.driverName,
+        });
+        const nextTripFolderName = buildTripFolderName({
+          carNumber: trip.carNumberBase || trip.carNumber,
+          driverName: trip.driverName,
+        });
+        if (editingTrip?.driveFolderId && previousTripFolderName !== nextTripFolderName) {
+          await updateDriveFolderName(editingTrip.driveFolderId, nextTripFolderName);
+        }
       }
+
+      const addedOrderIds = selectedOrderIds.filter((orderId) => !previousOrderIds.has(orderId));
+      const removedOrderIds = Array.from(previousOrderIds).filter((orderId) => !selectedOrderIdsSet.has(orderId));
+      await syncTripOrderFolders({
+        trip,
+        previousTrip: editingTrip,
+        addedOrderIds,
+        removedOrderIds,
+      });
+
+      await saveCloudSnapshotNow({
+        orders: nextOrders,
+        trips: nextTrips,
+        orderStages,
+        tripStages,
+        printSignerSettings,
+      });
+
+      closeCreateTripForm();
+      return { trip, selectedOrders };
+    } finally {
+      setIsTripSaving(false);
     }
-
-    const addedOrderIds = selectedOrderIds.filter((orderId) => !previousOrderIds.has(orderId));
-    const removedOrderIds = Array.from(previousOrderIds).filter((orderId) => !selectedOrderIdsSet.has(orderId));
-    await syncTripOrderFolders({
-      trip,
-      previousTrip: editingTrip,
-      addedOrderIds,
-      removedOrderIds,
-    });
-
-    await saveCloudSnapshotNow({
-      orders: nextOrders,
-      trips: nextTrips,
-      orderStages,
-      tripStages,
-      printSignerSettings,
-    });
-
-    closeCreateTripForm();
-    return { trip, selectedOrders };
   };
   const printTripApplication = async (trip, selectedOrders) => {
     if (typeof window === "undefined") return;
@@ -3079,6 +3085,7 @@ const App = () => {
                     orders={availableOrdersForTrip}
                     carNumbers={TRIP_CAR_NUMBERS}
                     driverNames={TRIP_DRIVER_NAMES}
+                    isSaving={isTripSaving}
                     isPrintLoading={isTripPrintLoading}
                     embedded
                   />
@@ -3201,6 +3208,15 @@ const App = () => {
           <div className="loader-overlay__content">
             <div className="loader-overlay__spinner" />
             <div className="loader-overlay__text">{RU.loaders.printText}</div>
+          </div>
+        </div>
+      )}
+
+      {(isOrderCloudSaving || isTripSaving) && (
+        <div className="loader-overlay" role="status" aria-live="polite" aria-label={RU.loaders.driveAria}>
+          <div className="loader-overlay__content">
+            <div className="loader-overlay__spinner" />
+            <div className="loader-overlay__text">{RU.loaders.driveText}</div>
           </div>
         </div>
       )}

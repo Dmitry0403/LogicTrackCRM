@@ -397,6 +397,7 @@ export function TripFormCard({
   orders,
   carNumbers,
   driverNames,
+  isSaving = false,
   isPrintLoading = false,
   formId,
   showFooterActions = true,
@@ -530,8 +531,8 @@ export function TripFormCard({
         </div>
         {showFooterActions && (
           <div className="trip-form__actions">
-            <button type="submit" className="primary" disabled={orders.length === 0 || isPrintLoading}>
-              {submitLabel}
+            <button type="submit" className="primary" disabled={orders.length === 0 || isPrintLoading || isSaving}>
+              {isSaving ? RU.common.saveInProgress : submitLabel}
             </button>
             <button
               type="button"
@@ -540,11 +541,11 @@ export function TripFormCard({
                 if (form && !form.reportValidity()) return;
                 onPrint?.();
               }}
-              disabled={orders.length === 0 || isPrintLoading}
+              disabled={orders.length === 0 || isPrintLoading || isSaving}
             >
               {isPrintLoading ? RU.tripForm.printPreparing : RU.tripForm.print}
             </button>
-            <button type="button" onClick={() => onCancel?.()} disabled={isPrintLoading}>
+            <button type="button" onClick={() => onCancel?.()} disabled={isPrintLoading || isSaving}>
               {RU.common.cancel}
             </button>
           </div>
