@@ -709,7 +709,7 @@ small {
   padding-bottom: 2px;
   flex: 1;
   min-height: 0;
-  align-items: start;
+  align-items: stretch;
   align-content: start;
 }
 
@@ -719,6 +719,7 @@ small {
   flex-direction: column;
   gap: 8px;
   min-height: 320px;
+  height: 100%;
   position: relative;
 }
 
@@ -843,6 +844,7 @@ small {
 
 .workflow-column__body {
   display: flex;
+  flex: 1;
   flex-direction: column;
   gap: 8px;
   min-height: 100px;
