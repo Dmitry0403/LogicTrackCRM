@@ -1,6 +1,7 @@
 ﻿import React from 'react';
 import {
   OrderFormCard,
+  AlternateOrderFormCard,
   SettingsModal,
   DriveSettingsModal,
   SignatureSettingsModal,
@@ -332,6 +333,39 @@ const E2E_DRIVE_ACCOUNT = {
   name: "E2E Drive",
 };
 
+const createEmptyOrderFormData = () => ({
+  shipmentAirport: "",
+  shipmentTerminal: "",
+  recipient: "",
+  orderName: "",
+  awb: "",
+  awbPrefix: "",
+  awbNumber: "",
+  hasHawb: false,
+  hawb: "",
+  quantity: "",
+  weight: "",
+  customsCode: "",
+  notes: "",
+  customer: "",
+  loadingPoint: "",
+  unloadingPoint: "",
+});
+
+const getOrderFormVariantFromOrder = (order) =>
+  order?.customer || order?.loadingPoint || order?.unloadingPoint ? "alternate" : "default";
+
+const getOrderDisplayName = (values) =>
+  String(
+    values.orderName ||
+      values.name ||
+      values.customer ||
+      values.recipient ||
+      values.unloadingPoint ||
+      values.id ||
+      "",
+  ).trim();
+
 const App = () => {
   const e2eMode = getE2EMode();
   const isE2EWorkspace = e2eMode === "workspace";
@@ -359,21 +393,8 @@ const App = () => {
     RU.appMessages.driveHintConnect
   );
 
-  const [formData, setFormData] = React.useState({
-    shipmentAirport: "",
-    shipmentTerminal: "",
-    recipient: "",
-    orderName: "",
-    awb: "",
-    awbPrefix: "",
-    awbNumber: "",
-    hasHawb: false,
-    hawb: "",
-    quantity: "",
-    weight: "",
-    customsCode: "",
-    notes: "",
-  });
+  const [formData, setFormData] = React.useState(createEmptyOrderFormData);
+  const [orderFormVariant, setOrderFormVariant] = React.useState("default");
   const [cargoCheckNoticeModal, setCargoCheckNoticeModal] = React.useState({
     isOpen: false,
     manualUrl: "",
@@ -1149,15 +1170,26 @@ const App = () => {
     event.preventDefault();
     setIsOrderCloudSaving(true);
     try {
+      const normalizedCustomer = String(formData.customer || "").trim();
+      const normalizedLoadingPoint = String(formData.loadingPoint || "").trim();
+      const normalizedUnloadingPoint = String(formData.unloadingPoint || "").trim();
+      const normalizedRecipient = String(formData.recipient || "").trim();
+      const normalizedOrderName = String(formData.orderName || "").trim();
+      const resolvedName = getOrderDisplayName({
+        orderName: normalizedOrderName,
+        customer: normalizedCustomer,
+        recipient: normalizedRecipient,
+        unloadingPoint: normalizedUnloadingPoint,
+      });
       const order = {
         id: editingOrderId || `order-${Date.now()}`,
         stageId: editingOrderId
           ? orders.find((item) => item.id === editingOrderId)?.stageId || (orderStages[0]?.id || "order-stage-plan")
           : (orderStages[0]?.id || "order-stage-plan"),
-        shipmentAirport: formData.shipmentAirport.trim(),
+        shipmentAirport: formData.shipmentAirport.trim() || normalizedLoadingPoint,
         shipmentTerminal: formData.shipmentTerminal.trim(),
-        name: formData.orderName.trim(),
-        recipient: formData.recipient.trim(),
+        name: resolvedName,
+        recipient: normalizedRecipient || normalizedCustomer || normalizedUnloadingPoint,
         awb:
           composeAwb(
             formData.awbPrefix,
@@ -1167,8 +1199,11 @@ const App = () => {
         quantity: formData.quantity.trim(),
         weight: formData.weight.trim(),
         customsCode: formData.customsCode.trim(),
-        customsName: getCustomsNameLabel(formData.customsCode.trim()),
+        customsName: normalizedUnloadingPoint || getCustomsNameLabel(formData.customsCode.trim()),
         notes: formData.notes.trim(),
+        customer: normalizedCustomer,
+        loadingPoint: normalizedLoadingPoint,
+        unloadingPoint: normalizedUnloadingPoint,
         driveFolder: null,
         driveFolderId: null,
       };
@@ -1201,22 +1236,9 @@ const App = () => {
         }
       }
 
-      setFormData({
-        shipmentAirport: "",
-        shipmentTerminal: "",
-        recipient: "",
-        orderName: "",
-        awb: "",
-        awbPrefix: "",
-        awbNumber: "",
-        hasHawb: false,
-        hawb: "",
-        quantity: "",
-        weight: "",
-        customsCode: "",
-        notes: "",
-      });
+      setFormData(createEmptyOrderFormData());
       setEditingOrderId(null);
+      setOrderFormVariant("default");
       setOrdersScreenMode("list");
 
       if (isSupabaseEnabled && authReady && currentUser?.id && isCloudStateReady) {
@@ -1429,11 +1451,11 @@ const App = () => {
             signerName: String(printSignerSettings.signerName || "").trim(),
           },
           orders: selectedOrders.map((order) => ({
-            name: order.name,
+            name: order.name || order.customer || order.unloadingPoint || "",
             awb: order.awb,
-            recipient: order.recipient,
-            shipmentAirport: order.shipmentAirport,
-            customsName: String(order.customsName || "").trim() || getCustomsNameLabel(String(order.customsCode || "").trim()),
+            recipient: order.recipient || order.customer || order.unloadingPoint || "",
+            shipmentAirport: order.loadingPoint || order.shipmentAirport,
+            customsName: String(order.unloadingPoint || order.customsName || "").trim() || getCustomsNameLabel(String(order.customsCode || "").trim()),
             customsCode: String(order.customsCode || "").trim(),
             quantity: order.quantity,
             weight: order.weight,
@@ -2429,17 +2451,22 @@ const App = () => {
       weight: order.weight || "",
       customsCode: order.customsCode || "",
       notes: order.notes || "",
+      customer: order.customer || "",
+      loadingPoint: order.loadingPoint || "",
+      unloadingPoint: order.unloadingPoint || "",
     };
   };
 
   const handleEditClick = (order) => {
     setFormData(createOrderFormDataFromOrder(order));
     setEditingOrderId(order.id);
+    setOrderFormVariant(getOrderFormVariantFromOrder(order));
     setOrdersScreenMode("create");
   };
   const handleCopyOrderClick = (order) => {
     setFormData(createOrderFormDataFromOrder(order));
     setEditingOrderId(null);
+    setOrderFormVariant(getOrderFormVariantFromOrder(order));
     setOrdersScreenMode("create");
   };
   const handleEditOrderFromTripClick = (order) => {
@@ -2464,21 +2491,8 @@ const App = () => {
 
   const cancelOrderForm = () => {
     setEditingOrderId(null);
-    setFormData({
-      shipmentAirport: "",
-      shipmentTerminal: "",
-      recipient: "",
-      orderName: "",
-      awb: "",
-      awbPrefix: "",
-      awbNumber: "",
-      hasHawb: false,
-      hawb: "",
-      quantity: "",
-      weight: "",
-      customsCode: "",
-      notes: "",
-    });
+    setFormData(createEmptyOrderFormData());
+    setOrderFormVariant("default");
     setOrdersScreenMode("list");
   };
 
@@ -2855,7 +2869,9 @@ const App = () => {
                   actionLabel={RU.ordersTable.create}
                   actionTestId="orders-create-action"
                   onAction={() => {
+                    setFormData(createEmptyOrderFormData());
                     setEditingOrderId(null);
+                    setOrderFormVariant("default");
                     setOrdersScreenMode("create");
                   }}
                 >
@@ -2880,7 +2896,8 @@ const App = () => {
                         recipient: order.recipient,
                         registry: powerOfAttorneyRegistry,
                       });
-                      const isOrderWithoutPowerOfAttorney = orderPowerOfAttorneyStatus?.type === "danger";
+                      const isAlternateOrder = Boolean(order.customer || order.loadingPoint || order.unloadingPoint);
+                      const isOrderWithoutPowerOfAttorney = !isAlternateOrder && orderPowerOfAttorneyStatus?.type === "danger";
                       const assignedTrip = trips.find((trip) => (trip.orderIds || []).includes(order.id));
                       const assignedCarNumber = String(assignedTrip?.carNumber || "").trim();
 
@@ -2912,27 +2929,29 @@ const App = () => {
                           </button>
                         </div>
                         <div className={`workflow-card__title ${isOrderWithoutPowerOfAttorney ? "workflow-card__title--danger" : ""}`}>
-                          {order.name || RU.orderCard.untitled}
+                          {getOrderDisplayName(order) || RU.orderCard.untitled}
                         </div>
                         <div className="workflow-card__meta workflow-card__meta--awb">
-                          {order.shipmentAirport || "—"} - {order.customsName || order.customsCode || "—"}
+                          {order.loadingPoint || order.shipmentAirport || "—"} - {order.unloadingPoint || order.customsName || order.customsCode || "—"}
                         </div>
-                        <div className="workflow-card__meta">
-                          AWB:{" "}
-                          {order.awb ? (
-                            <button
-                              type="button"
-                              className="workflow-card__order-link"
-                              onClick={() => checkOrderAwbStatus(order)}
-                              title={RU.orderCard.checkAwb}
-                              aria-label={`${RU.orderCard.checkAwb} ${order.awb}`}
-                            >
-                              {order.awb}
-                            </button>
-                          ) : (
-                            "—"
-                          )}
-                        </div>
+                        {!isAlternateOrder && (
+                          <div className="workflow-card__meta">
+                            AWB:{" "}
+                            {order.awb ? (
+                              <button
+                                type="button"
+                                className="workflow-card__order-link"
+                                onClick={() => checkOrderAwbStatus(order)}
+                                title={RU.orderCard.checkAwb}
+                                aria-label={`${RU.orderCard.checkAwb} ${order.awb}`}
+                              >
+                                {order.awb}
+                              </button>
+                            ) : (
+                              "—"
+                            )}
+                          </div>
+                        )}
                         <div className="workflow-card__meta">
                           {order.quantity || RU.common.emDash} {RU.orderCard.placesUnit} / {order.weight || RU.common.emDash} {RU.orderCard.weightUnit}
                           {assignedTrip ? ` / ${assignedCarNumber || "—"}` : ""}
@@ -2945,24 +2964,44 @@ const App = () => {
               ) : (
                 <WorkPanel
                   title={editingOrderId ? RU.orderView.editTitle : RU.orderView.createTitle}
+                  headerActions={(
+                    <button
+                      type="button"
+                      onClick={() => setOrderFormVariant((prev) => (prev === "default" ? "alternate" : "default"))}
+                    >
+                      {orderFormVariant === "default" ? "Другая форма" : "Основная форма"}
+                    </button>
+                  )}
                 >
-                  <OrderFormCard
-                    formId={ORDER_FORM_ID}
-                    formData={formData}
-                    customsName={customsName}
-                    customsSuggestions={customsSuggestions}
-                    powerOfAttorneyStatus={powerOfAttorneyStatus}
-                    recipientSuggestions={recipientSuggestions}
-                    isAwbCheckAvailable={isCargoCheckAvailable}
-                    isPowerOfAttorneySyncLoading={isPowerOfAttorneySyncLoading}
-                    onCheckAwbStatus={checkAwbStatus}
-                    onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}
-                    onFieldChange={handleFieldChange}
-                    onSubmit={handleSubmit}
-                    onCancel={cancelOrderForm}
-                    isSaving={isOrderCloudSaving}
-                    embedded
-                  />
+                  {orderFormVariant === "alternate" ? (
+                    <AlternateOrderFormCard
+                      formId={ORDER_FORM_ID}
+                      formData={formData}
+                      onFieldChange={handleFieldChange}
+                      onSubmit={handleSubmit}
+                      onCancel={cancelOrderForm}
+                      isSaving={isOrderCloudSaving}
+                      embedded
+                    />
+                  ) : (
+                    <OrderFormCard
+                      formId={ORDER_FORM_ID}
+                      formData={formData}
+                      customsName={customsName}
+                      customsSuggestions={customsSuggestions}
+                      powerOfAttorneyStatus={powerOfAttorneyStatus}
+                      recipientSuggestions={recipientSuggestions}
+                      isAwbCheckAvailable={isCargoCheckAvailable}
+                      isPowerOfAttorneySyncLoading={isPowerOfAttorneySyncLoading}
+                      onCheckAwbStatus={checkAwbStatus}
+                      onRefreshPowerOfAttorneyRegistry={() => loadPowerOfAttorneyRegistry(true)}
+                      onFieldChange={handleFieldChange}
+                      onSubmit={handleSubmit}
+                      onCancel={cancelOrderForm}
+                      isSaving={isOrderCloudSaving}
+                      embedded
+                    />
+                  )}
                 </WorkPanel>
               )}
             </>
@@ -3058,7 +3097,7 @@ const App = () => {
                                       onClick={() => handleEditOrderFromTripClick(order)}
                                       title={RU.tripCard.openOrder}
                                     >
-                                      {order.name || order.recipient || order.awb || order.id}
+                                      {order.name || order.customer || order.recipient || order.unloadingPoint || order.awb || order.id}
                                     </button>
                                     {index < tripOrders.length - 1 ? ", " : ""}
                                   </React.Fragment>

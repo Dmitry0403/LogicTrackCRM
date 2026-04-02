@@ -30,7 +30,7 @@ export const buildTripOrdersSummary = (orderIds, sourceOrders) => {
   const selectedOrders = sourceOrders.filter((order) => orderIds.includes(order.id));
   const summaryHead = selectedOrders
     .slice(0, 3)
-    .map((order) => order.name || order.recipient || order.id)
+    .map((order) => order.name || order.customer || order.recipient || order.unloadingPoint || order.id)
     .join(", ");
   return selectedOrders.length > 3
     ? `${summaryHead} (+${selectedOrders.length - 3})`

@@ -16,6 +16,23 @@ const createOrderViaForm = async (page, uniqueRecipient) => {
   await expect(page.getByText(uniqueRecipient)).toBeVisible();
 };
 
+const createOrderViaAlternateForm = async (page, uniqueCustomer) => {
+  const uniqueLoading = `Minsk ${Date.now()}`;
+  const uniqueUnloading = `Domodedovo ${Date.now()}`;
+  await page.getByTestId("orders-create-action").click();
+  await expect(page.locator("form#order-form-panel")).toBeVisible();
+  await page.locator(".section-header__actions button").click();
+  await page.locator("#customer").fill(uniqueCustomer);
+  await page.locator("#loadingPoint").fill(uniqueLoading);
+  await page.locator("#unloadingPoint").fill(uniqueUnloading);
+  await page.locator("#quantity-alt").fill("15");
+  await page.locator("#weight-alt").fill("4000");
+  await page.locator("#notes-alt").fill("Alternate order created by Playwright e2e");
+  await page.locator("form#order-form-panel button[type='submit']").click();
+  await expect(page.getByTestId("orders-create-action")).toBeVisible();
+  return { uniqueLoading, uniqueUnloading };
+};
+
 test("workspace fixture opens orders view", async ({ page, gotoWorkspace }) => {
   await gotoWorkspace();
   await expect(page.getByTestId("orders-create-action")).toBeVisible();
@@ -30,6 +47,31 @@ test("orders create action opens order form", async ({ page, gotoWorkspace }) =>
 test("user can fill and save an order in workspace fixture", async ({ page, gotoWorkspace }) => {
   await gotoWorkspace();
   await createOrderViaForm(page, `E2E Recipient ${Date.now()}`);
+});
+
+test("user can switch to alternate order form in workspace fixture", async ({ page, gotoWorkspace }) => {
+  await gotoWorkspace();
+  await page.getByTestId("orders-create-action").click();
+  await expect(page.locator("form#order-form-panel")).toBeVisible();
+  await page.locator(".section-header__actions button").click();
+  await expect(page.locator("#customer")).toBeVisible();
+  await expect(page.locator("#loadingPoint")).toBeVisible();
+  await expect(page.locator("#unloadingPoint")).toBeVisible();
+  await expect(page.locator("#quantity-alt")).toBeVisible();
+  await expect(page.locator("#weight-alt")).toBeVisible();
+  await expect(page.locator("#notes-alt")).toBeVisible();
+});
+
+test("user can create order via alternate form and card hides awb and warning state", async ({ page, gotoWorkspace }) => {
+  await gotoWorkspace();
+  const uniqueCustomer = `Logistics Projects ${Date.now()}`;
+  const { uniqueLoading, uniqueUnloading } = await createOrderViaAlternateForm(page, uniqueCustomer);
+
+  const orderCard = page.locator(".workflow-card", { hasText: uniqueCustomer }).first();
+  await expect(orderCard).toBeVisible();
+  await expect(orderCard).toContainText(`${uniqueLoading} - ${uniqueUnloading}`);
+  await expect(orderCard).not.toContainText("AWB:");
+  await expect(orderCard.locator(".workflow-card__title")).not.toHaveClass(/workflow-card__title--danger/);
 });
 
 test("user can delete an order in workspace fixture", async ({ page, gotoWorkspace }) => {

@@ -197,11 +197,27 @@ body {
   min-height: 132px;
 }
 
+.order-form--alternate {
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+}
+
+.order-form__column--full {
+  max-width: none;
+}
+
+.order-form__notes--stacked {
+  flex-direction: column;
+}
+
 .order-form__actions {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
   margin-top: 40px;
+}
+
+.order-form__actions--inline {
+  margin-top: 0;
 }
 
 .order-form__awb-status-slot {

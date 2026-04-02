@@ -318,6 +318,124 @@ export function OrderFormCard({
   );
 }
 
+export function AlternateOrderFormCard({
+  formData,
+  onFieldChange,
+  onSubmit,
+  onCancel,
+  isSaving = false,
+  formId,
+  embedded = false,
+}) {
+  const form = (
+    <form id={formId} onSubmit={onSubmit} className="order-form order-form--alternate">
+      <div className="order-form__column order-form__column--full">
+        <div className="field">
+          <label htmlFor="customer">Заказчик *</label>
+          <input
+            id="customer"
+            name="customer"
+            type="text"
+            required
+            value={formData.customer || ""}
+            onChange={onFieldChange("customer")}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="loadingPoint">Загрузка *</label>
+          <input
+            id="loadingPoint"
+            name="loadingPoint"
+            type="text"
+            required
+            value={formData.loadingPoint || ""}
+            onChange={onFieldChange("loadingPoint")}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="unloadingPoint">Выгрузка *</label>
+          <input
+            id="unloadingPoint"
+            name="unloadingPoint"
+            type="text"
+            required
+            value={formData.unloadingPoint || ""}
+            onChange={onFieldChange("unloadingPoint")}
+          />
+        </div>
+      </div>
+      <div className="order-form__column order-form__column--full">
+        <div className="field">
+          <label htmlFor="quantity-alt">{RU.orderForm.quantity}</label>
+          <input
+            id="quantity-alt"
+            name="quantity"
+            type="number"
+            min="1"
+            step="1"
+            required
+            value={formData.quantity}
+            onChange={onFieldChange("quantity")}
+            onWheel={(event) => event.currentTarget.blur()}
+            onKeyDown={(event) => {
+              if (["e", "E", "+", "-"].includes(event.key)) {
+                event.preventDefault();
+              }
+            }}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="weight-alt">{RU.orderForm.weight}</label>
+          <input
+            id="weight-alt"
+            name="weight"
+            type="number"
+            min="0"
+            step="0.01"
+            required
+            value={formData.weight}
+            onChange={onFieldChange("weight")}
+            onWheel={(event) => event.currentTarget.blur()}
+            onKeyDown={(event) => {
+              if (["e", "E", "+", "-"].includes(event.key)) {
+                event.preventDefault();
+              }
+            }}
+          />
+        </div>
+        <div className="field order-form__notes order-form__notes--stacked">
+          <label htmlFor="notes-alt">{RU.orderForm.notes}</label>
+          <textarea
+            id="notes-alt"
+            name="notes"
+            rows="4"
+            placeholder={RU.orderForm.notesPlaceholder}
+            value={formData.notes}
+            onChange={onFieldChange("notes")}
+          />
+        </div>
+        <div className="order-form__actions order-form__actions--inline">
+          <button type="submit" className="primary" disabled={isSaving}>
+            {isSaving ? RU.common.saveInProgress : RU.common.save}
+          </button>
+          <button type="button" onClick={() => onCancel?.()} disabled={isSaving}>
+            {RU.common.cancel}
+          </button>
+        </div>
+      </div>
+    </form>
+  );
+
+  if (embedded) return form;
+
+  return (
+    <section className="card">
+      <h2>{RU.orderForm.saveTitle}</h2>
+      {form}
+    </section>
+  );
+}
+
 export function SettingsModal({
   isOpen,
   settingsSections,
@@ -530,12 +648,12 @@ export function OrdersTable({ orders, onEditClick, onDelete, onCreateOrder, embe
         ) : (
           orders.map((order) => (
             <div className="table__row" key={order.id}>
-              <span>{order.name}</span>
-              <span>{order.recipient}</span>
+              <span>{order.name || order.customer || order.unloadingPoint || RU.common.emDash}</span>
+              <span>{order.recipient || order.customer || order.unloadingPoint || RU.common.emDash}</span>
               <span>{order.awb}</span>
               <span>{order.quantity}</span>
               <span>{order.weight}</span>
-              <span>{order.customsName}</span>
+              <span>{order.unloadingPoint || order.customsName || order.customsCode || RU.common.emDash}</span>
               <span>{order.driveFolder || RU.common.emDash}</span>
               <span style={{ display: "flex", gap: "0.5rem" }}>
                 <button type="button" style={{ padding: "0.4rem 0.8rem", fontSize: "0.85rem", cursor: "pointer", backgroundColor: "#0066cc", color: "#fff", border: "none", borderRadius: "3px" }} onClick={() => onEditClick(order)}>{RU.ordersTable.editShort}</button>

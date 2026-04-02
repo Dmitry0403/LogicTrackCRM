@@ -505,12 +505,12 @@ export function TripFormCard({
                     onChange={() => onToggleOrder(order.id)}
                   />
                   <span className="trip-order-item__content">
-                    <span className="trip-order-item__title">{order.name || order.recipient || RU.tripForm.untitledOrder}</span>
+                    <span className="trip-order-item__title">{order.name || order.customer || order.recipient || order.unloadingPoint || RU.tripForm.untitledOrder}</span>
                     <span className="trip-order-item__meta">
-                      AWB: {order.awb || RU.common.emDash} | {order.quantity || RU.common.emDash} {RU.tripForm.placesUnit} | {order.weight || RU.common.emDash} {RU.tripForm.weightUnit} | {order.customsName || order.customsCode || RU.common.emDash}
+                      AWB: {order.awb || RU.common.emDash} | {order.quantity || RU.common.emDash} {RU.tripForm.placesUnit} | {order.weight || RU.common.emDash} {RU.tripForm.weightUnit} | {order.unloadingPoint || order.customsName || order.customsCode || RU.common.emDash}
                     </span>
                   </span>
-                  <span className="trip-order-item__airport">{order.shipmentAirport || RU.common.emDash}</span>
+                  <span className="trip-order-item__airport">{order.loadingPoint || order.shipmentAirport || RU.common.emDash}</span>
                 </label>
               );
             })
