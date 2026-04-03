@@ -193,152 +193,25 @@ const generateTripPdfFromWordTemplate = async ({ templatePath, trip, orders }) =
   const tempDocxPath = path.join(tempDir, 'trip-application.docx');
   const tempPdfPath = path.join(tempDir, 'trip-application.pdf');
   await fs.mkdir(tempDir, { recursive: true });
-  await fs.copyFile(templatePath, tempDocxPath);
-
-  const payload = {
-    tripNumber: String(trip.tripNumber || '').trim(),
-    tripDate: formatTripDateRu(trip.tripDate),
-    carNumber: String(trip.carNumber || '').trim(),
-    driverName: String(trip.driverName || '').trim(),
-    airport: String(orders[0]?.shipmentAirport || '').trim(),
-    signerRole: String(trip.signerRole || 'Менеджер').trim(),
-    signerName: String(trip.signerName || 'Косенко Д.В.').trim(),
-    labels: {
-      awbPrefix: '-авианакладная №',
-      places: 'мест',
-      kg: 'кг',
-      customsPrefix: 'Таможня назначения -',
-      notePrefix: 'Примечание:',
-    },
-    orders: orders.map((order) => ({
-      name: String(order.name || order.recipient || 'Без названия').trim(),
-      awb: String(order.awb || '').trim(),
-      quantity: String(order.quantity || '').trim(),
-      weight: String(order.weight || '').trim(),
-      customsName: String(order.customsName || order.customsCode || '').trim(),
-      customsCode: String(order.customsCode || '').trim(),
-      notes: String(order.notes || '').trim(),
-    })),
-  };
-
-  const payloadPath = path.join(tempDir, 'trip-application.payload.json');
   const psScriptPath = path.join(tempDir, 'trip-application.ps1');
-  await fs.writeFile(payloadPath, JSON.stringify(payload), 'utf8');
+  const docxBuffer = await generateTripDocxFromTemplate({ templatePath, trip, orders });
+  await fs.writeFile(tempDocxPath, docxBuffer);
 
   const psScript = `
 param(
-  [string]$payloadPath,
   [string]$tempDocxPath,
   [string]$tempPdfPath
 )
 $ErrorActionPreference = 'Stop'
-$payloadBytes = [System.IO.File]::ReadAllBytes($payloadPath)
-$payloadText = [System.Text.Encoding]::UTF8.GetString($payloadBytes)
-$payload = $payloadText | ConvertFrom-Json
 
 $word = New-Object -ComObject Word.Application
 $word.Visible = $false
 $word.DisplayAlerts = 0
 $doc = $null
 
-function Replace-InRange {
-  param(
-    [object]$range,
-    [string]$searchText,
-    [string]$replaceText
-  )
-  if (-not $range -or [string]::IsNullOrEmpty($searchText)) { return }
-  $null = $range.Find.Execute(
-    $searchText,
-    $false, $false, $false, $false, $false,
-    $true, 1, $false,
-    [string]$replaceText,
-    2
-  )
-}
-
 try {
   $doc = $word.Documents.Open($tempDocxPath, $false, $false, $false)
   $wdExportFormatPDF = 17
-
-  $fullRange = $doc.Range()
-  Replace-InRange $fullRange '{{TRIP_NUMBER}}' $payload.tripNumber
-  Replace-InRange $fullRange '{{TRIP_DATE}}' $payload.tripDate
-  Replace-InRange $fullRange '{{AIRPORT}}' $payload.airport
-  Replace-InRange $fullRange '{{CAR_NUMBER}}' $payload.carNumber
-  Replace-InRange $fullRange '{{DRIVER_NAME}}' $payload.driverName
-
-  Replace-InRange $fullRange '{{SIGNER_ROLE}}' $payload.signerRole
-  Replace-InRange $fullRange '{{SIGNER_NAME}}' $payload.signerName
-  Replace-InRange $fullRange '{{SIGNER_ROLE|Менеджер}}' $payload.signerRole
-  Replace-InRange $fullRange '{{SIGNER_NAME|Косенко Д.В.}}' $payload.signerName
-
-  $startPara = $null
-  $endPara = $null
-  for ($i = 1; $i -le $doc.Paragraphs.Count; $i++) {
-    $text = ($doc.Paragraphs.Item($i).Range.Text -replace '[\\r\\a]','').Trim()
-    if (-not $startPara -and $text.Contains('{{ORDERS_START}}')) { $startPara = $doc.Paragraphs.Item($i) }
-    if (-not $endPara -and $text.Contains('{{ORDERS_END}}')) { $endPara = $doc.Paragraphs.Item($i) }
-  }
-
-  if ($startPara -ne $null -and $endPara -ne $null -and $endPara.Range.Start -gt $startPara.Range.End) {
-    $targetRange = $doc.Range($startPara.Range.End, $endPara.Range.Start)
-    $lines = New-Object System.Collections.Generic.List[string]
-    $index = 1
-    foreach ($order in $payload.orders) {
-      $lines.Add(("{0}.{1} {2} {3} - {4} {5} / {6} {7}," -f $index, $order.name, $payload.labels.awbPrefix, $order.awb, $order.quantity, $payload.labels.places, $order.weight, $payload.labels.kg))
-      $lines.Add(("{0} {1} / {2}" -f $payload.labels.customsPrefix, $order.customsName, $order.customsCode))
-      if (-not [string]::IsNullOrWhiteSpace([string]$order.notes)) {
-        $lines.Add(("{0} {1}" -f $payload.labels.notePrefix, $order.notes))
-      }
-      $index++
-    }
-    $insertedText = if ($lines.Count -gt 0) { ($lines -join [Environment]::NewLine) + [Environment]::NewLine } else { '' }
-    $targetRange.Text = $insertedText
-
-    $startPara.Range.Text = ''
-    $endPara.Range.Text = ''
-
-    $ordersRange = $targetRange.Duplicate
-    $orderIdx = 0
-    foreach ($p in $ordersRange.Paragraphs) {
-      $lineText = ($p.Range.Text -replace '[\\r\\a]','').Trim()
-      if (-not $lineText) { continue }
-      $isCustomsLine = $lineText.StartsWith([string]$payload.labels.customsPrefix, [System.StringComparison]::OrdinalIgnoreCase)
-      $isNoteLine = $lineText.StartsWith([string]$payload.labels.notePrefix, [System.StringComparison]::OrdinalIgnoreCase)
-
-      if (-not $isCustomsLine -and -not $isNoteLine -and $orderIdx -lt $payload.orders.Count) {
-        $nameValue = [string]$payload.orders[$orderIdx].name
-        $orderIdx++
-        if ([string]::IsNullOrWhiteSpace($nameValue)) { continue }
-        $p.Range.ParagraphFormat.LeftIndent = 0
-        $p.Range.ParagraphFormat.FirstLineIndent = 0
-        $p.Range.ParagraphFormat.SpaceAfter = 0
-        $lineRange = $p.Range.Duplicate
-        $lineRange.End = $lineRange.End - 1
-        $recipientPos = $lineText.IndexOf($nameValue, [System.StringComparison]::OrdinalIgnoreCase)
-        if ($recipientPos -ge 0) {
-          $nameRange = $doc.Range($lineRange.Start + $recipientPos, $lineRange.Start + $recipientPos + $nameValue.Length)
-          $nameRange.Bold = 1
-        }
-      }
-
-      if ($isCustomsLine) {
-        $p.Range.ParagraphFormat.LeftIndent = 32
-        $p.Range.ParagraphFormat.FirstLineIndent = 0
-        $p.Range.ParagraphFormat.SpaceAfter = 2
-      } elseif ($isNoteLine) {
-        $p.Range.ParagraphFormat.LeftIndent = 32
-        $p.Range.ParagraphFormat.FirstLineIndent = 0
-        $p.Range.ParagraphFormat.SpaceAfter = 8
-      }
-    }
-  }
-
-  $fullRangeAfter = $doc.Range()
-  Replace-InRange $fullRangeAfter '{{ORDERS_START}}' ''
-  Replace-InRange $fullRangeAfter '{{ORDERS_END}}' ''
-
   $doc.ExportAsFixedFormat($tempPdfPath, $wdExportFormatPDF)
 }
 finally {
@@ -357,7 +230,6 @@ finally {
       '-ExecutionPolicy', 'Bypass',
       '-File',
       psScriptPath,
-      '-payloadPath', payloadPath,
       '-tempDocxPath', tempDocxPath,
       '-tempPdfPath', tempPdfPath,
     ], { windowsHide: true, maxBuffer: 20 * 1024 * 1024 });
@@ -403,6 +275,24 @@ const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\
 
 const normalizeSplitPlaceholdersInXml = (xml) =>
   String(xml || '').replace(/\{\{[\s\S]*?\}\}/g, (segment) => segment.replace(/<[^>]+>/g, ''));
+
+const ensureRunBold = (runXml) => {
+  if (/<w:b(?:\s|\/|>)/.test(runXml)) return runXml;
+  if (/<w:rPr\b[\s\S]*?<\/w:rPr>/.test(runXml)) {
+    return runXml.replace(/<\/w:rPr>/, '<w:b/></w:rPr>');
+  }
+  return runXml.replace(/(<w:r\b[^>]*>)/, '$1<w:rPr><w:b/></w:rPr>');
+};
+
+const splitRecipientPlaceholderRun = (paragraphXml) =>
+  String(paragraphXml || '').replace(
+    /<w:r\b[\s\S]*?<w:t\b[^>]*>\{\{N\}\}\.\{\{RECIPIENT\}\}<\/w:t>[\s\S]*?<\/w:r>/,
+    (runXml) => {
+      const numberRun = runXml.replace(/\{\{N\}\}\.\{\{RECIPIENT\}\}/g, '{{N}}.');
+      const recipientRun = ensureRunBold(runXml.replace(/\{\{N\}\}\.\{\{RECIPIENT\}\}/g, '{{RECIPIENT}}'));
+      return `${numberRun}${recipientRun}`;
+    },
+  );
 
 const findParagraphRangeByToken = (xml, token) => {
   const pattern = new RegExp(`<w:p[\\s\\S]*?${escapeRegExp(token)}[\\s\\S]*?<\\/w:p>`);
@@ -497,7 +387,7 @@ const expandOrderTemplateParagraph = (xml, orders) => {
         if (templateParagraph.includes('{{NOTE}}') && !String(order.notes || '').trim()) {
           return '';
         }
-        let current = templateParagraph;
+        let current = splitRecipientPlaceholderRun(templateParagraph);
         tokenMap.forEach((value, token) => {
           current = current.replace(new RegExp(escapeRegExp(token), 'g'), escapeXmlText(value));
         });
