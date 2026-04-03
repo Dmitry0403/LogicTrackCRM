@@ -543,9 +543,10 @@ const generateTripDocxFromTemplate = async ({ templatePath, trip, orders }) => {
 
   const startRange = findParagraphRangeByToken(xml, '{{ORDERS_START}}');
   const endRange = findParagraphRangeByToken(xml, '{{ORDERS_END}}');
-  const ordersParagraphs = buildOrdersDocxParagraphs(orders);
   if (startRange && endRange && startRange.start < endRange.start) {
-    xml = `${xml.slice(0, startRange.start)}${ordersParagraphs}${xml.slice(endRange.end)}`;
+    const ordersTemplateXml = xml.slice(startRange.end, endRange.start);
+    const expandedOrdersXml = expandOrderTemplateParagraph(ordersTemplateXml, orders);
+    xml = `${xml.slice(0, startRange.start)}${expandedOrdersXml}${xml.slice(endRange.end)}`;
   } else {
     xml = expandOrderTemplateParagraph(xml, orders);
     xml = xml.replace(new RegExp(escapeRegExp('{{ORDERS_TEXT}}'), 'g'), escapeXmlText(orders.map((o) => o.name || o.recipient || '').join(', ')));
