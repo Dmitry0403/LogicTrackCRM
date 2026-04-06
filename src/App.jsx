@@ -880,12 +880,35 @@ const App = () => {
       const url = forceRefresh
         ? `${POWER_OF_ATTORNEY_REGISTRY_URL}?force=1`
         : POWER_OF_ATTORNEY_REGISTRY_URL;
-      const primaryRes = await fetch(url, { cache: "no-store" });
-      if (primaryRes.ok) {
-        const primaryData = await primaryRes.json();
-        if (primaryData && typeof primaryData === "object") {
-          setPowerOfAttorneyRegistry(primaryData);
-          loaded = true;
+      if (API_BASE_URL) {
+        try {
+          await ensureBackendAwake();
+        } catch (_backendWakeError) {
+          // Best effort: if backend is still waking up, we'll retry the registry fetch below.
+        }
+      }
+
+      for (let attempt = 0; attempt < 2 && !loaded; attempt += 1) {
+        try {
+          const primaryRes = await fetch(url, { cache: "no-store" });
+          if (primaryRes.ok) {
+            const primaryData = await primaryRes.json();
+            if (primaryData && typeof primaryData === "object") {
+              setPowerOfAttorneyRegistry(primaryData);
+              loaded = true;
+              break;
+            }
+          }
+        } catch (_fetchError) {
+          // Best effort: initial fetch can fail while Render wakes up.
+        }
+
+        if (!loaded && attempt === 0 && API_BASE_URL) {
+          try {
+            await ensureBackendAwake({ force: true });
+          } catch (_backendWakeRetryError) {
+            // Best effort: fallback data below remains the final safety net.
+          }
         }
       }
 
@@ -906,6 +929,13 @@ const App = () => {
 
   React.useEffect(() => {
     loadPowerOfAttorneyRegistry(false);
+  }, [loadPowerOfAttorneyRegistry]);
+
+  React.useEffect(() => {
+    const timeoutId = setTimeout(() => {
+      void loadPowerOfAttorneyRegistry(false);
+    }, 5000);
+    return () => clearTimeout(timeoutId);
   }, [loadPowerOfAttorneyRegistry]);
 
   
@@ -2260,12 +2290,25 @@ const App = () => {
 
   React.useEffect(() => {
     if (!driveConnected || driveOpsQueue.length === 0) return undefined;
+
     void processDriveOpsQueue();
-    const intervalId = setInterval(() => {
+
+    const now = Date.now();
+    const nextRunAt = driveOpsQueue.reduce((min, item) => {
+      const itemNextRunAt = Number(item?.nextRunAt || 0);
+      return Math.min(min, itemNextRunAt);
+    }, Number.POSITIVE_INFINITY);
+
+    const retryDelayMs = Number.isFinite(nextRunAt)
+      ? Math.max(250, nextRunAt - now)
+      : 30000;
+
+    const timeoutId = setTimeout(() => {
       void processDriveOpsQueue();
-    }, 30000);
-    return () => clearInterval(intervalId);
-  }, [driveConnected, driveOpsQueue.length, processDriveOpsQueue]);
+    }, retryDelayMs);
+
+    return () => clearTimeout(timeoutId);
+  }, [driveConnected, driveOpsQueue, processDriveOpsQueue]);
 
   const selectDriveFolder = async () => {
     if (!driveConnected) {
