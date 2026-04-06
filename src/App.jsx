@@ -1441,23 +1441,28 @@ const App = () => {
 
       const addedOrderIds = selectedOrderIds.filter((orderId) => !previousOrderIds.has(orderId));
       const removedOrderIds = Array.from(previousOrderIds).filter((orderId) => !selectedOrderIdsSet.has(orderId));
-      await syncTripOrderFolders({
+      const tripFolderSyncResult = await syncTripOrderFolders({
         trip,
         previousTrip: editingTrip,
         addedOrderIds,
         removedOrderIds,
       });
 
+      const syncedTrip = tripFolderSyncResult?.trip || trip;
+      const syncedTrips = nextTrips.map((item) => (item.id === syncedTrip.id ? syncedTrip : item));
+
+      setTrips(syncedTrips);
+
       await saveCloudSnapshotNow({
         orders: nextOrders,
-        trips: nextTrips,
+        trips: syncedTrips,
         orderStages,
         tripStages,
         printSignerSettings,
       });
 
       closeCreateTripForm();
-      return { trip, selectedOrders };
+      return { trip: syncedTrip, selectedOrders };
     } finally {
       setIsTripSaving(false);
     }
@@ -2129,14 +2134,22 @@ const App = () => {
     addedOrderIds = [],
     removedOrderIds = [],
   }) => {
-    if (!driveConnected) return;
+    if (!driveConnected) {
+      return {
+        trip,
+        tripFolderId: trip?.driveFolderId || previousTrip?.driveFolderId || null,
+        tripFolderUrl: trip?.driveFolder || previousTrip?.driveFolder || null,
+      };
+    }
     const ordersById = new Map(orders.map((order) => [order.id, order]));
 
     let tripFolderId = trip.driveFolderId || previousTrip?.driveFolderId || null;
+    let tripFolderUrl = trip.driveFolder || previousTrip?.driveFolder || null;
     let orderIdsToMoveIntoTrip = addedOrderIds;
     if (!tripFolderId) {
       const created = await createDriveFolderForTrip(trip);
       tripFolderId = created?.folderId || null;
+      tripFolderUrl = created?.folderUrl || tripFolderUrl;
       orderIdsToMoveIntoTrip = Array.isArray(trip.orderIds) ? trip.orderIds : [];
     }
 
@@ -2166,6 +2179,18 @@ const App = () => {
         await moveOrderFolderToBase(order);
       }
     }
+
+    return {
+      trip: tripFolderId || tripFolderUrl
+        ? {
+            ...trip,
+            driveFolderId: tripFolderId || null,
+            driveFolder: tripFolderUrl || trip.driveFolder || null,
+          }
+        : trip,
+      tripFolderId,
+      tripFolderUrl,
+    };
   };
 
   const updateDriveFolderName = async (folderId, newName) => {
