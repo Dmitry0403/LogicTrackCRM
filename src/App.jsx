@@ -2211,17 +2211,30 @@ const App = () => {
 
   const deleteDriveFolder = async (folderId) => {
     if (!folderId) return true;
+    console.info("[drive.delete] start", { folderId });
     try {
       await runDriveOpWithWakeRetry(() => deleteDriveFolderRaw(folderId));
+      console.info("[drive.delete] success", { folderId });
       removeDriveOpByKey('delete_folder', { folderId });
       return true;
     } catch (err) {
       console.error('Drive delete folder failed:', err);
       if (isDrivePermissionError(err)) {
+        console.warn("[drive.delete] permission_error", {
+          folderId,
+          message: err?.message || "",
+          reason: err?.reason || "",
+        });
         setDriveHint(DRIVE_PERMISSION_HINT);
         removeDriveOpByKey('delete_folder', { folderId });
         return false;
       }
+      console.warn("[drive.delete] queued", {
+        folderId,
+        message: err?.message || "",
+        status: err?.status || null,
+        reason: err?.reason || "",
+      });
       upsertDriveOp('delete_folder', { folderId }, err?.message || 'delete_folder_failed');
       return false;
     }
@@ -2239,6 +2252,12 @@ const App = () => {
         if (!dueOp) break;
 
         try {
+          console.info("[drive.queue] processing", {
+            id: dueOp.id,
+            type: dueOp.type,
+            payload: dueOp.payload,
+            attempt: dueOp.attempt || 0,
+          });
           if (dueOp.type === 'create_order_folder') {
             const liveOrder = orders.find((item) => item.id === dueOp.payload?.orderId);
             if (liveOrder) {
@@ -2285,15 +2304,38 @@ const App = () => {
             await runDriveOpWithWakeRetry(() => deleteDriveFolderRaw(dueOp.payload?.folderId));
           }
 
+          console.info("[drive.queue] success", {
+            id: dueOp.id,
+            type: dueOp.type,
+            payload: dueOp.payload,
+          });
           setDriveOpsQueue((prev) => prev.filter((item) => item.id !== dueOp.id));
         } catch (error) {
           if (isDrivePermissionError(error)) {
+            console.warn("[drive.queue] permission_error", {
+              id: dueOp.id,
+              type: dueOp.type,
+              payload: dueOp.payload,
+              message: error?.message || "",
+              reason: error?.reason || "",
+            });
             setDriveHint(DRIVE_PERMISSION_HINT);
             setDriveOpsQueue((prev) => prev.filter((item) => item.id !== dueOp.id));
             continue;
           }
           const nextAttempt = Number(dueOp.attempt || 0) + 1;
           const nextRunAt = Date.now() + getDriveRetryDelayMs(nextAttempt);
+          console.warn("[drive.queue] retry_scheduled", {
+            id: dueOp.id,
+            type: dueOp.type,
+            payload: dueOp.payload,
+            currentAttempt: dueOp.attempt || 0,
+            nextAttempt,
+            nextRunAt,
+            message: error?.message || "",
+            status: error?.status || null,
+            reason: error?.reason || "",
+          });
           setDriveOpsQueue((prev) =>
             prev.map((item) =>
               item.id === dueOp.id
@@ -2431,6 +2473,11 @@ const App = () => {
     try {
       if (type === "order") {
         const orderToDelete = orders.find((o) => o.id === id);
+        console.info("[delete.card] order", {
+          id,
+          driveFolderId: orderToDelete?.driveFolderId || null,
+          driveFolder: orderToDelete?.driveFolder || null,
+        });
         if (orderToDelete?.driveFolderId) {
           await deleteDriveFolder(orderToDelete.driveFolderId);
         }
@@ -2452,6 +2499,13 @@ const App = () => {
 
       if (type === "trip") {
         const tripToDelete = trips.find((trip) => trip.id === id);
+        console.info("[delete.card] trip", {
+          id,
+          stageId: tripToDelete?.stageId || null,
+          driveFolderId: tripToDelete?.driveFolderId || null,
+          driveFolder: tripToDelete?.driveFolder || null,
+          orderIds: Array.isArray(tripToDelete?.orderIds) ? tripToDelete.orderIds : [],
+        });
         const tripOrderIds = new Set(tripToDelete?.orderIds || []);
         let nextOrders = orders;
         let nextTrips = trips.filter((trip) => trip.id !== id);
@@ -3267,7 +3321,7 @@ const App = () => {
                 </span>{" "}
                 {"\u0441\u043a\u043e\u043f\u0438\u0440\u043e\u0432\u0430\u043d \u0432 \u0431\u0443\u0444\u0435\u0440 \u043e\u0431\u043c\u0435\u043d\u0430."}
               </p>
-            </div>
+             </div>
           </div>
         </div>
       )}
