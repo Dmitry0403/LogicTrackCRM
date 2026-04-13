@@ -74,6 +74,24 @@ test("user can create order via alternate form and card hides awb and warning st
   await expect(orderCard.locator(".workflow-card__title")).not.toHaveClass(/workflow-card__title--danger/);
 });
 
+test("user can edit alternate order customer and card title updates", async ({ page, gotoWorkspace }) => {
+  await gotoWorkspace();
+  const uniqueCustomer = `Alt Customer ${Date.now()}`;
+  await createOrderViaAlternateForm(page, uniqueCustomer);
+
+  const updatedCustomer = `Alt Customer Updated ${Date.now()}`;
+  const orderCard = page.locator(".workflow-card", { hasText: uniqueCustomer }).first();
+  await expect(orderCard).toBeVisible();
+  await orderCard.locator(".workflow-card__icon-btn").first().click({ force: true });
+  await expect(page.locator("form#order-form-panel")).toBeVisible();
+  await page.locator("#customer").fill(updatedCustomer);
+  await page.locator("form#order-form-panel button[type='submit']").click();
+
+  await expect(page.getByTestId("orders-create-action")).toBeVisible();
+  await expect(page.locator(".workflow-card", { hasText: updatedCustomer }).first()).toBeVisible();
+  await expect(page.locator(".workflow-card", { hasText: uniqueCustomer })).toHaveCount(0);
+});
+
 test("user can delete an order in workspace fixture", async ({ page, gotoWorkspace }) => {
   await gotoWorkspace();
   const uniqueRecipient = `E2E Delete Order ${Date.now()}`;

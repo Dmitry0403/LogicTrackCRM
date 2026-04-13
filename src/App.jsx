@@ -334,8 +334,8 @@ const E2E_DRIVE_ACCOUNT = {
 };
 
 const createEmptyOrderFormData = () => ({
-  shipmentAirport: "",
-  shipmentTerminal: "",
+  shipmentAirport: RU.orderForm.airports.sheremetyevo,
+  shipmentTerminal: RU.orderForm.terminals.moscowCargo,
   recipient: "",
   orderName: "",
   awb: "",
@@ -1165,6 +1165,9 @@ const App = () => {
       if (field === "recipient") {
         next.orderName = value.trim();
       }
+      if (field === "customer") {
+        next.orderName = String(value || "").trim();
+      }
       if (field === "shipmentAirport") {
         next.shipmentTerminal = SHEREMETYEVO_VALUES.has(value) ? DEFAULT_SHEREMETYEVO_TERMINAL : "";
       }
@@ -1200,13 +1203,14 @@ const App = () => {
     event.preventDefault();
     setIsOrderCloudSaving(true);
     try {
+      const isAlternateOrder = Boolean(formData.customer || formData.loadingPoint || formData.unloadingPoint);
       const normalizedCustomer = String(formData.customer || "").trim();
       const normalizedLoadingPoint = String(formData.loadingPoint || "").trim();
       const normalizedUnloadingPoint = String(formData.unloadingPoint || "").trim();
       const normalizedRecipient = String(formData.recipient || "").trim();
       const normalizedOrderName = String(formData.orderName || "").trim();
       const resolvedName = getOrderDisplayName({
-        orderName: normalizedOrderName,
+        orderName: isAlternateOrder ? normalizedCustomer : normalizedOrderName,
         customer: normalizedCustomer,
         recipient: normalizedRecipient,
         unloadingPoint: normalizedUnloadingPoint,
