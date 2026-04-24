@@ -261,6 +261,10 @@ body {
   .order-form__column {
     gap: 14px;
   }
+
+  .workflow-board__edge-control {
+    display: none;
+  }
 }
 
 label {
@@ -716,6 +720,77 @@ small {
   color: #334155;
 }
 
+.workflow-board__viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+}
+
+.workflow-board__viewport::before,
+.workflow-board__viewport::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 42px;
+  z-index: 6;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+}
+
+.workflow-board__viewport::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.workflow-board__viewport::after {
+  right: 0;
+  background: linear-gradient(270deg, rgba(255, 255, 255, 0.92) 0%, rgba(255, 255, 255, 0) 100%);
+}
+
+.workflow-board__viewport--can-scroll-left::before,
+.workflow-board__viewport--can-scroll-right::after {
+  opacity: 1;
+}
+
+.workflow-board__edge-control {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 8;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  background: transparent;
+  color: #2563eb;
+  font-size: 30px;
+  line-height: 42px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: color 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+  text-align: center;
+  font-family: Georgia, "Times New Roman", serif;
+}
+
+.workflow-board__edge-control:hover,
+.workflow-board__edge-control:focus-visible {
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.4);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.workflow-board__edge-control--left {
+  left: -10px;
+}
+
+.workflow-board__edge-control--right {
+  right: -10px;
+}
+
 .workflow-columns {
   display: grid;
   grid-auto-flow: column;
@@ -727,6 +802,12 @@ small {
   min-height: 0;
   align-items: stretch;
   align-content: start;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.workflow-columns::-webkit-scrollbar {
+  display: none;
 }
 
 .workflow-column {

@@ -102,13 +102,60 @@ export function WorkflowBoard({
   const [deleteStageId, setDeleteStageId] = React.useState("");
   const [dragOverStageId, setDragOverStageId] = React.useState("");
   const [draggingItemId, setDraggingItemId] = React.useState("");
+  const [canScrollLeft, setCanScrollLeft] = React.useState(false);
+  const [canScrollRight, setCanScrollRight] = React.useState(false);
   const renameFormRef = React.useRef(null);
+  const columnsRef = React.useRef(null);
+  const hoverScrollDirectionRef = React.useRef(0);
+  const hoverScrollFrameRef = React.useRef(0);
   const toWeightNumber = React.useCallback((value) => {
     if (value == null) return 0;
     const normalized = String(value).replace(",", ".").trim();
     const parsed = Number.parseFloat(normalized);
     return Number.isFinite(parsed) ? parsed : 0;
   }, []);
+
+  const updateScrollControls = React.useCallback(() => {
+    const node = columnsRef.current;
+    if (!node) {
+      setCanScrollLeft(false);
+      setCanScrollRight(false);
+      return;
+    }
+
+    const maxScrollLeft = Math.max(0, node.scrollWidth - node.clientWidth);
+    const left = node.scrollLeft;
+    setCanScrollLeft(left > 6);
+    setCanScrollRight(left < maxScrollLeft - 6);
+  }, []);
+
+  const stopHoverScroll = React.useCallback(() => {
+    hoverScrollDirectionRef.current = 0;
+    if (hoverScrollFrameRef.current) {
+      window.cancelAnimationFrame(hoverScrollFrameRef.current);
+      hoverScrollFrameRef.current = 0;
+    }
+  }, []);
+
+  const runHoverScroll = React.useCallback(() => {
+    const node = columnsRef.current;
+    const direction = hoverScrollDirectionRef.current;
+    if (!node || !direction) {
+      hoverScrollFrameRef.current = 0;
+      return;
+    }
+
+    node.scrollLeft += direction * 14;
+    updateScrollControls();
+    hoverScrollFrameRef.current = window.requestAnimationFrame(runHoverScroll);
+  }, [updateScrollControls]);
+
+  const startHoverScroll = React.useCallback((direction) => {
+    hoverScrollDirectionRef.current = direction;
+    if (!hoverScrollFrameRef.current) {
+      hoverScrollFrameRef.current = window.requestAnimationFrame(runHoverScroll);
+    }
+  }, [runHoverScroll]);
 
   const isStageRenamable = React.useCallback(
     (stage) => {
@@ -233,118 +280,178 @@ export function WorkflowBoard({
     };
   }, [editingStageId, deleteStageId, commitRenameStage]);
 
+  React.useEffect(() => {
+    const node = columnsRef.current;
+    if (!node) return undefined;
+
+    updateScrollControls();
+    node.addEventListener("scroll", updateScrollControls, { passive: true });
+
+    const resizeObserver = new ResizeObserver(() => {
+      updateScrollControls();
+    });
+    resizeObserver.observe(node);
+
+    if (node.firstElementChild) {
+      resizeObserver.observe(node.firstElementChild);
+    }
+
+    window.addEventListener("resize", updateScrollControls);
+
+    return () => {
+      stopHoverScroll();
+      node.removeEventListener("scroll", updateScrollControls);
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateScrollControls);
+    };
+  }, [stages.length, items.length, stopHoverScroll, updateScrollControls]);
+
   return (
     <div className="workflow-board" data-testid={boardTestId ? `${boardTestId}-board` : undefined}>
-      <div className="workflow-columns">
-        {stages.map((stage) => {
-          const stageItems = items.filter((item) => getItemStageId(item) === stage.id);
-          const stageTotalWeight = stageItems.reduce(
-            (sum, item) => sum + toWeightNumber(getItemWeight ? getItemWeight(item) : 0),
-            0,
-          );
-          const stageIsDefault = Boolean(isStageDefault && isStageDefault(stage));
-          const stageCanRename = isStageRenamable(stage);
-          const stageCanDelete = isStageDeletable(stage);
-          return (
-            <section
-              className={`workflow-column ${dragOverStageId === stage.id ? "workflow-column--drop-target" : ""}`}
-              key={stage.id}
-              data-testid={boardTestId ? `${boardTestId}-stage-${stage.id}` : undefined}
-              onDragOver={(event) => handleDragOverStage(event, stage.id)}
-              onDragLeave={(event) => handleDragLeaveStage(event, stage.id)}
-              onDrop={(event) => handleDropToStage(event, stage.id)}
-            >
-              <header className={`workflow-column__head ${stageIsDefault ? "workflow-column__head--default" : ""}`}>
-                {editingStageId === stage.id ? (
-                  <form ref={renameFormRef} className="workflow-column__title-edit" onSubmit={submitRenameStage}>
-                    <input
-                      type="text"
-                      data-testid={boardTestId ? `${boardTestId}-stage-rename-input` : undefined}
-                      value={editingStageName}
-                      onChange={(event) => setEditingStageName(event.target.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Escape") {
-                          closeRenameInline();
-                          setActiveStageId("");
-                        }
-                      }}
-                      autoFocus
-                    />
-                  </form>
-                ) : (
-                  <div className="workflow-column__title-wrap">
-                    <div className="workflow-column__title">{stage.name}</div>
-                    <div className="workflow-column__count">{stageItems.length}</div>
-                    <div className="workflow-column__weight">
-                      {stageTotalWeight.toLocaleString("ru-RU", {
-                        minimumFractionDigits: 0,
-                        maximumFractionDigits: 2,
-                      })} {RU.workflow.weightUnit}
-                    </div>
-                  </div>
-                )}
-                {stageCanRename &&
-                  (activeStageId === stage.id && stageCanDelete ? (
-                    <button
-                      type="button"
-                      className="workflow-column__icon-btn workflow-column__icon-btn--delete"
-                      title={RU.workflow.deleteStage}
-                      onClick={() => openDeleteModal(stage.id)}
-                      data-testid={boardTestId ? `${boardTestId}-stage-delete-${stage.id}` : undefined}
-                      disabled={stages.length <= 1}
-                    >
-                      🗑
-                    </button>
+      <div
+        className={`workflow-board__viewport ${
+          canScrollLeft ? "workflow-board__viewport--can-scroll-left" : ""
+        } ${canScrollRight ? "workflow-board__viewport--can-scroll-right" : ""}`.trim()}
+      >
+        {canScrollLeft && (
+          <button
+            type="button"
+            className="workflow-board__edge-control workflow-board__edge-control--left"
+            aria-label={RU.workflow.scrollLeftAria || "Прокрутить влево"}
+            onMouseEnter={() => startHoverScroll(-1)}
+            onMouseLeave={stopHoverScroll}
+            onFocus={() => startHoverScroll(-1)}
+            onBlur={stopHoverScroll}
+          >
+            ‹
+          </button>
+        )}
+
+        <div ref={columnsRef} className="workflow-columns">
+          {stages.map((stage) => {
+            const stageItems = items.filter((item) => getItemStageId(item) === stage.id);
+            const stageTotalWeight = stageItems.reduce(
+              (sum, item) => sum + toWeightNumber(getItemWeight ? getItemWeight(item) : 0),
+              0,
+            );
+            const stageIsDefault = Boolean(isStageDefault && isStageDefault(stage));
+            const stageCanRename = isStageRenamable(stage);
+            const stageCanDelete = isStageDeletable(stage);
+            return (
+              <section
+                className={`workflow-column ${dragOverStageId === stage.id ? "workflow-column--drop-target" : ""}`}
+                key={stage.id}
+                data-testid={boardTestId ? `${boardTestId}-stage-${stage.id}` : undefined}
+                onDragOver={(event) => handleDragOverStage(event, stage.id)}
+                onDragLeave={(event) => handleDragLeaveStage(event, stage.id)}
+                onDrop={(event) => handleDropToStage(event, stage.id)}
+              >
+                <header className={`workflow-column__head ${stageIsDefault ? "workflow-column__head--default" : ""}`}>
+                  {editingStageId === stage.id ? (
+                    <form ref={renameFormRef} className="workflow-column__title-edit" onSubmit={submitRenameStage}>
+                      <input
+                        type="text"
+                        data-testid={boardTestId ? `${boardTestId}-stage-rename-input` : undefined}
+                        value={editingStageName}
+                        onChange={(event) => setEditingStageName(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") {
+                            closeRenameInline();
+                            setActiveStageId("");
+                          }
+                        }}
+                        autoFocus
+                      />
+                    </form>
                   ) : (
-                    <button
-                      type="button"
-                      className="workflow-column__icon-btn workflow-column__icon-btn--edit"
-                      title={RU.workflow.edit}
-                      onClick={() => openRenameModal(stage)}
-                      data-testid={boardTestId ? `${boardTestId}-stage-edit-${stage.id}` : undefined}
-                    >
-                      ✎
-                    </button>
-                  ))}
-              </header>
-              <div className="workflow-column__body">
-                {stageItems.length === 0 ? (
-                  <div className="workflow-column__empty">{RU.workflow.empty}</div>
-                ) : (
-                  stageItems.map((item) => (
-                    <div
-                      key={getItemId(item)}
-                      className={`workflow-draggable-card ${
-                        draggingItemId === String(getItemId(item))
-                          ? "workflow-draggable-card--dragging"
-                          : ""
-                      }`}
-                      draggable
-                      onDragStart={(event) => handleDragStart(event, getItemId(item))}
-                      onDragEnd={() => {
-                        setDragOverStageId("");
-                        setDraggingItemId("");
-                      }}
-                    >
-                      {renderItemCard(item)}
+                    <div className="workflow-column__title-wrap">
+                      <div className="workflow-column__title">{stage.name}</div>
+                      <div className="workflow-column__count">{stageItems.length}</div>
+                      <div className="workflow-column__weight">
+                        {stageTotalWeight.toLocaleString("ru-RU", {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 2,
+                        })} {RU.workflow.weightUnit}
+                      </div>
                     </div>
-                  ))
+                  )}
+                  {stageCanRename &&
+                    (activeStageId === stage.id && stageCanDelete ? (
+                      <button
+                        type="button"
+                        className="workflow-column__icon-btn workflow-column__icon-btn--delete"
+                        title={RU.workflow.deleteStage}
+                        onClick={() => openDeleteModal(stage.id)}
+                        data-testid={boardTestId ? `${boardTestId}-stage-delete-${stage.id}` : undefined}
+                        disabled={stages.length <= 1}
+                      >
+                        🗑
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        className="workflow-column__icon-btn workflow-column__icon-btn--edit"
+                        title={RU.workflow.edit}
+                        onClick={() => openRenameModal(stage)}
+                        data-testid={boardTestId ? `${boardTestId}-stage-edit-${stage.id}` : undefined}
+                      >
+                        ✎
+                      </button>
+                    ))}
+                </header>
+                <div className="workflow-column__body">
+                  {stageItems.length === 0 ? (
+                    <div className="workflow-column__empty">{RU.workflow.empty}</div>
+                  ) : (
+                    stageItems.map((item) => (
+                      <div
+                        key={getItemId(item)}
+                        className={`workflow-draggable-card ${
+                          draggingItemId === String(getItemId(item))
+                            ? "workflow-draggable-card--dragging"
+                            : ""
+                        }`}
+                        draggable
+                        onDragStart={(event) => handleDragStart(event, getItemId(item))}
+                        onDragEnd={() => {
+                          setDragOverStageId("");
+                          setDraggingItemId("");
+                        }}
+                      >
+                        {renderItemCard(item)}
+                      </div>
+                    ))
+                  )}
+                </div>
+                {allowStageManagement && (
+                  <button
+                    type="button"
+                    className="workflow-column__add-next"
+                    title={RU.workflow.addStageRight}
+                    onClick={() => handleInsertStage(stage.id)}
+                    data-testid={boardTestId ? `${boardTestId}-stage-add-after-${stage.id}` : undefined}
+                  >
+                    +
+                  </button>
                 )}
-              </div>
-              {allowStageManagement && (
-                <button
-                  type="button"
-                  className="workflow-column__add-next"
-                  title={RU.workflow.addStageRight}
-                  onClick={() => handleInsertStage(stage.id)}
-                  data-testid={boardTestId ? `${boardTestId}-stage-add-after-${stage.id}` : undefined}
-                >
-                  +
-                </button>
-              )}
-            </section>
-          );
-        })}
+              </section>
+            );
+          })}
+        </div>
+
+        {canScrollRight && (
+          <button
+            type="button"
+            className="workflow-board__edge-control workflow-board__edge-control--right"
+            aria-label={RU.workflow.scrollRightAria || "Прокрутить вправо"}
+            onMouseEnter={() => startHoverScroll(1)}
+            onMouseLeave={stopHoverScroll}
+            onFocus={() => startHoverScroll(1)}
+            onBlur={stopHoverScroll}
+          >
+            ›
+          </button>
+        )}
       </div>
 
       {allowStageManagement && Boolean(deleteStageId) && (
