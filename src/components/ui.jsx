@@ -228,43 +228,45 @@ export function OrderFormCard({
         </div>
       </div>
       <div className="order-form__column">
-        <div className="field">
-          <label htmlFor="quantity">{RU.orderForm.quantity}</label>
-          <input
-            id="quantity"
-            name="quantity"
-            type="number"
-            min="1"
-            step="1"
-            required
-            value={formData.quantity}
-            onChange={onFieldChange("quantity")}
-            onWheel={(event) => event.currentTarget.blur()}
-            onKeyDown={(event) => {
-              if (["e", "E", "+", "-"].includes(event.key)) {
-                event.preventDefault();
-              }
-            }}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="weight">{RU.orderForm.weight}</label>
-          <input
-            id="weight"
-            name="weight"
-            type="number"
-            min="0"
-            step="0.01"
-            required
-            value={formData.weight}
-            onChange={onFieldChange("weight")}
-            onWheel={(event) => event.currentTarget.blur()}
-            onKeyDown={(event) => {
-              if (["e", "E", "+", "-"].includes(event.key)) {
-                event.preventDefault();
-              }
-            }}
-          />
+        <div className="order-form__quantity-row">
+          <div className="field">
+            <label htmlFor="quantity">{RU.orderForm.quantity}</label>
+            <input
+              id="quantity"
+              name="quantity"
+              type="number"
+              min="1"
+              step="1"
+              required
+              value={formData.quantity}
+              onChange={onFieldChange("quantity")}
+              onWheel={(event) => event.currentTarget.blur()}
+              onKeyDown={(event) => {
+                if (["e", "E", "+", "-"].includes(event.key)) {
+                  event.preventDefault();
+                }
+              }}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="weight">{RU.orderForm.weight}</label>
+            <input
+              id="weight"
+              name="weight"
+              type="number"
+              min="0"
+              step="0.01"
+              required
+              value={formData.weight}
+              onChange={onFieldChange("weight")}
+              onWheel={(event) => event.currentTarget.blur()}
+              onKeyDown={(event) => {
+                if (["e", "E", "+", "-"].includes(event.key)) {
+                  event.preventDefault();
+                }
+              }}
+            />
+          </div>
         </div>
         <div className="field">
           <label htmlFor="customsCode">{RU.orderForm.customsCode}</label>
