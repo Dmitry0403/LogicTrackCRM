@@ -61,147 +61,148 @@ export function OrderFormCard({
   const form = (
     <form id={formId} onSubmit={onSubmit} className="order-form">
       <div className="order-form__column">
-        <div className="field">
-          <label htmlFor="shipmentAirport">{RU.orderForm.shipmentAirport}</label>
-          <select
-            id="shipmentAirport"
-            name="shipmentAirport"
-            required
-            value={formData.shipmentAirport}
-            onChange={onFieldChange("shipmentAirport")}
-          >
-            <option value="" disabled>
-              {RU.orderForm.selectAirport}
-            </option>
-            <option value={RU.orderForm.airports.sheremetyevo}>{RU.orderForm.airports.sheremetyevo}</option>
-            <option value={RU.orderForm.airports.vnukovo}>{RU.orderForm.airports.vnukovo}</option>
-            <option value={RU.orderForm.airports.domodedovo}>{RU.orderForm.airports.domodedovo}</option>
-            <option value={RU.orderForm.airports.zhukovsky}>{RU.orderForm.airports.zhukovsky}</option>
-          </select>
+        <div className="order-form__shipment-row">
+          <div className="field order-form__airport-field">
+            <label htmlFor="shipmentAirport">{RU.orderForm.shipmentAirport}</label>
+            <select
+              id="shipmentAirport"
+              name="shipmentAirport"
+              required
+              value={formData.shipmentAirport}
+              onChange={onFieldChange("shipmentAirport")}
+            >
+              <option value="" disabled>
+                {RU.orderForm.selectAirport}
+              </option>
+              <option value={RU.orderForm.airports.sheremetyevo}>{RU.orderForm.airports.sheremetyevo}</option>
+              <option value={RU.orderForm.airports.vnukovo}>{RU.orderForm.airports.vnukovo}</option>
+              <option value={RU.orderForm.airports.domodedovo}>{RU.orderForm.airports.domodedovo}</option>
+              <option value={RU.orderForm.airports.zhukovsky}>{RU.orderForm.airports.zhukovsky}</option>
+            </select>
+          </div>
+          {formData.shipmentAirport === RU.orderForm.airports.sheremetyevo && (
+            <div
+              className="radio-group order-form__terminal-group"
+              role="radiogroup"
+              aria-label={RU.orderForm.sheremetyevoTerminal}
+            >
+                <label className="radio-option" htmlFor="svo-terminal-moscow-cargo">
+                  <input
+                    id="svo-terminal-moscow-cargo"
+                    type="radio"
+                    name="shipmentTerminal"
+                    value={RU.orderForm.terminals.moscowCargo}
+                    checked={formData.shipmentTerminal === RU.orderForm.terminals.moscowCargo}
+                    onChange={onFieldChange("shipmentTerminal")}
+                  />
+                  {RU.orderForm.terminals.moscowCargo}
+                </label>
+                <label className="radio-option" htmlFor="svo-terminal-shercargo">
+                  <input
+                    id="svo-terminal-shercargo"
+                    type="radio"
+                    name="shipmentTerminal"
+                    value={RU.orderForm.terminals.sheremetyevoCargo}
+                    checked={formData.shipmentTerminal === RU.orderForm.terminals.sheremetyevoCargo}
+                    onChange={onFieldChange("shipmentTerminal")}
+                  />
+                  {RU.orderForm.terminals.sheremetyevoCargo}
+                </label>
+            </div>
+          )}
         </div>
-        {formData.shipmentAirport === RU.orderForm.airports.sheremetyevo && (
-          <div className="field">
-            <span>{RU.orderForm.sheremetyevoTerminal}</span>
-            <div className="radio-group" role="radiogroup" aria-label={RU.orderForm.sheremetyevoTerminal}>
-              <label className="radio-option" htmlFor="svo-terminal-moscow-cargo">
-                <input
-                  id="svo-terminal-moscow-cargo"
-                  type="radio"
-                  name="shipmentTerminal"
-                  value={RU.orderForm.terminals.moscowCargo}
-                  checked={formData.shipmentTerminal === RU.orderForm.terminals.moscowCargo}
-                  onChange={onFieldChange("shipmentTerminal")}
-                />
-                {RU.orderForm.terminals.moscowCargo}
-              </label>
-              <label className="radio-option" htmlFor="svo-terminal-shercargo">
-                <input
-                  id="svo-terminal-shercargo"
-                  type="radio"
-                  name="shipmentTerminal"
-                  value={RU.orderForm.terminals.sheremetyevoCargo}
-                  checked={formData.shipmentTerminal === RU.orderForm.terminals.sheremetyevoCargo}
-                  onChange={onFieldChange("shipmentTerminal")}
-                />
-                {RU.orderForm.terminals.sheremetyevoCargo}
-              </label>
+        <div className="order-form__identity-row">
+          <div className="field order-form__identity-field">
+            <label htmlFor="recipient">{RU.orderForm.recipient}</label>
+            <input
+              id="recipient"
+              name="recipient"
+              type="text"
+              list="recipient-suggestions"
+              placeholder={RU.orderForm.recipientPlaceholder}
+              required
+              value={formData.recipient}
+              className={
+                powerOfAttorneyStatus
+                  ? `recipient-status recipient-status--${powerOfAttorneyStatus.type}`
+                  : ""
+              }
+              onChange={onFieldChange("recipient")}
+            />
+            <datalist id="recipient-suggestions">
+              {(recipientSuggestions || []).map((item, index) => (
+                <option key={`${item.value}-${item.label}-${index}`} value={item.value} label={item.label} />
+              ))}
+            </datalist>
+            <div className="recipient-status-slot">
+              {powerOfAttorneyStatus && (
+                <small className={`recipient-status-text recipient-status-text--${powerOfAttorneyStatus.type}`}>
+                  {powerOfAttorneyStatus.message}
+                </small>
+              )}
+            </div>
+            <div className="registry-actions">
+              <button
+                type="button"
+                onClick={onRefreshPowerOfAttorneyRegistry}
+                disabled={isPowerOfAttorneySyncLoading}
+              >
+                {isPowerOfAttorneySyncLoading ? RU.orderForm.refreshRegistryLoading : RU.orderForm.refreshRegistry}
+              </button>
             </div>
           </div>
-        )}
-        <div className="field">
-          <label htmlFor="recipient">{RU.orderForm.recipient}</label>
-          <input
-            id="recipient"
-            name="recipient"
-            type="text"
-            list="recipient-suggestions"
-            placeholder={RU.orderForm.recipientPlaceholder}
-            required
-            value={formData.recipient}
-            className={
-              powerOfAttorneyStatus
-                ? `recipient-status recipient-status--${powerOfAttorneyStatus.type}`
-                : ""
-            }
-            onChange={onFieldChange("recipient")}
-          />
-          <datalist id="recipient-suggestions">
-            {(recipientSuggestions || []).map((item, index) => (
-              <option key={`${item.value}-${item.label}-${index}`} value={item.value} label={item.label} />
-            ))}
-          </datalist>
-          {powerOfAttorneyStatus && (
-            <small className={`recipient-status-text recipient-status-text--${powerOfAttorneyStatus.type}`}>
-              {powerOfAttorneyStatus.message}
-            </small>
-          )}
-          <div className="registry-actions">
-            <button
-              type="button"
-              onClick={onRefreshPowerOfAttorneyRegistry}
-              disabled={isPowerOfAttorneySyncLoading}
-            >
-              {isPowerOfAttorneySyncLoading ? RU.orderForm.refreshRegistryLoading : RU.orderForm.refreshRegistry}
-            </button>
+          <div className="field order-form__identity-field">
+            <label htmlFor="orderName">{RU.orderForm.orderName}</label>
+            <input id="orderName" name="orderName" type="text" value={formData.orderName} onChange={onFieldChange("orderName")} />
+            <small>{RU.orderForm.orderNameHint}</small>
           </div>
-        </div>
-        <div className="field">
-          <label htmlFor="orderName">{RU.orderForm.orderName}</label>
-          <input id="orderName" name="orderName" type="text" value={formData.orderName} onChange={onFieldChange("orderName")} />
-          <small>{RU.orderForm.orderNameHint}</small>
         </div>
         <div className="field">
           <label htmlFor="awb-prefix">{RU.orderForm.awbNumber}</label>
-          <div style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
-            <input
-              id="awb-prefix"
-              name="awbPrefix"
-              type="text"
-              placeholder="876"
-              value={formData.awbPrefix || ""}
-              onChange={handleAwbPrefixChange}
-              inputMode="numeric"
-              autoComplete="off"
-              maxLength={3}
-              style={{ width: "110px", flex: "0 0 110px", textAlign: "center" }}
-            />
-            <span>-</span>
-            <input
-              id="awb-number"
-              name="awbNumber"
-              type="text"
-              placeholder="14889696 / CRR26030046"
-              required
-              value={formData.awbNumber || ""}
-              onChange={handleAwbNumberChange}
-              inputMode="text"
-              autoComplete="off"
-              maxLength={32}
-              style={{ flex: "1 1 160px", minWidth: "140px" }}
-            />
-            <button
-              type="button"
-              onClick={onCheckAwbStatus}
-              data-testid="awb-check-action"
-              disabled={
-                !isAwbCheckAvailable ||
-                !String(formData.awbNumber || "").trim()
-              }
-            >
-              {RU.orderForm.check}
-            </button>
-          </div>
-          <div
-            style={{
-              marginTop: "8px",
-              display: "flex",
-              gap: "10px",
-              alignItems: "center",
-              flexWrap: "wrap",
-              minHeight: "44px",
-            }}
-          >
-            <label style={{ display: "inline-flex", alignItems: "center", gap: "6px", fontWeight: 600 }}>
+          <div className="order-form__awb-row">
+            <div className="order-form__awb-main">
+              <div className="order-form__awb-inputs">
+                <input
+                  id="awb-prefix"
+                  name="awbPrefix"
+                  type="text"
+                  placeholder="876"
+                  value={formData.awbPrefix || ""}
+                  onChange={handleAwbPrefixChange}
+                  inputMode="numeric"
+                  autoComplete="off"
+                  maxLength={3}
+                  className="order-form__awb-prefix"
+                />
+                <span>-</span>
+                <input
+                  id="awb-number"
+                  name="awbNumber"
+                  type="text"
+                  placeholder="14889696 / CRR26030046"
+                  required
+                  value={formData.awbNumber || ""}
+                  onChange={handleAwbNumberChange}
+                  inputMode="text"
+                  autoComplete="off"
+                  maxLength={32}
+                  className="order-form__awb-number"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={onCheckAwbStatus}
+                data-testid="awb-check-action"
+                disabled={
+                  !isAwbCheckAvailable ||
+                  !String(formData.awbNumber || "").trim()
+                }
+              >
+                {RU.orderForm.check}
+              </button>
+            </div>
+            <div className="order-form__hawb">
+            <label className="order-form__hawb-label">
               <input
                 type="checkbox"
                 checked={Boolean(formData.hasHawb)}
@@ -216,9 +217,10 @@ export function OrderFormCard({
                 onChange={onFieldChange("hawb")}
                 placeholder={RU.orderForm.hawbPlaceholder}
                 required
-                style={{ maxWidth: "260px" }}
+                className="order-form__hawb-input"
               />
             )}
+            </div>
           </div>
           {!isAwbCheckAvailable && (
             <small className="hint">{RU.orderForm.airportTerminalHint}</small>

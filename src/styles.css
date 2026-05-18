@@ -187,6 +187,97 @@ body {
   min-width: 0;
 }
 
+.order-form__shipment-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: flex-end;
+  gap: 18px;
+}
+
+.order-form__airport-field {
+  min-width: 0;
+}
+
+.order-form__terminal-group {
+  min-height: 44px;
+  align-items: center;
+  padding-bottom: 2px;
+}
+
+.order-form__identity-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.order-form__identity-field {
+  min-width: 0;
+}
+
+.order-form__awb-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.order-form__awb-main {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.order-form__awb-inputs {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+  min-width: 0;
+}
+
+.order-form__awb-prefix {
+  flex: 0 0 96px;
+  width: 96px;
+  text-align: center;
+}
+
+.order-form__awb-number {
+  flex: 1 1 150px;
+  min-width: 130px;
+}
+
+.order-form__awb-main button {
+  justify-self: start;
+}
+
+.order-form__hawb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  min-width: 0;
+  width: 100%;
+}
+
+.order-form__hawb-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.order-form__hawb-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.recipient-status-slot {
+  min-height: 20px;
+  display: flex;
+  align-items: center;
+}
+
 .order-form__notes {
   display: flex;
   gap: 12px;
@@ -260,6 +351,26 @@ body {
 
   .order-form__column {
     gap: 14px;
+  }
+
+  .order-form__shipment-row {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .order-form__airport-field {
+    flex-basis: auto;
+    min-width: 0;
+  }
+
+  .order-form__identity-row {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+
+  .order-form__awb-row {
+    grid-template-columns: 1fr;
   }
 
   .workflow-board__edge-control {
