@@ -450,15 +450,16 @@ export function SettingsModal({
 
   return (
     <div
-      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      className="settings-dialog-overlay"
       data-testid="settings-modal"
     >
-      <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
+      <div className="settings-dialog-card settings-dialog-card--menu">
         <h2>{RU.settingsModal.title}</h2>
         <p>{RU.settingsModal.description}</p>
         {settingsSections.map((section) => (
           <div
             key={section.id}
+            className={`settings-section-card${hoveredSectionId === section.id ? " settings-section-card--hovered" : ""}`}
             role="button"
             tabIndex={0}
             onClick={section.onOpen}
@@ -470,29 +471,17 @@ export function SettingsModal({
                 section.onOpen?.();
               }
             }}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              gap: "1rem",
-              padding: "1rem",
-              border: "1px solid #d7deea",
-              borderRadius: "8px",
-              cursor: "pointer",
-              backgroundColor: hoveredSectionId === section.id ? "#eef2f7" : "#fff",
-              transition: "background-color 0.15s ease",
-            }}
             data-testid={`settings-section-${section.id}`}
           >
             <div>
               <strong>{section.title}</strong>
-              <div style={{ marginTop: "0.35rem", color: "#4f617e" }}>
+              <div className="settings-section-card__status">
                 {RU.common.status}: {section.status}
               </div>
             </div>
           </div>
         ))}
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
+        <div className="settings-dialog-footer">
           <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="settings-close">
             {RU.common.close}
           </button>
@@ -513,10 +502,10 @@ export function AccountSettingsModal({
 
   return (
     <div
-      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      className="settings-dialog-overlay"
       data-testid="account-settings-modal"
     >
-      <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
+      <div className="settings-dialog-card">
         <h2>{RU.accountModal.title}</h2>
         <p>{RU.common.currentUser}: <strong>{accountEmail || RU.common.emDash}</strong></p>
         <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.9rem" }}>
@@ -527,7 +516,7 @@ export function AccountSettingsModal({
             {RU.accountModal.signOut}
           </button>
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
+        <div className="settings-dialog-footer">
           <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="account-settings-close">
             {RU.common.close}
           </button>
@@ -547,10 +536,10 @@ export function SignatureSettingsModal({
 
   return (
     <div
-      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      className="settings-dialog-overlay"
       data-testid="signature-settings-modal"
     >
-      <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
+      <div className="settings-dialog-card">
         <h2>{RU.signatureModal.title}</h2>
         <div style={{ display: "grid", gap: "0.75rem", marginTop: "0.9rem" }}>
           <label style={{ display: "grid", gap: "0.35rem" }}>
@@ -574,7 +563,7 @@ export function SignatureSettingsModal({
             />
           </label>
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
+        <div className="settings-dialog-footer">
           <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="signature-save">
             {RU.common.save}
           </button>
@@ -598,10 +587,10 @@ export function DriveSettingsModal({
 
   return (
     <div
-      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "rgba(0, 0, 0, 0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+      className="settings-dialog-overlay"
       data-testid="drive-settings-modal"
     >
-      <div style={{ backgroundColor: "#fff", borderRadius: "8px", padding: "2rem", maxWidth: "700px", width: "92%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 4px 16px rgba(0, 0, 0, 0.2)" }}>
+      <div className="settings-dialog-card">
         <h2>{RU.driveModal.title}</h2>
         <p>
           {RU.driveModal.description}
@@ -623,7 +612,7 @@ export function DriveSettingsModal({
           </div>
         )}
         <div className="drive-hint" data-testid="drive-hint">{driveHint}</div>
-        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.5rem" }}>
+        <div className="settings-dialog-footer">
           <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="drive-settings-close">
             {RU.common.close}
           </button>

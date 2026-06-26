@@ -597,6 +597,75 @@ small {
   border: 1px solid #e5eaf3;
 }
 
+.settings-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 1000;
+}
+
+.settings-dialog-card {
+  width: min(92vw, 700px);
+  height: min(90vh, 430px);
+  overflow-y: auto;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 2rem;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.2);
+  display: flex;
+  flex-direction: column;
+}
+
+.settings-dialog-card--menu {
+  overflow: hidden;
+}
+
+.settings-dialog-card--menu h2 {
+  margin: 0 0 0.85rem;
+}
+
+.settings-dialog-card--menu p {
+  margin: 0 0 1rem;
+}
+
+.settings-section-card {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  min-height: 74px;
+  padding: 0.75rem 1rem;
+  border: 1px solid #d7deea;
+  border-radius: 8px;
+  cursor: pointer;
+  background: #ffffff;
+  transition: background-color 0.15s ease;
+}
+
+.settings-section-card + .settings-section-card {
+  margin-top: 0;
+}
+
+.settings-section-card--hovered {
+  background: #eef2f7;
+}
+
+.settings-section-card__status {
+  margin-top: 0.25rem;
+  color: #4f617e;
+}
+
+.settings-dialog-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: auto;
+  padding-top: 1.5rem;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;
@@ -1205,6 +1274,21 @@ button {
   color: #1f2937;
   font-weight: 600;
   cursor: pointer;
+  transform: translateY(0) scale(1);
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.16s ease,
+    filter 0.16s ease;
+}
+
+button:not(:disabled):hover {
+  filter: brightness(0.98);
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.1);
+}
+
+button:not(:disabled):active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.12) inset;
 }
 
 button.primary {
@@ -1215,6 +1299,9 @@ button.primary {
 button:disabled {
   cursor: not-allowed;
   opacity: 0.6;
+  transform: none;
+  box-shadow: none;
+  filter: none;
 }
 
 .drive-actions {
@@ -1269,6 +1356,16 @@ button:disabled {
 }
 
 @media (max-width: 960px) {
+  .settings-dialog-overlay {
+    padding: 12px;
+  }
+
+  .settings-dialog-card {
+    width: 100%;
+    height: min(90vh, 430px);
+    padding: 1.25rem;
+  }
+
   .trip-form {
     grid-template-columns: 1fr;
   }
