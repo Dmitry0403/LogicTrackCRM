@@ -415,6 +415,7 @@ const App = () => {
   });
   const [showSettingsModal, setShowSettingsModal] = React.useState(false);
   const [showDriveSettingsModal, setShowDriveSettingsModal] = React.useState(false);
+  const [shouldAutoOpenDrivePicker, setShouldAutoOpenDrivePicker] = React.useState(false);
   const [showSignatureSettingsModal, setShowSignatureSettingsModal] = React.useState(false);
   const [showAccountSettingsModal, setShowAccountSettingsModal] = React.useState(false);
   const [printSignerSettings, setPrintSignerSettings] = React.useState(loadPrintSignerSettings);
@@ -1046,6 +1047,7 @@ const App = () => {
         } catch (fetchAccountError) {
           console.warn('Не удалось получить данные аккаунта Google Drive:', fetchAccountError);
         }
+        setShouldAutoOpenDrivePicker(true);
 
         // Remove code from URL
         const url = new URL(window.location);
@@ -2436,6 +2438,17 @@ const App = () => {
       setDriveHint(RU.appMessages.folderOpenFailed);
     }
   };
+
+  React.useEffect(() => {
+    if (!shouldAutoOpenDrivePicker || !driveConnected || !showDriveSettingsModal) return undefined;
+
+    setShouldAutoOpenDrivePicker(false);
+    const timeoutId = window.setTimeout(() => {
+      void selectDriveFolder();
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [shouldAutoOpenDrivePicker, driveConnected, showDriveSettingsModal]);
 
   const handleDisconnectGoogleDrive = () => {
     clearGoogleDriveSession({ notify: true });
