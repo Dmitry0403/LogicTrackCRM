@@ -32,8 +32,8 @@ export const CUSTOMS_CODE_MAP = {
 };
 
 export const DEFAULT_PRINT_SIGNER_SETTINGS = {
-  signerRole: "\u041c\u0435\u043d\u0435\u0434\u0436\u0435\u0440",
-  signerName: "\u041a\u043e\u0441\u0435\u043d\u043a\u043e \u0414.\u0412.",
+  signerRole: "Менеджер",
+  signerName: "Косенко Д.В.",
 };
 
 export const TRIP_CAR_NUMBERS = [
@@ -51,7 +51,7 @@ export const TRIP_CAR_NUMBERS = [
 ];
 
 export const TRIP_DRIVER_NAMES = [
-  "Бабрович Юрий",
+  "Лихачев Павел",
   "Медведь Валерий",
   "Медведь Вадим",
   "Сержан Чеслав",
@@ -62,16 +62,16 @@ export const TRIP_DRIVER_NAMES = [
 export const TRAILER_NUMBER = "A 1482 E-5";
 
 export const DEFAULT_ORDER_STAGES = [
-  { id: "order-stage-plan", code: "plan", name: "\u041f\u043b\u0430\u043d" },
-  { id: "order-stage-warehouse", code: "warehouse", name: "\u041d\u0430 \u0441\u043a\u043b\u0430\u0434\u0435" },
-  { id: "order-stage-in-car", code: "in_car", name: "\u0412 \u043c\u0430\u0448\u0438\u043d\u0435" },
-  { id: "order-stage-delivered", code: "delivered", name: "\u0414\u043e\u0441\u0442\u0430\u0432\u043b\u0435\u043d\u043e" },
+  { id: "order-stage-plan", code: "plan", name: "План" },
+  { id: "order-stage-warehouse", code: "warehouse", name: "На складе" },
+  { id: "order-stage-in-car", code: "in_car", name: "В машине" },
+  { id: "order-stage-delivered", code: "delivered", name: "Доставлено" },
 ];
 
 export const DEFAULT_TRIP_STAGES = [
-  { id: "trip-stage-plan", code: "plan", name: "\u041f\u043b\u0430\u043d" },
-  { id: "trip-stage-in-route", code: "in_route", name: "\u0412 \u0440\u0435\u0439\u0441\u0435" },
-  { id: "trip-stage-completed", code: "completed", name: "\u0417\u0430\u0432\u0435\u0440\u0448\u0435\u043d\u043e" },
+  { id: "trip-stage-plan", code: "plan", name: "План" },
+  { id: "trip-stage-in-route", code: "in_route", name: "В рейсе" },
+  { id: "trip-stage-completed", code: "completed", name: "Завершено" },
 ];
 
 export const ORDER_STAGE_PLAN_ID = "order-stage-plan";
@@ -105,25 +105,25 @@ export const CARGO_TERMINAL_URLS = {
 };
 
 export const DEFAULT_POWER_OF_ATTORNEY_REGISTRY = {
-  "\u0428\u0435\u0440\u0435\u043c\u0435\u0442\u044c\u0435\u0432\u043e": {
-    "\u041c\u043e\u0441\u043a\u0432\u0430-\u043a\u0430\u0440\u0433\u043e": [],
-    "\u0428\u0435\u0440\u0435\u043c\u0435\u0442\u044c\u0435\u0432\u043e-\u043a\u0430\u0440\u0433\u043e": [],
+  "Шереметьево": {
+    "Москва-карго": [],
+    "Шереметьево-карго": [],
   },
-  "\u0412\u043d\u0443\u043a\u043e\u0432\u043e": [],
-  "\u0414\u043e\u043c\u043e\u0434\u0435\u0434\u043e\u0432\u043e": [],
-  "\u0416\u0443\u043a\u043e\u0432\u0441\u043a\u0438\u0439": [],
+  "Внуково": [],
+  "Домодедово": [],
+  "Жуковский": [],
 };
 
 export const AIRPORT_ALIASES = new Map([
-  ["\u0428\u0435\u0440\u0435\u043c\u0435\u0442\u044c\u0435\u0432\u043e", "\u0428\u0435\u0440\u0435\u043c\u0435\u0442\u044c\u0435\u0432\u043e"],
-  ["\u0412\u043d\u0443\u043a\u043e\u0432\u043e", "\u0412\u043d\u0443\u043a\u043e\u0432\u043e"],
-  ["\u0414\u043e\u043c\u043e\u0434\u0435\u0434\u043e\u0432\u043e", "\u0414\u043e\u043c\u043e\u0434\u0435\u0434\u043e\u0432\u043e"],
-  ["\u0416\u0443\u043a\u043e\u0432\u0441\u043a\u0438\u0439", "\u0416\u0443\u043a\u043e\u0432\u0441\u043a\u0438\u0439"],
+  ["Шереметьево", "Шереметьево"],
+  ["Внуково", "Внуково"],
+  ["Домодедово", "Домодедово"],
+  ["Жуковский", "Жуковский"],
 ]);
 
 export const TERMINAL_ALIASES = new Map([
-  ["\u041c\u043e\u0441\u043a\u0432\u0430-\u043a\u0430\u0440\u0433\u043e", "\u041c\u043e\u0441\u043a\u0432\u0430-\u043a\u0430\u0440\u0433\u043e"],
-  ["\u0428\u0435\u0440\u0435\u043c\u0435\u0442\u044c\u0435\u0432\u043e-\u043a\u0430\u0440\u0433\u043e", "\u0428\u0435\u0440\u0435\u043c\u0435\u0442\u044c\u0435\u0432\u043e-\u043a\u0430\u0440\u0433\u043e"],
+  ["Москва-карго", "Москва-карго"],
+  ["Шереметьево-карго", "Шереметьево-карго"],
 ]);
 
-export const TRIP_FALLBACK_NAME = "\u0420\u0435\u0439\u0441";
+export const TRIP_FALLBACK_NAME = "Рейс";
