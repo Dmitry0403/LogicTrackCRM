@@ -12,6 +12,7 @@ import {
   WorkPanel,
   WorkflowBoard,
   TripFormCard,
+  SvoMsqCalculator,
 } from './components/workspace';
 import {
   supabase,
@@ -3270,6 +3271,14 @@ const App = () => {
                 </WorkPanel>
               )}
             </>
+          )}
+
+          {activeView === "calculator" && (
+            <WorkPanel title={RU.calculator.title}>
+              <div data-testid="calculator-view">
+                <SvoMsqCalculator />
+              </div>
+            </WorkPanel>
           )}
 
         </section>

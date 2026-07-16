@@ -19,6 +19,15 @@ function TripsIcon() {
   );
 }
 
+function CalculatorIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <rect x="5" y="3" width="14" height="18" rx="2" />
+      <path d="M8 7h8v3H8zM8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01" />
+    </svg>
+  );
+}
+
 function SettingsIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -32,6 +41,7 @@ export function HeaderNavigation({ activeView, onSelectView, driveConnected }) {
   const items = [
     { id: "orders", label: RU.workspaceNav.orders, icon: <RequestsIcon /> },
     { id: "trips", label: RU.workspaceNav.trips, icon: <TripsIcon /> },
+    { id: "calculator", label: RU.workspaceNav.calculator, icon: <CalculatorIcon /> },
     { id: "settings", label: RU.workspaceNav.settings, icon: <SettingsIcon /> },
   ];
 
@@ -77,6 +87,128 @@ export function WorkPanel({ title, actionLabel, onAction, actionTestId, headerAc
       </div>
       <div className="panel-section__body">{children}</div>
     </section>
+  );
+}
+
+const roundUpToFive = (value) => Math.ceil(value / 5) * 5;
+
+export function calculateSvoMsqDelivery(weight, additionalDistance, hasOtherWarehouse) {
+  const normalizedWeight = Number.isFinite(weight) ? weight : 0;
+  const normalizedDistance = Number.isFinite(additionalDistance) ? additionalDistance : 0;
+  const weightCharge = normalizedWeight < 101 ? 0 : (normalizedWeight - 100) * 0.5;
+  const delivery = roundUpToFive(120 + weightCharge + normalizedDistance * 0.5);
+  return delivery + (hasOtherWarehouse ? 50 : 0);
+}
+
+export function calculateSvoMsqDeliveryFromJuly31(weight, additionalDistance, hasOtherWarehouse) {
+  const normalizedWeight = Number.isFinite(weight) ? weight : 0;
+  const normalizedDistance = Number.isFinite(additionalDistance) ? additionalDistance : 0;
+  const weightCharge = normalizedWeight < 101 ? 0 : (normalizedWeight - 100) * 0.7;
+  const delivery = roundUpToFive(190 + weightCharge + normalizedDistance * 0.5);
+  return delivery + (hasOtherWarehouse ? 50 : 0);
+}
+
+export function SvoMsqCalculator() {
+  const [weight, setWeight] = React.useState("");
+  const [hasOtherWarehouse, setHasOtherWarehouse] = React.useState(false);
+  const [warehouse, setWarehouse] = React.useState("");
+  const [additionalDistance, setAdditionalDistance] = React.useState("");
+
+  const parsedWeight = Number.parseFloat(weight);
+  const parsedDistance = Number.parseFloat(additionalDistance);
+  const hasWeight = Number.isFinite(parsedWeight) && parsedWeight >= 0;
+  const delivery = hasWeight
+    ? calculateSvoMsqDelivery(parsedWeight, parsedDistance, hasOtherWarehouse)
+    : null;
+  const deliveryFromJuly31 = hasWeight
+    ? calculateSvoMsqDeliveryFromJuly31(parsedWeight, parsedDistance, hasOtherWarehouse)
+    : null;
+  const destination = hasOtherWarehouse ? warehouse.trim() : "MSQ";
+
+  return (
+    <div className="svo-calculator">
+      <div className="svo-calculator__fields">
+        <div className="field">
+          <label htmlFor="svo-calculator-weight">{RU.calculator.weight}</label>
+          <input
+            id="svo-calculator-weight"
+            type="number"
+            min="0"
+            step="0.01"
+            value={weight}
+            onChange={(event) => setWeight(event.target.value)}
+            placeholder={RU.calculator.weightPlaceholder}
+            data-testid="calculator-weight"
+          />
+        </div>
+
+        <div className="field">
+          <label htmlFor="svo-calculator-distance">{RU.calculator.additionalDistance}</label>
+          <input
+            id="svo-calculator-distance"
+            type="number"
+            min="0"
+            step="0.01"
+            value={additionalDistance}
+            onChange={(event) => setAdditionalDistance(event.target.value)}
+            placeholder={RU.calculator.distancePlaceholder}
+            data-testid="calculator-distance"
+          />
+        </div>
+
+        <div className="svo-calculator__warehouse-row">
+          <label className="svo-calculator__checkbox">
+            <input
+              type="checkbox"
+              checked={hasOtherWarehouse}
+              onChange={(event) => {
+                setHasOtherWarehouse(event.target.checked);
+                if (!event.target.checked) setWarehouse("");
+              }}
+              data-testid="calculator-other-warehouse"
+            />
+            <span>{RU.calculator.otherWarehouse}</span>
+          </label>
+          {hasOtherWarehouse && (
+            <input
+              id="svo-calculator-warehouse"
+              className="svo-calculator__warehouse-field"
+              type="text"
+              value={warehouse}
+              onChange={(event) => setWarehouse(event.target.value)}
+              placeholder={RU.calculator.warehousePlaceholder}
+              aria-label={RU.calculator.warehouse}
+              data-testid="calculator-warehouse"
+            />
+          )}
+        </div>
+      </div>
+
+      <div className="svo-calculator__result" aria-live="polite">
+        <p className="svo-calculator__delivery">
+          <span>
+            {RU.calculator.deliveryPrefix} {destination || RU.common.emDash} {RU.calculator.deliveryBeforeJuly31} {"\u2014"}
+          </span>
+          <strong data-testid="calculator-result">
+            {delivery === null ? RU.common.emDash : `${delivery} $`}
+          </strong>
+        </p>
+        <p className="svo-calculator__delivery">
+          <span>
+            {RU.calculator.deliveryPrefix} {destination || RU.common.emDash} {RU.calculator.deliveryFromJuly31} {"\u2014"}
+          </span>
+          <strong data-testid="calculator-result-from-july-31">
+            {deliveryFromJuly31 === null ? RU.common.emDash : `${deliveryFromJuly31} $`}
+          </strong>
+        </p>
+        <p>{RU.calculator.transit}</p>
+        <p>{RU.calculator.terminalExpenses}</p>
+        <p className="svo-calculator__hint">{RU.calculator.brokerHint}</p>
+        <p className="svo-calculator__notice">
+          <strong>{RU.calculator.sealNotice}</strong>
+        </p>
+      </div>
+    </div>
   );
 }
 
