@@ -92,9 +92,45 @@ export function WorkPanel({ title, actionLabel, onAction, actionTestId, headerAc
 
 const roundUpToFive = (value) => Math.ceil(value / 5) * 5;
 
+const escapeHtml = (value) => String(value)
+  .replaceAll("&", "&amp;")
+  .replaceAll("<", "&lt;")
+  .replaceAll(">", "&gt;")
+  .replaceAll('"', "&quot;")
+  .replaceAll("'", "&#039;");
+
+const copyPlainTextFallback = (text) => {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  textarea.remove();
+  if (!copied) throw new Error("Copy failed");
+};
+
+const CALCULATOR_AIRPORTS = [
+  { id: "svo-assembly", code: "SVO", label: RU.calculator.airports.sheremetyevoAssembly },
+  { id: "svo", code: "SVO", label: RU.calculator.airports.sheremetyevo },
+  { id: "vko", code: "VKO", label: RU.calculator.airports.vnukovo },
+  { id: "dme", code: "DME", label: RU.calculator.airports.domodedovo },
+  { id: "zia", code: "ZIA", label: RU.calculator.airports.zhukovsky },
+];
+
 export function calculateSvoMsqDelivery(weight, additionalDistance, hasOtherWarehouse) {
   const normalizedWeight = Number.isFinite(weight) ? weight : 0;
   const normalizedDistance = Number.isFinite(additionalDistance) ? additionalDistance : 0;
+  if (normalizedWeight >= 750) {
+    const baseRate = normalizedWeight <= 1000
+      ? 450
+      : normalizedWeight <= 1500
+        ? 500
+        : 600;
+    const delivery = roundUpToFive(baseRate + normalizedDistance * 0.5);
+    return delivery + (hasOtherWarehouse ? 50 : 0);
+  }
   const weightCharge = normalizedWeight < 101 ? 0 : (normalizedWeight - 100) * 0.5;
   const delivery = roundUpToFive(120 + weightCharge + normalizedDistance * 0.5);
   return delivery + (hasOtherWarehouse ? 50 : 0);
@@ -103,27 +139,138 @@ export function calculateSvoMsqDelivery(weight, additionalDistance, hasOtherWare
 export function calculateSvoMsqDeliveryFromJuly31(weight, additionalDistance, hasOtherWarehouse) {
   const normalizedWeight = Number.isFinite(weight) ? weight : 0;
   const normalizedDistance = Number.isFinite(additionalDistance) ? additionalDistance : 0;
+  if (normalizedWeight >= 750) {
+    const baseRate = normalizedWeight <= 1000
+      ? 700
+      : normalizedWeight <= 1500
+        ? 750
+        : 900;
+    const delivery = roundUpToFive(baseRate + normalizedDistance * 0.5);
+    return delivery + (hasOtherWarehouse ? 50 : 0);
+  }
   const weightCharge = normalizedWeight < 101 ? 0 : (normalizedWeight - 100) * 0.7;
   const delivery = roundUpToFive(190 + weightCharge + normalizedDistance * 0.5);
   return delivery + (hasOtherWarehouse ? 50 : 0);
 }
 
+const getAirportBaseRate = (weight, isZhukovsky) => {
+  if (!isZhukovsky && weight <= 500) return 550;
+  if (weight <= 1000) return 600;
+  if (weight <= 2000) return 650;
+  if (weight <= 3000) return 750;
+  if (weight <= 3400) return 800;
+  return 850;
+};
+
+export function calculateAirportDelivery(weight, additionalDistance, isZhukovsky, isFromJuly31, homeAwbCount = 0) {
+  const normalizedWeight = Number.isFinite(weight) ? weight : 0;
+  const normalizedDistance = Number.isFinite(additionalDistance) ? additionalDistance : 0;
+  const normalizedHomeAwbCount = Number.isFinite(homeAwbCount) ? Math.max(0, homeAwbCount) : 0;
+  const airportSurcharge = isZhukovsky ? 100 : 0;
+  const dateSurcharge = isFromJuly31 ? 350 : 0;
+  const homeAwbSurcharge = normalizedHomeAwbCount * 50;
+  const delivery = roundUpToFive(
+    getAirportBaseRate(normalizedWeight, isZhukovsky) + airportSurcharge + normalizedDistance * 0.5,
+  );
+  return delivery + dateSurcharge + homeAwbSurcharge;
+}
+
 export function SvoMsqCalculator() {
   const [weight, setWeight] = React.useState("");
+  const [airportId, setAirportId] = React.useState("svo-assembly");
   const [hasOtherWarehouse, setHasOtherWarehouse] = React.useState(false);
   const [warehouse, setWarehouse] = React.useState("");
   const [additionalDistance, setAdditionalDistance] = React.useState("");
+  const [homeAwbCountInput, setHomeAwbCountInput] = React.useState("1");
+  const [isCopied, setIsCopied] = React.useState(false);
 
   const parsedWeight = Number.parseFloat(weight);
   const parsedDistance = Number.parseFloat(additionalDistance);
   const hasWeight = Number.isFinite(parsedWeight) && parsedWeight >= 0;
+  const selectedAirport = CALCULATOR_AIRPORTS.find((airport) => airport.id === airportId) || CALCULATOR_AIRPORTS[0];
+  const airportCode = selectedAirport.code;
+  const isAssembly = selectedAirport.id === "svo-assembly";
+  const isZhukovsky = selectedAirport.id === "zia";
+  const parsedHomeAwbCount = Number.parseInt(homeAwbCountInput, 10);
+  const homeAwbCount = Number.isFinite(parsedHomeAwbCount) && parsedHomeAwbCount > 0
+    ? parsedHomeAwbCount
+    : 1;
   const delivery = hasWeight
-    ? calculateSvoMsqDelivery(parsedWeight, parsedDistance, hasOtherWarehouse)
+    ? (isAssembly
+        ? calculateSvoMsqDelivery(parsedWeight, parsedDistance, hasOtherWarehouse)
+        : calculateAirportDelivery(parsedWeight, parsedDistance, isZhukovsky, false, homeAwbCount))
     : null;
   const deliveryFromJuly31 = hasWeight
-    ? calculateSvoMsqDeliveryFromJuly31(parsedWeight, parsedDistance, hasOtherWarehouse)
+    ? (isAssembly
+        ? calculateSvoMsqDeliveryFromJuly31(parsedWeight, parsedDistance, hasOtherWarehouse)
+        : calculateAirportDelivery(parsedWeight, parsedDistance, isZhukovsky, true, homeAwbCount))
     : null;
   const destination = hasOtherWarehouse ? warehouse.trim() : "MSQ";
+  const deliveryBeforeSuffix = isAssembly
+    ? RU.calculator.deliveryBeforeJuly31
+    : RU.calculator.deliveryBeforeJuly31WithoutAssembly;
+  const deliveryAfterSuffix = isAssembly
+    ? RU.calculator.deliveryFromJuly31
+    : RU.calculator.deliveryFromJuly31WithoutAssembly;
+  const transitAmount = selectedAirport.id === "dme"
+    ? 17850
+    : selectedAirport.id === "zia"
+      ? 31500
+      : 15750;
+  const transitTotal = transitAmount * (isAssembly ? 1 : homeAwbCount);
+  const transitText = `${RU.calculator.transitPrefix} ${transitTotal} ${RU.calculator.transitSuffix}`;
+  const terminalExpensesText = !isAssembly && homeAwbCount > 1
+    ? RU.calculator.terminalExpensesMultiple
+    : RU.calculator.terminalExpensesSingle;
+  const deliveryBeforeLabel = `${RU.calculator.deliveryPrefix} ${airportCode} - ${destination || RU.common.emDash} ${deliveryBeforeSuffix}`;
+  const deliveryAfterLabel = `${RU.calculator.deliveryPrefix} ${airportCode} - ${destination || RU.common.emDash} ${deliveryAfterSuffix}`;
+  const deliveryBeforeValue = delivery === null ? RU.common.emDash : `${delivery} $`;
+  const deliveryAfterValue = deliveryFromJuly31 === null ? RU.common.emDash : `${deliveryFromJuly31} $`;
+  const deliveryBeforeText = `${deliveryBeforeLabel} \u2014 ${deliveryBeforeValue}`;
+  const deliveryAfterText = `${deliveryAfterLabel} \u2014 ${deliveryAfterValue}`;
+
+  const handleCopy = async () => {
+    const plainText = [
+      `${deliveryBeforeText}\n${deliveryAfterText}`,
+      `${transitText}\n${terminalExpensesText}\n${RU.calculator.brokerHint}`,
+      RU.calculator.sealNotice,
+    ].join("\n\n");
+    const htmlText = [
+      `<div>${escapeHtml(deliveryBeforeLabel)} \u2014 <strong>${escapeHtml(deliveryBeforeValue)}</strong></div>`,
+      `<div>${escapeHtml(deliveryAfterLabel)} \u2014 <strong>${escapeHtml(deliveryAfterValue)}</strong></div>`,
+      "<br>",
+      `<div>${escapeHtml(transitText)}</div>`,
+      `<div>${escapeHtml(terminalExpensesText)}</div>`,
+      `<div>${escapeHtml(RU.calculator.brokerHint)}</div>`,
+      "<br>",
+      `<div><strong>${escapeHtml(RU.calculator.sealNotice)}</strong></div>`,
+    ].join("");
+
+    try {
+      if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": new Blob([plainText], { type: "text/plain" }),
+            "text/html": new Blob([htmlText], { type: "text/html" }),
+          }),
+        ]);
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(plainText);
+      } else {
+        copyPlainTextFallback(plainText);
+      }
+      setIsCopied(true);
+      window.setTimeout(() => setIsCopied(false), 2000);
+    } catch {
+      try {
+        copyPlainTextFallback(plainText);
+        setIsCopied(true);
+        window.setTimeout(() => setIsCopied(false), 2000);
+      } catch {
+        setIsCopied(false);
+      }
+    }
+  };
 
   return (
     <div className="svo-calculator">
@@ -157,37 +304,84 @@ export function SvoMsqCalculator() {
         </div>
 
         <div className="svo-calculator__warehouse-row">
-          <label className="svo-calculator__checkbox">
-            <input
-              type="checkbox"
-              checked={hasOtherWarehouse}
-              onChange={(event) => {
-                setHasOtherWarehouse(event.target.checked);
-                if (!event.target.checked) setWarehouse("");
-              }}
-              data-testid="calculator-other-warehouse"
-            />
-            <span>{RU.calculator.otherWarehouse}</span>
-          </label>
-          {hasOtherWarehouse && (
-            <input
-              id="svo-calculator-warehouse"
-              className="svo-calculator__warehouse-field"
-              type="text"
-              value={warehouse}
-              onChange={(event) => setWarehouse(event.target.value)}
-              placeholder={RU.calculator.warehousePlaceholder}
-              aria-label={RU.calculator.warehouse}
-              data-testid="calculator-warehouse"
-            />
+          <div className="svo-calculator__route-controls">
+            <div className="field svo-calculator__airport-field">
+              <label htmlFor="svo-calculator-airport">{RU.calculator.airport}</label>
+              <select
+                id="svo-calculator-airport"
+                value={airportId}
+                onChange={(event) => setAirportId(event.target.value)}
+                aria-label={RU.calculator.airport}
+                data-testid="calculator-airport"
+              >
+                {CALCULATOR_AIRPORTS.map((airport) => (
+                  <option key={airport.id} value={airport.id}>{airport.label}</option>
+                ))}
+              </select>
+            </div>
+            <div className="svo-calculator__warehouse-controls">
+              <label className="svo-calculator__checkbox">
+                <input
+                  type="checkbox"
+                  checked={hasOtherWarehouse}
+                  onChange={(event) => {
+                    setHasOtherWarehouse(event.target.checked);
+                    if (!event.target.checked) setWarehouse("");
+                  }}
+                  data-testid="calculator-other-warehouse"
+                />
+                <span>{RU.calculator.otherWarehouse}</span>
+              </label>
+              <input
+                id="svo-calculator-warehouse"
+                className={`svo-calculator__warehouse-field ${hasOtherWarehouse ? "svo-calculator__warehouse-field--visible" : ""}`}
+                type="text"
+                value={warehouse}
+                onChange={(event) => setWarehouse(event.target.value)}
+                placeholder={RU.calculator.warehousePlaceholder}
+                aria-label={RU.calculator.warehouse}
+                aria-hidden={!hasOtherWarehouse}
+                disabled={!hasOtherWarehouse}
+                tabIndex={hasOtherWarehouse ? 0 : -1}
+                data-testid="calculator-warehouse"
+              />
+            </div>
+          </div>
+          {!isAssembly && (
+            <div className="field svo-calculator__home-awb-field">
+              <label htmlFor="svo-calculator-home-awb-count">{RU.calculator.homeAwbCount}</label>
+              <input
+                id="svo-calculator-home-awb-count"
+                type="number"
+                min="1"
+                step="1"
+                value={homeAwbCountInput}
+                onChange={(event) => setHomeAwbCountInput(event.target.value)}
+                data-testid="calculator-home-awb-count"
+              />
+            </div>
           )}
         </div>
       </div>
 
       <div className="svo-calculator__result" aria-live="polite">
+        <button
+          type="button"
+          className="svo-calculator__copy"
+          onClick={handleCopy}
+          title={RU.calculator.copy}
+          aria-label={RU.calculator.copy}
+          data-testid="calculator-copy"
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="8" y="8" width="11" height="12" rx="2" />
+            <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h2" />
+          </svg>
+          <span>{isCopied ? RU.calculator.copied : RU.calculator.copy}</span>
+        </button>
         <p className="svo-calculator__delivery">
           <span>
-            {RU.calculator.deliveryPrefix} {destination || RU.common.emDash} {RU.calculator.deliveryBeforeJuly31} {"\u2014"}
+            {deliveryBeforeLabel} {"\u2014"}
           </span>
           <strong data-testid="calculator-result">
             {delivery === null ? RU.common.emDash : `${delivery} $`}
@@ -195,14 +389,14 @@ export function SvoMsqCalculator() {
         </p>
         <p className="svo-calculator__delivery">
           <span>
-            {RU.calculator.deliveryPrefix} {destination || RU.common.emDash} {RU.calculator.deliveryFromJuly31} {"\u2014"}
+            {deliveryAfterLabel} {"\u2014"}
           </span>
           <strong data-testid="calculator-result-from-july-31">
             {deliveryFromJuly31 === null ? RU.common.emDash : `${deliveryFromJuly31} $`}
           </strong>
         </p>
-        <p>{RU.calculator.transit}</p>
-        <p>{RU.calculator.terminalExpenses}</p>
+        <p>{transitText}</p>
+        <p>{terminalExpensesText}</p>
         <p className="svo-calculator__hint">{RU.calculator.brokerHint}</p>
         <p className="svo-calculator__notice">
           <strong>{RU.calculator.sealNotice}</strong>

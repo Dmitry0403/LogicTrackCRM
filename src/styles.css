@@ -187,9 +187,32 @@ body {
 
 .svo-calculator__warehouse-row {
   grid-column: 1 / -1;
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18px;
   align-items: flex-end;
+}
+
+.svo-calculator__route-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  min-width: 0;
+}
+
+.svo-calculator__airport-field {
+  flex: 0 0 220px;
+}
+
+.svo-calculator__warehouse-controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+  min-width: 0;
+}
+
+.svo-calculator__home-awb-field {
+  justify-self: stretch;
 }
 
 .svo-calculator__checkbox {
@@ -208,15 +231,51 @@ body {
 }
 
 .svo-calculator__warehouse-field {
-  width: min(420px, 100%);
+  flex: 1;
+  min-width: 0;
+  visibility: hidden;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.svo-calculator__warehouse-field--visible {
+  visibility: visible;
+  opacity: 1;
 }
 
 .svo-calculator__result {
+  position: relative;
   padding: 20px;
+  padding-right: 170px;
   border: 1px solid #d7deea;
   border-radius: 12px;
   background: #f8fafc;
   color: #334155;
+}
+
+.svo-calculator__copy {
+  position: absolute;
+  top: 16px;
+  right: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 12px;
+  color: #2563eb;
+  background: #ffffff;
+  border-color: #bfdbfe;
+}
+
+.svo-calculator__copy:hover {
+  background: #eff6ff;
+}
+
+.svo-calculator__copy svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
 }
 
 .svo-calculator__result p {
@@ -257,14 +316,38 @@ body {
 }
 
 @media (max-width: 720px) {
+  .svo-calculator__result {
+    padding-right: 20px;
+  }
+
+  .svo-calculator__copy {
+    position: static;
+    margin-left: auto;
+    margin-bottom: 12px;
+  }
+
   .svo-calculator__fields {
     grid-template-columns: 1fr;
   }
 
   .svo-calculator__warehouse-row {
     grid-column: auto;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .svo-calculator__warehouse-controls {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .svo-calculator__route-controls {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .svo-calculator__airport-field {
+    flex: 0 0 auto;
   }
 
   .svo-calculator__delivery {
