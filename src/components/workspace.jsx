@@ -157,8 +157,8 @@ const getAirportBaseRate = (weight, isZhukovsky) => {
   if (!isZhukovsky && weight <= 500) return 550;
   if (weight <= 1000) return 600;
   if (weight <= 2000) return 650;
-  if (weight <= 3000) return 750;
-  if (weight <= 3400) return 800;
+  if (weight <= 3000) return 700;
+  if (weight <= 3400) return 750;
   return 850;
 };
 
@@ -168,14 +168,14 @@ export function calculateAirportDelivery(weight, additionalDistance, isZhukovsky
   const normalizedHomeAwbCount = Number.isFinite(homeAwbCount) ? Math.max(0, homeAwbCount) : 0;
   const airportSurcharge = isZhukovsky ? 100 : 0;
   const dateSurcharge = isFromJuly31 ? 350 : 0;
-  const homeAwbSurcharge = normalizedHomeAwbCount * 50;
+  const homeAwbSurcharge = Math.max(0, normalizedHomeAwbCount - 1) * 50;
   const delivery = roundUpToFive(
     getAirportBaseRate(normalizedWeight, isZhukovsky) + airportSurcharge + normalizedDistance * 0.5,
   );
   return delivery + dateSurcharge + homeAwbSurcharge;
 }
 
-export function SvoMsqCalculator() {
+export function SvoMsqCalculator({ onRouteChange }) {
   const [weight, setWeight] = React.useState("");
   const [airportId, setAirportId] = React.useState("svo-assembly");
   const [hasOtherWarehouse, setHasOtherWarehouse] = React.useState(false);
@@ -206,6 +206,11 @@ export function SvoMsqCalculator() {
         : calculateAirportDelivery(parsedWeight, parsedDistance, isZhukovsky, true, homeAwbCount))
     : null;
   const destination = hasOtherWarehouse ? warehouse.trim() : "MSQ";
+  const routeDestination = destination || RU.common.emDash;
+
+  React.useEffect(() => {
+    onRouteChange?.(`${airportCode} - ${routeDestination}`);
+  }, [airportCode, onRouteChange, routeDestination]);
   const deliveryBeforeSuffix = isAssembly
     ? RU.calculator.deliveryBeforeJuly31
     : RU.calculator.deliveryBeforeJuly31WithoutAssembly;
@@ -222,8 +227,8 @@ export function SvoMsqCalculator() {
   const terminalExpensesText = !isAssembly && homeAwbCount > 1
     ? RU.calculator.terminalExpensesMultiple
     : RU.calculator.terminalExpensesSingle;
-  const deliveryBeforeLabel = `${RU.calculator.deliveryPrefix} ${airportCode} - ${destination || RU.common.emDash} ${deliveryBeforeSuffix}`;
-  const deliveryAfterLabel = `${RU.calculator.deliveryPrefix} ${airportCode} - ${destination || RU.common.emDash} ${deliveryAfterSuffix}`;
+  const deliveryBeforeLabel = `${RU.calculator.deliveryPrefix} ${airportCode} - ${routeDestination} ${deliveryBeforeSuffix}`;
+  const deliveryAfterLabel = `${RU.calculator.deliveryPrefix} ${airportCode} - ${routeDestination} ${deliveryAfterSuffix}`;
   const deliveryBeforeValue = delivery === null ? RU.common.emDash : `${delivery} $`;
   const deliveryAfterValue = deliveryFromJuly31 === null ? RU.common.emDash : `${deliveryFromJuly31} $`;
   const deliveryBeforeText = `${deliveryBeforeLabel} \u2014 ${deliveryBeforeValue}`;

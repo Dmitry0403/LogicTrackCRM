@@ -195,6 +195,7 @@ body {
 
 .svo-calculator__route-controls {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 18px;
   min-width: 0;
@@ -206,6 +207,7 @@ body {
 
 .svo-calculator__warehouse-controls {
   display: flex;
+  flex: 1 1 300px;
   align-items: flex-end;
   gap: 18px;
   min-width: 0;
@@ -337,6 +339,7 @@ body {
   }
 
   .svo-calculator__warehouse-controls {
+    flex: 0 0 auto;
     align-items: stretch;
     flex-direction: column;
   }

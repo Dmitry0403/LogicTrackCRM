@@ -62,8 +62,8 @@ describe("calculateAirportDelivery", () => {
     expect(calculateAirportDelivery(500, Number.NaN, false, false)).toBe(550);
     expect(calculateAirportDelivery(1000, Number.NaN, false, false)).toBe(600);
     expect(calculateAirportDelivery(2000, Number.NaN, false, false)).toBe(650);
-    expect(calculateAirportDelivery(3000, Number.NaN, false, false)).toBe(750);
-    expect(calculateAirportDelivery(3400, Number.NaN, false, false)).toBe(800);
+    expect(calculateAirportDelivery(3000, Number.NaN, false, false)).toBe(700);
+    expect(calculateAirportDelivery(3400, Number.NaN, false, false)).toBe(750);
     expect(calculateAirportDelivery(5000, Number.NaN, false, false)).toBe(850);
   });
 
@@ -80,8 +80,10 @@ describe("calculateAirportDelivery", () => {
     expect(calculateAirportDelivery(1000, 0, true, false)).toBe(700);
   });
 
-  it("adds 50 dollars for each home AWB", () => {
-    expect(calculateAirportDelivery(500, 0, false, false, 3)).toBe(700);
-    expect(calculateAirportDelivery(500, 0, false, true, 3)).toBe(1050);
+  it("adds 50 dollars for each home AWB after the first", () => {
+    expect(calculateAirportDelivery(500, 0, false, false, 1)).toBe(550);
+    expect(calculateAirportDelivery(500, 0, false, false, 2)).toBe(600);
+    expect(calculateAirportDelivery(500, 0, false, false, 3)).toBe(650);
+    expect(calculateAirportDelivery(500, 0, false, true, 3)).toBe(1000);
   });
 });

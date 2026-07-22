@@ -385,6 +385,7 @@ const App = () => {
     normalizeTripStages(loadStages(TRIP_STAGES_STORAGE_KEY, DEFAULT_TRIP_STAGES))
   );
   const [activeView, setActiveView] = React.useState("orders");
+  const [calculatorRoute, setCalculatorRoute] = React.useState("SVO - MSQ");
   const [ordersScreenMode, setOrdersScreenMode] = React.useState("list");
   const [tripsScreenMode, setTripsScreenMode] = React.useState("list");
   const [driveConnected, setDriveConnected] = React.useState(false);
@@ -3274,9 +3275,9 @@ const App = () => {
           )}
 
           {activeView === "calculator" && (
-            <WorkPanel title={RU.calculator.title}>
+            <WorkPanel title={`${RU.calculator.title} ${calculatorRoute}`}>
               <div data-testid="calculator-view">
-                <SvoMsqCalculator />
+                <SvoMsqCalculator onRouteChange={setCalculatorRoute} />
               </div>
             </WorkPanel>
           )}
