@@ -119,7 +119,7 @@ const CALCULATOR_AIRPORTS = [
   { id: "zia", code: "ZIA", label: RU.calculator.airports.zhukovsky },
 ];
 
-export function calculateSvoMsqDelivery(weight, additionalDistance, hasOtherWarehouse) {
+export function calculateSvoMsqDelivery(weight, additionalDistance, hasOtherWarehouse, hasDelivery = false) {
   const normalizedWeight = Number.isFinite(weight) ? weight : 0;
   const normalizedDistance = Number.isFinite(additionalDistance) ? additionalDistance : 0;
   if (normalizedWeight >= 750) {
@@ -129,14 +129,14 @@ export function calculateSvoMsqDelivery(weight, additionalDistance, hasOtherWare
         ? 500
         : 600;
     const delivery = roundUpToFive(baseRate + normalizedDistance * 0.5);
-    return delivery + (hasOtherWarehouse ? 50 : 0);
+    return delivery + (hasOtherWarehouse ? 50 : 0) + (hasDelivery ? 50 : 0);
   }
   const weightCharge = normalizedWeight < 101 ? 0 : (normalizedWeight - 100) * 0.5;
   const delivery = roundUpToFive(120 + weightCharge + normalizedDistance * 0.5);
-  return delivery + (hasOtherWarehouse ? 50 : 0);
+  return delivery + (hasOtherWarehouse ? 50 : 0) + (hasDelivery ? 50 : 0);
 }
 
-export function calculateSvoMsqDeliveryFromJuly31(weight, additionalDistance, hasOtherWarehouse) {
+export function calculateSvoMsqDeliveryFromJuly31(weight, additionalDistance, hasOtherWarehouse, hasDelivery = false) {
   const normalizedWeight = Number.isFinite(weight) ? weight : 0;
   const normalizedDistance = Number.isFinite(additionalDistance) ? additionalDistance : 0;
   if (normalizedWeight >= 750) {
@@ -146,11 +146,11 @@ export function calculateSvoMsqDeliveryFromJuly31(weight, additionalDistance, ha
         ? 750
         : 900;
     const delivery = roundUpToFive(baseRate + normalizedDistance * 0.5);
-    return delivery + (hasOtherWarehouse ? 50 : 0);
+    return delivery + (hasOtherWarehouse ? 50 : 0) + (hasDelivery ? 50 : 0);
   }
   const weightCharge = normalizedWeight < 101 ? 0 : (normalizedWeight - 100) * 0.7;
   const delivery = roundUpToFive(190 + weightCharge + normalizedDistance * 0.5);
-  return delivery + (hasOtherWarehouse ? 50 : 0);
+  return delivery + (hasOtherWarehouse ? 50 : 0) + (hasDelivery ? 50 : 0);
 }
 
 const getAirportBaseRate = (weight, isZhukovsky) => {
@@ -162,17 +162,18 @@ const getAirportBaseRate = (weight, isZhukovsky) => {
   return 850;
 };
 
-export function calculateAirportDelivery(weight, additionalDistance, isZhukovsky, isFromJuly31, homeAwbCount = 0) {
+export function calculateAirportDelivery(weight, additionalDistance, isZhukovsky, isFromJuly31, homeAwbCount = 0, hasDelivery = false) {
   const normalizedWeight = Number.isFinite(weight) ? weight : 0;
   const normalizedDistance = Number.isFinite(additionalDistance) ? additionalDistance : 0;
   const normalizedHomeAwbCount = Number.isFinite(homeAwbCount) ? Math.max(0, homeAwbCount) : 0;
   const airportSurcharge = isZhukovsky ? 100 : 0;
   const dateSurcharge = isFromJuly31 ? 350 : 0;
   const homeAwbSurcharge = Math.max(0, normalizedHomeAwbCount - 1) * 50;
+  const deliverySurcharge = hasDelivery ? 50 : 0;
   const delivery = roundUpToFive(
     getAirportBaseRate(normalizedWeight, isZhukovsky) + airportSurcharge + normalizedDistance * 0.5,
   );
-  return delivery + dateSurcharge + homeAwbSurcharge;
+  return delivery + dateSurcharge + homeAwbSurcharge + deliverySurcharge;
 }
 
 export function SvoMsqCalculator({ onRouteChange }) {
@@ -181,6 +182,7 @@ export function SvoMsqCalculator({ onRouteChange }) {
   const [hasOtherWarehouse, setHasOtherWarehouse] = React.useState(false);
   const [warehouse, setWarehouse] = React.useState("");
   const [additionalDistance, setAdditionalDistance] = React.useState("");
+  const [hasDelivery, setHasDelivery] = React.useState(false);
   const [homeAwbCountInput, setHomeAwbCountInput] = React.useState("1");
   const [isCopied, setIsCopied] = React.useState(false);
 
@@ -197,13 +199,13 @@ export function SvoMsqCalculator({ onRouteChange }) {
     : 1;
   const delivery = hasWeight
     ? (isAssembly
-        ? calculateSvoMsqDelivery(parsedWeight, parsedDistance, hasOtherWarehouse)
-        : calculateAirportDelivery(parsedWeight, parsedDistance, isZhukovsky, false, homeAwbCount))
+        ? calculateSvoMsqDelivery(parsedWeight, parsedDistance, hasOtherWarehouse, hasDelivery)
+        : calculateAirportDelivery(parsedWeight, parsedDistance, isZhukovsky, false, homeAwbCount, hasDelivery))
     : null;
   const deliveryFromJuly31 = hasWeight
     ? (isAssembly
-        ? calculateSvoMsqDeliveryFromJuly31(parsedWeight, parsedDistance, hasOtherWarehouse)
-        : calculateAirportDelivery(parsedWeight, parsedDistance, isZhukovsky, true, homeAwbCount))
+        ? calculateSvoMsqDeliveryFromJuly31(parsedWeight, parsedDistance, hasOtherWarehouse, hasDelivery)
+        : calculateAirportDelivery(parsedWeight, parsedDistance, isZhukovsky, true, homeAwbCount, hasDelivery))
     : null;
   const destination = hasOtherWarehouse ? warehouse.trim() : "MSQ";
   const routeDestination = destination || RU.common.emDash;
@@ -309,7 +311,7 @@ export function SvoMsqCalculator({ onRouteChange }) {
         </div>
 
         <div className="svo-calculator__warehouse-row">
-          <div className="svo-calculator__route-controls">
+          <div className={`svo-calculator__primary-controls ${isAssembly ? "svo-calculator__primary-controls--single" : ""}`}>
             <div className="field svo-calculator__airport-field">
               <label htmlFor="svo-calculator-airport">{RU.calculator.airport}</label>
               <select
@@ -324,6 +326,31 @@ export function SvoMsqCalculator({ onRouteChange }) {
                 ))}
               </select>
             </div>
+            {!isAssembly && (
+              <div className="field svo-calculator__home-awb-field">
+                <label htmlFor="svo-calculator-home-awb-count">{RU.calculator.homeAwbCount}</label>
+                <input
+                  id="svo-calculator-home-awb-count"
+                  type="number"
+                  min="1"
+                  step="1"
+                  value={homeAwbCountInput}
+                  onChange={(event) => setHomeAwbCountInput(event.target.value)}
+                  data-testid="calculator-home-awb-count"
+                />
+              </div>
+            )}
+          </div>
+          <div className="svo-calculator__option-controls">
+            <label className="svo-calculator__checkbox">
+              <input
+                type="checkbox"
+                checked={hasDelivery}
+                onChange={(event) => setHasDelivery(event.target.checked)}
+                data-testid="calculator-with-delivery"
+              />
+              <span>{RU.calculator.withDelivery}</span>
+            </label>
             <div className="svo-calculator__warehouse-controls">
               <label className="svo-calculator__checkbox">
                 <input
@@ -352,20 +379,6 @@ export function SvoMsqCalculator({ onRouteChange }) {
               />
             </div>
           </div>
-          {!isAssembly && (
-            <div className="field svo-calculator__home-awb-field">
-              <label htmlFor="svo-calculator-home-awb-count">{RU.calculator.homeAwbCount}</label>
-              <input
-                id="svo-calculator-home-awb-count"
-                type="number"
-                min="1"
-                step="1"
-                value={homeAwbCountInput}
-                onChange={(event) => setHomeAwbCountInput(event.target.value)}
-                data-testid="calculator-home-awb-count"
-              />
-            </div>
-          )}
         </div>
       </div>
 

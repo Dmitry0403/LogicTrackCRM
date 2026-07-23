@@ -29,6 +29,10 @@ describe("calculateSvoMsqDelivery", () => {
   it("adds distance and another warehouse to an assembly bracket", () => {
     expect(calculateSvoMsqDelivery(800, 11, true)).toBe(510);
   });
+
+  it("adds the delivery surcharge to an assembly rate", () => {
+    expect(calculateSvoMsqDelivery(800, 0, false, true)).toBe(500);
+  });
 });
 
 describe("calculateSvoMsqDeliveryFromJuly31", () => {
@@ -54,6 +58,10 @@ describe("calculateSvoMsqDeliveryFromJuly31", () => {
 
   it("adds distance and another warehouse to a July 31 bracket", () => {
     expect(calculateSvoMsqDeliveryFromJuly31(800, 11, true)).toBe(760);
+  });
+
+  it("adds the delivery surcharge to a July 31 assembly rate", () => {
+    expect(calculateSvoMsqDeliveryFromJuly31(800, 0, false, true)).toBe(750);
   });
 });
 
@@ -85,5 +93,10 @@ describe("calculateAirportDelivery", () => {
     expect(calculateAirportDelivery(500, 0, false, false, 2)).toBe(600);
     expect(calculateAirportDelivery(500, 0, false, false, 3)).toBe(650);
     expect(calculateAirportDelivery(500, 0, false, true, 3)).toBe(1000);
+  });
+
+  it("adds the delivery surcharge to a regular airport rate", () => {
+    expect(calculateAirportDelivery(500, 0, false, false, 1, true)).toBe(600);
+    expect(calculateAirportDelivery(500, 0, false, true, 1, true)).toBe(950);
   });
 });
