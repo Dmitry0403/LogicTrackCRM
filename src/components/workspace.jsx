@@ -124,23 +124,6 @@ export function calculateSvoMsqDelivery(weight, additionalDistance, hasOtherWare
   const normalizedDistance = Number.isFinite(additionalDistance) ? additionalDistance : 0;
   if (normalizedWeight >= 750) {
     const baseRate = normalizedWeight <= 1000
-      ? 450
-      : normalizedWeight <= 1500
-        ? 500
-        : 600;
-    const delivery = roundUpToFive(baseRate + normalizedDistance * 0.5);
-    return delivery + (hasOtherWarehouse ? 50 : 0) + (hasDelivery ? 50 : 0);
-  }
-  const weightCharge = normalizedWeight < 101 ? 0 : (normalizedWeight - 100) * 0.5;
-  const delivery = roundUpToFive(120 + weightCharge + normalizedDistance * 0.5);
-  return delivery + (hasOtherWarehouse ? 50 : 0) + (hasDelivery ? 50 : 0);
-}
-
-export function calculateSvoMsqDeliveryFromJuly31(weight, additionalDistance, hasOtherWarehouse, hasDelivery = false) {
-  const normalizedWeight = Number.isFinite(weight) ? weight : 0;
-  const normalizedDistance = Number.isFinite(additionalDistance) ? additionalDistance : 0;
-  if (normalizedWeight >= 750) {
-    const baseRate = normalizedWeight <= 1000
       ? 700
       : normalizedWeight <= 1500
         ? 750
@@ -162,12 +145,12 @@ const getAirportBaseRate = (weight, isZhukovsky) => {
   return 850;
 };
 
-export function calculateAirportDelivery(weight, additionalDistance, isZhukovsky, isFromJuly31, homeAwbCount = 0, hasDelivery = false) {
+export function calculateAirportDelivery(weight, additionalDistance, isZhukovsky, homeAwbCount = 0, hasDelivery = false) {
   const normalizedWeight = Number.isFinite(weight) ? weight : 0;
   const normalizedDistance = Number.isFinite(additionalDistance) ? additionalDistance : 0;
   const normalizedHomeAwbCount = Number.isFinite(homeAwbCount) ? Math.max(0, homeAwbCount) : 0;
   const airportSurcharge = isZhukovsky ? 100 : 0;
-  const dateSurcharge = isFromJuly31 ? 350 : 0;
+  const dateSurcharge = 350;
   const homeAwbSurcharge = Math.max(0, normalizedHomeAwbCount - 1) * 50;
   const deliverySurcharge = hasDelivery ? 50 : 0;
   const delivery = roundUpToFive(
@@ -200,12 +183,7 @@ export function SvoMsqCalculator({ onRouteChange }) {
   const delivery = hasWeight
     ? (isAssembly
         ? calculateSvoMsqDelivery(parsedWeight, parsedDistance, hasOtherWarehouse, hasDelivery)
-        : calculateAirportDelivery(parsedWeight, parsedDistance, isZhukovsky, false, homeAwbCount, hasDelivery))
-    : null;
-  const deliveryFromJuly31 = hasWeight
-    ? (isAssembly
-        ? calculateSvoMsqDeliveryFromJuly31(parsedWeight, parsedDistance, hasOtherWarehouse, hasDelivery)
-        : calculateAirportDelivery(parsedWeight, parsedDistance, isZhukovsky, true, homeAwbCount, hasDelivery))
+        : calculateAirportDelivery(parsedWeight, parsedDistance, isZhukovsky, homeAwbCount, hasDelivery))
     : null;
   const destination = hasOtherWarehouse ? warehouse.trim() : "MSQ";
   const routeDestination = destination || RU.common.emDash;
@@ -213,12 +191,6 @@ export function SvoMsqCalculator({ onRouteChange }) {
   React.useEffect(() => {
     onRouteChange?.(`${airportCode} - ${routeDestination}`);
   }, [airportCode, onRouteChange, routeDestination]);
-  const deliveryBeforeSuffix = isAssembly
-    ? RU.calculator.deliveryBeforeJuly31
-    : RU.calculator.deliveryBeforeJuly31WithoutAssembly;
-  const deliveryAfterSuffix = isAssembly
-    ? RU.calculator.deliveryFromJuly31
-    : RU.calculator.deliveryFromJuly31WithoutAssembly;
   const transitAmount = selectedAirport.id === "dme"
     ? 17850
     : selectedAirport.id === "zia"
@@ -229,22 +201,19 @@ export function SvoMsqCalculator({ onRouteChange }) {
   const terminalExpensesText = !isAssembly && homeAwbCount > 1
     ? RU.calculator.terminalExpensesMultiple
     : RU.calculator.terminalExpensesSingle;
-  const deliveryBeforeLabel = `${RU.calculator.deliveryPrefix} ${airportCode} - ${routeDestination} ${deliveryBeforeSuffix}`;
-  const deliveryAfterLabel = `${RU.calculator.deliveryPrefix} ${airportCode} - ${routeDestination} ${deliveryAfterSuffix}`;
-  const deliveryBeforeValue = delivery === null ? RU.common.emDash : `${delivery} $`;
-  const deliveryAfterValue = deliveryFromJuly31 === null ? RU.common.emDash : `${deliveryFromJuly31} $`;
-  const deliveryBeforeText = `${deliveryBeforeLabel} \u2014 ${deliveryBeforeValue}`;
-  const deliveryAfterText = `${deliveryAfterLabel} \u2014 ${deliveryAfterValue}`;
+  const deliveryAssemblySuffix = isAssembly ? ` ${RU.calculator.deliveryAssemblySuffix}` : "";
+  const deliveryLabel = `${RU.calculator.deliveryPrefix} ${airportCode} - ${routeDestination}${deliveryAssemblySuffix}`;
+  const deliveryValue = delivery === null ? RU.common.emDash : `${delivery} $`;
+  const deliveryText = `${deliveryLabel} \u2014 ${deliveryValue}`;
 
   const handleCopy = async () => {
     const plainText = [
-      `${deliveryBeforeText}\n${deliveryAfterText}`,
+      deliveryText,
       `${transitText}\n${terminalExpensesText}\n${RU.calculator.brokerHint}`,
       RU.calculator.sealNotice,
     ].join("\n\n");
     const htmlText = [
-      `<div>${escapeHtml(deliveryBeforeLabel)} \u2014 <strong>${escapeHtml(deliveryBeforeValue)}</strong></div>`,
-      `<div>${escapeHtml(deliveryAfterLabel)} \u2014 <strong>${escapeHtml(deliveryAfterValue)}</strong></div>`,
+      `<div>${escapeHtml(deliveryLabel)} \u2014 <strong>${escapeHtml(deliveryValue)}</strong></div>`,
       "<br>",
       `<div>${escapeHtml(transitText)}</div>`,
       `<div>${escapeHtml(terminalExpensesText)}</div>`,
@@ -399,18 +368,10 @@ export function SvoMsqCalculator({ onRouteChange }) {
         </button>
         <p className="svo-calculator__delivery">
           <span>
-            {deliveryBeforeLabel} {"\u2014"}
+            {deliveryLabel} {"\u2014"}
           </span>
           <strong data-testid="calculator-result">
-            {delivery === null ? RU.common.emDash : `${delivery} $`}
-          </strong>
-        </p>
-        <p className="svo-calculator__delivery">
-          <span>
-            {deliveryAfterLabel} {"\u2014"}
-          </span>
-          <strong data-testid="calculator-result-from-july-31">
-            {deliveryFromJuly31 === null ? RU.common.emDash : `${deliveryFromJuly31} $`}
+            {deliveryValue}
           </strong>
         </p>
         <p>{transitText}</p>
