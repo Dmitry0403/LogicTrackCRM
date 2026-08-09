@@ -327,9 +327,7 @@ export function OrderFormCard({
             <input
               id="transportCost"
               name="transportCost"
-              type="number"
-              min="0"
-              step="0.01"
+              type="text"
               value={formData.transportCost || ""}
               onChange={onFieldChange("transportCost")}
             />
