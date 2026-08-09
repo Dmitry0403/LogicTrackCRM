@@ -66,18 +66,19 @@ export function OrderFormCard({
             <label htmlFor="shipmentAirport">{RU.orderForm.shipmentAirport}</label>
             <select
               id="shipmentAirport"
-              name="shipmentAirport"
+              name="calculatorAirport"
               required
-              value={formData.shipmentAirport}
-              onChange={onFieldChange("shipmentAirport")}
+              value={formData.calculatorAirport || "svo-assembly"}
+              onChange={onFieldChange("calculatorAirport")}
             >
               <option value="" disabled>
                 {RU.orderForm.selectAirport}
               </option>
-              <option value={RU.orderForm.airports.sheremetyevo}>{RU.orderForm.airports.sheremetyevo}</option>
-              <option value={RU.orderForm.airports.vnukovo}>{RU.orderForm.airports.vnukovo}</option>
-              <option value={RU.orderForm.airports.domodedovo}>{RU.orderForm.airports.domodedovo}</option>
-              <option value={RU.orderForm.airports.zhukovsky}>{RU.orderForm.airports.zhukovsky}</option>
+              <option value="svo-assembly">{RU.orderForm.airports.sheremetyevoAssembly}</option>
+              <option value="svo">{RU.orderForm.airports.sheremetyevo}</option>
+              <option value="vko">{RU.orderForm.airports.vnukovo}</option>
+              <option value="dme">{RU.orderForm.airports.domodedovo}</option>
+              <option value="zia">{RU.orderForm.airports.zhukovsky}</option>
             </select>
           </div>
           {formData.shipmentAirport === RU.orderForm.airports.sheremetyevo && (
@@ -201,27 +202,60 @@ export function OrderFormCard({
                 {RU.orderForm.check}
               </button>
             </div>
-            <div className="order-form__hawb">
-            <label className="order-form__hawb-label">
-              <input
-                type="checkbox"
-                checked={Boolean(formData.hasHawb)}
-                onChange={onFieldChange("hasHawb")}
-              />
-              HAWB
-            </label>
-            {formData.hasHawb && (
-              <input
-                type="text"
-                value={formData.hawb || ""}
-                onChange={onFieldChange("hawb")}
-                placeholder={RU.orderForm.hawbPlaceholder}
-                required
-                className="order-form__hawb-input"
-              />
-            )}
+            <div className="order-form__hawb-stack">
+              <div className="order-form__hawb">
+                <label className="order-form__hawb-label">
+                  <input
+                    type="checkbox"
+                    checked={Boolean(formData.hasHawb)}
+                    onChange={onFieldChange("hasHawb")}
+                  />
+                  HAWB
+                </label>
+                {formData.hasHawb && (
+                  <input
+                    type="text"
+                    value={formData.hawb || ""}
+                    onChange={onFieldChange("hawb")}
+                    placeholder={RU.orderForm.hawbPlaceholder}
+                    required
+                    className="order-form__hawb-input"
+                  />
+                )}
+              </div>
+              <label className="order-form__hawb-label order-form__additional-toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(formData.hasAdditionalParams)}
+                  onChange={onFieldChange("hasAdditionalParams")}
+                />
+                {RU.orderForm.additionalParams}
+              </label>
             </div>
           </div>
+          {formData.hasAdditionalParams && (
+            <div className="order-form__additional-params">
+              <div className="field">
+                <label htmlFor="order-additional-distance">{RU.orderForm.additionalDistance}</label>
+                <input
+                  id="order-additional-distance"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={formData.additionalDistance || ""}
+                  onChange={onFieldChange("additionalDistance")}
+                />
+              </div>
+              <label className="order-form__hawb-label order-form__delivery-toggle">
+                <input
+                  type="checkbox"
+                  checked={Boolean(formData.hasDelivery)}
+                  onChange={onFieldChange("hasDelivery")}
+                />
+                {RU.orderForm.withDelivery}
+              </label>
+            </div>
+          )}
           {!isAwbCheckAvailable && (
             <small className="hint">{RU.orderForm.airportTerminalHint}</small>
           )}
@@ -268,24 +302,38 @@ export function OrderFormCard({
             />
           </div>
         </div>
-        <div className="field">
-          <label htmlFor="customsCode">{RU.orderForm.customsCode}</label>
-          <input
-            id="customsCode"
-            name="customsCode"
-            type="text"
-            list="customs-code-suggestions"
-            placeholder="06536"
-            required
-            value={formData.customsCode}
-            onChange={onFieldChange("customsCode")}
-          />
-          <datalist id="customs-code-suggestions">
-            {(customsSuggestions || []).map((item, index) => (
-              <option key={`${item.value}-${index}`} value={item.value} label={item.label} />
-            ))}
-          </datalist>
-          <small className="hint">{customsName}</small>
+        <div className="order-form__customs-cost-row">
+          <div className="field">
+            <label htmlFor="customsCode">{RU.orderForm.customsCode}</label>
+            <input
+              id="customsCode"
+              name="customsCode"
+              type="text"
+              list="customs-code-suggestions"
+              placeholder="06536"
+              required
+              value={formData.customsCode}
+              onChange={onFieldChange("customsCode")}
+            />
+            <datalist id="customs-code-suggestions">
+              {(customsSuggestions || []).map((item, index) => (
+                <option key={`${item.value}-${index}`} value={item.value} label={item.label} />
+              ))}
+            </datalist>
+            <small className="hint">{customsName}</small>
+          </div>
+          <div className="field">
+            <label htmlFor="transportCost">{RU.orderForm.transportCost}</label>
+            <input
+              id="transportCost"
+              name="transportCost"
+              type="number"
+              min="0"
+              step="0.01"
+              value={formData.transportCost || ""}
+              onChange={onFieldChange("transportCost")}
+            />
+          </div>
         </div>
         <div className="field order-form__notes">
           <label htmlFor="notes">{RU.orderForm.notes}</label>

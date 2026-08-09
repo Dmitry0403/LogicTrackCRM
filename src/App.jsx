@@ -13,6 +13,7 @@ import {
   WorkflowBoard,
   TripFormCard,
   SvoMsqCalculator,
+  calculateOrderDelivery,
 } from './components/workspace';
 import {
   supabase,
@@ -335,6 +336,7 @@ const E2E_DRIVE_ACCOUNT = {
 };
 
 const createEmptyOrderFormData = () => ({
+  calculatorAirport: "svo-assembly",
   shipmentAirport: RU.orderForm.airports.sheremetyevo,
   shipmentTerminal: RU.orderForm.terminals.moscowCargo,
   recipient: "",
@@ -344,14 +346,50 @@ const createEmptyOrderFormData = () => ({
   awbNumber: "",
   hasHawb: false,
   hawb: "",
+  hasAdditionalParams: false,
+  additionalDistance: "",
+  hasDelivery: false,
   quantity: "",
   weight: "",
   customsCode: "",
+  transportCost: "",
   notes: "",
   customer: "",
   loadingPoint: "",
   unloadingPoint: "",
 });
+
+const getOrderAirportFromCalculatorAirport = (calculatorAirport) => {
+  if (calculatorAirport === "vko") return RU.orderForm.airports.vnukovo;
+  if (calculatorAirport === "dme") return RU.orderForm.airports.domodedovo;
+  if (calculatorAirport === "zia") return RU.orderForm.airports.zhukovsky;
+  return RU.orderForm.airports.sheremetyevo;
+};
+
+const getCalculatorAirportFromOrder = (order) => {
+  if (order?.calculatorAirport) return order.calculatorAirport;
+  if (order?.shipmentAirport === RU.orderForm.airports.vnukovo) return "vko";
+  if (order?.shipmentAirport === RU.orderForm.airports.domodedovo) return "dme";
+  if (order?.shipmentAirport === RU.orderForm.airports.zhukovsky) return "zia";
+  return "svo";
+};
+
+const calculateOrderTransportCost = (values) => {
+  const weight = Number.parseFloat(String(values.weight || "").replace(",", "."));
+  if (!Number.isFinite(weight) || weight < 0) return "";
+  const additionalDistance = values.hasAdditionalParams
+    ? Number.parseFloat(String(values.additionalDistance || "").replace(",", "."))
+    : Number.NaN;
+  const customsCode = String(values.customsCode || "").trim();
+  const hasOtherWarehouse = Boolean(customsCode && customsCode !== "06536");
+  return String(calculateOrderDelivery(
+    weight,
+    values.calculatorAirport || "svo-assembly",
+    additionalDistance,
+    Boolean(values.hasAdditionalParams && values.hasDelivery),
+    hasOtherWarehouse,
+  ));
+};
 
 const getOrderFormVariantFromOrder = (order) =>
   order?.customer || order?.loadingPoint || order?.unloadingPoint ? "alternate" : "default";
@@ -1175,6 +1213,12 @@ const App = () => {
       if (field === "shipmentAirport") {
         next.shipmentTerminal = SHEREMETYEVO_VALUES.has(value) ? DEFAULT_SHEREMETYEVO_TERMINAL : "";
       }
+      if (field === "calculatorAirport") {
+        next.shipmentAirport = getOrderAirportFromCalculatorAirport(value);
+        next.shipmentTerminal = value === "svo" || value === "svo-assembly"
+          ? DEFAULT_SHEREMETYEVO_TERMINAL
+          : "";
+      }
       if (field === "awbPrefix") {
         next.awbPrefix = String(value || "").replace(/\D/g, "").slice(0, 3);
       }
@@ -1183,6 +1227,10 @@ const App = () => {
       }
       if (field === "hasHawb" && !value) {
         next.hawb = "";
+      }
+      if (field === "hasAdditionalParams" && !value) {
+        next.additionalDistance = "";
+        next.hasDelivery = false;
       }
       if (
         field === "awbPrefix" ||
@@ -1197,6 +1245,16 @@ const App = () => {
           next.awbNumber,
           next.hasHawb ? (field === "hawb" ? value : next.hawb) : "",
         );
+      }
+      if (
+        field === "weight" ||
+        field === "calculatorAirport" ||
+        field === "hasAdditionalParams" ||
+        field === "additionalDistance" ||
+        field === "hasDelivery" ||
+        field === "customsCode"
+      ) {
+        next.transportCost = calculateOrderTransportCost(next);
       }
       return next;
     });
@@ -1225,6 +1283,7 @@ const App = () => {
           ? orders.find((item) => item.id === editingOrderId)?.stageId || (orderStages[0]?.id || "order-stage-plan")
           : (orderStages[0]?.id || "order-stage-plan"),
         shipmentAirport: formData.shipmentAirport.trim() || normalizedLoadingPoint,
+        calculatorAirport: formData.calculatorAirport || "",
         shipmentTerminal: formData.shipmentTerminal.trim(),
         name: resolvedName,
         recipient: normalizedRecipient || normalizedCustomer || normalizedUnloadingPoint,
@@ -1237,6 +1296,12 @@ const App = () => {
         quantity: formData.quantity.trim(),
         weight: formData.weight.trim(),
         customsCode: formData.customsCode.trim(),
+        transportCost: String(formData.transportCost || "").trim(),
+        hasAdditionalParams: Boolean(formData.hasAdditionalParams),
+        additionalDistance: formData.hasAdditionalParams
+          ? String(formData.additionalDistance || "").trim()
+          : "",
+        hasDelivery: Boolean(formData.hasAdditionalParams && formData.hasDelivery),
         customsName: normalizedUnloadingPoint || getCustomsNameLabel(formData.customsCode.trim()),
         notes: formData.notes.trim(),
         customer: normalizedCustomer,
@@ -2579,6 +2644,7 @@ const App = () => {
   const createOrderFormDataFromOrder = (order) => {
     const awbParts = splitAwb(order.awb);
     return {
+      calculatorAirport: getCalculatorAirportFromOrder(order),
       shipmentAirport: order.shipmentAirport || "",
       shipmentTerminal: order.shipmentTerminal || "",
       recipient: order.recipient || "",
@@ -2588,9 +2654,13 @@ const App = () => {
       awbNumber: awbParts.awbNumber,
       hasHawb: awbParts.hasHawb,
       hawb: awbParts.hawb || "",
+      hasAdditionalParams: Boolean(order.hasAdditionalParams),
+      additionalDistance: order.additionalDistance || "",
+      hasDelivery: Boolean(order.hasDelivery),
       quantity: order.quantity || "",
       weight: order.weight || "",
       customsCode: order.customsCode || "",
+      transportCost: order.transportCost || "",
       notes: order.notes || "",
       customer: order.customer || "",
       loadingPoint: order.loadingPoint || "",
@@ -3024,6 +3094,7 @@ const App = () => {
                     getItemId={(order) => order.id}
                     getItemStageId={(order) => order.stageId}
                     getItemWeight={(order) => order.weight}
+                    getItemCost={(order) => order.transportCost}
                     onMoveItemToStage={handleMoveOrderToStage}
                     onInsertStage={handleInsertOrderStage}
                     onRenameStage={handleRenameOrderStage}
@@ -3094,7 +3165,7 @@ const App = () => {
                           </div>
                         )}
                         <div className="workflow-card__meta">
-                          {order.quantity || RU.common.emDash} {RU.orderCard.placesUnit} / {order.weight || RU.common.emDash} {RU.orderCard.weightUnit}
+                          {order.quantity || RU.common.emDash} {RU.orderCard.placesUnit} / {order.weight || RU.common.emDash} {RU.orderCard.weightUnit} / {order.transportCost || RU.common.emDash} {RU.workflow.costUnit}
                           {assignedTrip ? ` / ${assignedCarNumber || "—"}` : ""}
                         </div>
                       </div>
@@ -3183,6 +3254,10 @@ const App = () => {
                         const parsed = Number.parseFloat(String(order.weight || "0").replace(",", "."));
                         return sum + (Number.isFinite(parsed) ? parsed : 0);
                       }, 0);
+                      const totalTripCost = tripOrders.reduce((sum, order) => {
+                        const parsed = Number.parseFloat(String(order.transportCost || "0").replace(",", "."));
+                        return sum + (Number.isFinite(parsed) ? parsed : 0);
+                      }, 0);
                       return (
                         <div className="workflow-card">
                           <div className="workflow-card__top-actions">
@@ -3225,7 +3300,10 @@ const App = () => {
                             {RU.tripCard.ordersCount}: {tripOrders.length} · {RU.tripCard.weight}: {totalTripWeight.toLocaleString("ru-RU", {
                               minimumFractionDigits: 0,
                               maximumFractionDigits: 2,
-                            })} {RU.tripCard.weightUnit}
+                            })} {RU.tripCard.weightUnit} · {RU.tripCard.cost}: {totalTripCost.toLocaleString("ru-RU", {
+                              minimumFractionDigits: 0,
+                              maximumFractionDigits: 2,
+                            })} {RU.tripCard.costUnit}
                           </div>
                           <div className="workflow-card__meta">
                             {tripOrders.length === 0

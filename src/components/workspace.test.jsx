@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   calculateAirportDelivery,
+  calculateOrderDelivery,
   calculateSvoMsqDelivery,
 } from "./workspace";
 
@@ -61,5 +62,20 @@ describe("calculateAirportDelivery", () => {
 
   it("adds the delivery surcharge to a regular airport rate", () => {
     expect(calculateAirportDelivery(500, 0, false, 1, true)).toBe(950);
+  });
+});
+
+describe("calculateOrderDelivery", () => {
+  it("uses the assembly tariff only for the calculator assembly option", () => {
+    expect(calculateOrderDelivery(800, "svo-assembly", 0, false)).toBe(700);
+    expect(calculateOrderDelivery(800, "svo", 0, false)).toBe(950);
+  });
+
+  it("applies optional distance and delivery", () => {
+    expect(calculateOrderDelivery(800, "svo-assembly", 11, true)).toBe(760);
+  });
+
+  it("applies the other warehouse surcharge for assembly delivery", () => {
+    expect(calculateOrderDelivery(800, "svo-assembly", 0, false, true)).toBe(750);
   });
 });

@@ -159,6 +159,19 @@ export function calculateAirportDelivery(weight, additionalDistance, isZhukovsky
   return delivery + dateSurcharge + homeAwbSurcharge + deliverySurcharge;
 }
 
+export function calculateOrderDelivery(weight, calculatorAirport, additionalDistance, hasDelivery, hasOtherWarehouse = false) {
+  if (calculatorAirport === "svo-assembly") {
+    return calculateSvoMsqDelivery(weight, additionalDistance, hasOtherWarehouse, hasDelivery);
+  }
+  return calculateAirportDelivery(
+    weight,
+    additionalDistance,
+    calculatorAirport === "zia",
+    1,
+    hasDelivery,
+  );
+}
+
 export function SvoMsqCalculator({ onRouteChange }) {
   const [weight, setWeight] = React.useState("");
   const [airportId, setAirportId] = React.useState("svo-assembly");
@@ -393,6 +406,7 @@ export function WorkflowBoard({
   getItemId,
   getItemStageId,
   getItemWeight,
+  getItemCost,
   onMoveItemToStage,
   onInsertStage,
   onRenameStage,
@@ -413,6 +427,21 @@ export function WorkflowBoard({
   const columnsRef = React.useRef(null);
   const hoverScrollDirectionRef = React.useRef(0);
   const hoverScrollFrameRef = React.useRef(0);
+  const syncHeaderHeights = React.useCallback(() => {
+    const node = columnsRef.current;
+    if (!node) return;
+    const headers = Array.from(node.querySelectorAll(".workflow-column__head"));
+    if (headers.length === 0) return;
+    headers.forEach((header) => {
+      header.style.height = "auto";
+    });
+    const maxHeight = Math.max(
+      ...headers.map((header) => Math.ceil(header.getBoundingClientRect().height)),
+    );
+    headers.forEach((header) => {
+      header.style.height = `${maxHeight}px`;
+    });
+  }, []);
   const toWeightNumber = React.useCallback((value) => {
     if (value == null) return 0;
     const normalized = String(value).replace(",", ".").trim();
@@ -433,6 +462,20 @@ export function WorkflowBoard({
     setCanScrollLeft(left > 6);
     setCanScrollRight(left < maxScrollLeft - 6);
   }, []);
+
+  React.useLayoutEffect(() => {
+    syncHeaderHeights();
+    let resizeFrame = 0;
+    const handleResize = () => {
+      if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+      resizeFrame = window.requestAnimationFrame(syncHeaderHeights);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => {
+      if (resizeFrame) window.cancelAnimationFrame(resizeFrame);
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [editingStageId, items, stages, syncHeaderHeights]);
 
   const stopHoverScroll = React.useCallback(() => {
     hoverScrollDirectionRef.current = 0;
@@ -639,6 +682,10 @@ export function WorkflowBoard({
               (sum, item) => sum + toWeightNumber(getItemWeight ? getItemWeight(item) : 0),
               0,
             );
+            const stageTotalCost = stageItems.reduce(
+              (sum, item) => sum + toWeightNumber(getItemCost ? getItemCost(item) : 0),
+              0,
+            );
             const stageIsDefault = Boolean(isStageDefault && isStageDefault(stage));
             const stageCanRename = isStageRenamable(stage);
             const stageCanDelete = isStageDeletable(stage);
@@ -678,6 +725,14 @@ export function WorkflowBoard({
                           maximumFractionDigits: 2,
                         })} {RU.workflow.weightUnit}
                       </div>
+                      {getItemCost && (
+                        <div className="workflow-column__cost">
+                          {stageTotalCost.toLocaleString("ru-RU", {
+                            minimumFractionDigits: 0,
+                            maximumFractionDigits: 2,
+                          })} {RU.workflow.costUnit}
+                        </div>
+                      )}
                     </div>
                   )}
                   {stageCanRename &&
