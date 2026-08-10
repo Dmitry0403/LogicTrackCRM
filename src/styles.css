@@ -1282,18 +1282,6 @@ small {
   font-weight: 700;
 }
 
-.workflow-column__count {
-  min-width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: #e2e8f0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 12px;
-  font-weight: 700;
-}
-
 .workflow-column__weight {
   min-height: 24px;
   border-radius: 999px;

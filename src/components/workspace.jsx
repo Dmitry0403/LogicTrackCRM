@@ -718,7 +718,6 @@ export function WorkflowBoard({
                   ) : (
                     <div className="workflow-column__title-wrap">
                       <div className="workflow-column__title">{stage.name}</div>
-                      <div className="workflow-column__count">{stageItems.length}</div>
                       <div className="workflow-column__weight">
                         {stageTotalWeight.toLocaleString("ru-RU", {
                           minimumFractionDigits: 0,
