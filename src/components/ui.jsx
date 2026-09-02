@@ -434,24 +434,36 @@ export function AlternateOrderFormCard({
             }}
           />
         </div>
-        <div className="field">
-          <label htmlFor="weight-alt">{RU.orderForm.weight}</label>
-          <input
-            id="weight-alt"
-            name="weight"
-            type="number"
-            min="0"
-            step="0.01"
-            required
-            value={formData.weight}
-            onChange={onFieldChange("weight")}
-            onWheel={(event) => event.currentTarget.blur()}
-            onKeyDown={(event) => {
-              if (["e", "E", "+", "-"].includes(event.key)) {
-                event.preventDefault();
-              }
-            }}
-          />
+        <div className="order-form__quantity-row">
+          <div className="field">
+            <label htmlFor="weight-alt">{RU.orderForm.weight}</label>
+            <input
+              id="weight-alt"
+              name="weight"
+              type="number"
+              min="0"
+              step="0.01"
+              required
+              value={formData.weight}
+              onChange={onFieldChange("weight")}
+              onWheel={(event) => event.currentTarget.blur()}
+              onKeyDown={(event) => {
+                if (["e", "E", "+", "-"].includes(event.key)) {
+                  event.preventDefault();
+                }
+              }}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="transportCost-alt">{RU.orderForm.transportCost}</label>
+            <input
+              id="transportCost-alt"
+              name="transportCost"
+              type="text"
+              value={formData.transportCost || ""}
+              onChange={onFieldChange("transportCost")}
+            />
+          </div>
         </div>
         <div className="field order-form__notes order-form__notes--stacked">
           <label htmlFor="notes-alt">{RU.orderForm.notes}</label>

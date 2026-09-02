@@ -159,6 +159,11 @@ export function calculateAirportDelivery(weight, additionalDistance, isZhukovsky
   return delivery + dateSurcharge + homeAwbSurcharge + deliverySurcharge;
 }
 
+export function calculateStandaloneVehicleDelivery(weight) {
+  const normalizedWeight = Number.isFinite(weight) ? weight : 0;
+  return roundUpToFive(getAirportBaseRate(normalizedWeight, false));
+}
+
 export function calculateOrderDelivery(weight, calculatorAirport, additionalDistance, hasDelivery, hasOtherWarehouse = false) {
   if (calculatorAirport === "svo-assembly") {
     return calculateSvoMsqDelivery(weight, additionalDistance, hasOtherWarehouse, hasDelivery);

@@ -14,6 +14,7 @@ import {
   TripFormCard,
   SvoMsqCalculator,
   calculateOrderDelivery,
+  calculateStandaloneVehicleDelivery,
 } from './components/workspace';
 import {
   supabase,
@@ -389,6 +390,12 @@ const calculateOrderTransportCost = (values) => {
     Boolean(values.hasAdditionalParams && values.hasDelivery),
     hasOtherWarehouse,
   ));
+};
+
+const calculateAlternateOrderTransportCost = (values) => {
+  const weight = Number.parseFloat(String(values.weight || "").replace(",", "."));
+  if (!Number.isFinite(weight) || weight < 0) return "";
+  return String(calculateStandaloneVehicleDelivery(weight));
 };
 
 const getOrderFormVariantFromOrder = (order) =>
@@ -1254,7 +1261,9 @@ const App = () => {
         field === "hasDelivery" ||
         field === "customsCode"
       ) {
-        next.transportCost = calculateOrderTransportCost(next);
+        next.transportCost = orderFormVariant === "alternate"
+          ? calculateAlternateOrderTransportCost(next)
+          : calculateOrderTransportCost(next);
       }
       return next;
     });
