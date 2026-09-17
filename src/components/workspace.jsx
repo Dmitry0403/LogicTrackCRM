@@ -222,7 +222,8 @@ export function SvoMsqCalculator({ onRouteChange }) {
   const deliveryAssemblySuffix = isAssembly ? ` ${RU.calculator.deliveryAssemblySuffix}` : "";
   const deliveryLabel = `${RU.calculator.deliveryPrefix} ${airportCode} - ${routeDestination}${deliveryAssemblySuffix}`;
   const deliveryValue = delivery === null ? RU.common.emDash : `${delivery} $`;
-  const deliveryText = `${deliveryLabel} \u2014 ${deliveryValue}`;
+  const deliverySealSuffix = ` ${RU.calculator.deliveryWithSeal}`;
+  const deliveryText = `${deliveryLabel} \u2014 ${deliveryValue}${deliverySealSuffix}`;
 
   const handleCopy = async () => {
     const plainText = [
@@ -231,7 +232,7 @@ export function SvoMsqCalculator({ onRouteChange }) {
       RU.calculator.sealNotice,
     ].join("\n\n");
     const htmlText = [
-      `<div>${escapeHtml(deliveryLabel)} \u2014 <strong>${escapeHtml(deliveryValue)}</strong></div>`,
+      `<div>${escapeHtml(deliveryLabel)} \u2014 <strong>${escapeHtml(deliveryValue)}</strong>${escapeHtml(deliverySealSuffix)}</div>`,
       "<br>",
       `<div>${escapeHtml(transitText)}</div>`,
       `<div>${escapeHtml(terminalExpensesText)}</div>`,
@@ -391,6 +392,7 @@ export function SvoMsqCalculator({ onRouteChange }) {
           <strong data-testid="calculator-result">
             {deliveryValue}
           </strong>
+          {deliverySealSuffix}
         </p>
         <p>{transitText}</p>
         <p>{terminalExpensesText}</p>
