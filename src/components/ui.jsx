@@ -635,6 +635,9 @@ export function DriveSettingsModal({
   isOpen,
   driveConnected,
   selectedDriveFolder,
+  bindingBusy = false,
+  bindingStatus = "",
+  onCheckFolder,
   driveHint,
   onConnectGoogleDrive,
   onSelectDriveFolder,
@@ -657,8 +660,8 @@ export function DriveSettingsModal({
           <button type="button" onClick={onConnectGoogleDrive} data-testid="drive-connect">
             {RU.driveModal.connect}
           </button>
-          <button type="button" className="primary" disabled={!driveConnected} onClick={onSelectDriveFolder} data-testid="drive-select-folder">
-            {RU.driveModal.chooseFolder}
+          <button type="button" className="primary" disabled={!driveConnected || bindingBusy} onClick={onSelectDriveFolder} data-testid="drive-select-folder">
+            {bindingBusy ? "Подождите…" : selectedDriveFolder ? "Изменить папку" : RU.driveModal.chooseFolder}
           </button>
           <button type="button" onClick={onDisconnectGoogleDrive} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="drive-disconnect">
             {RU.driveModal.signOut}
@@ -670,6 +673,10 @@ export function DriveSettingsModal({
           </div>
         )}
         <div className="drive-hint" data-testid="drive-hint">{driveHint}</div>
+        {bindingStatus && <div role="status" data-testid="drive-binding-status">
+          <p>{bindingStatus}</p>
+          <button type="button" disabled={bindingBusy} onClick={onCheckFolder}>Проверить доступ</button>
+        </div>}
         <div className="settings-dialog-footer">
           <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="drive-settings-close">
             {RU.common.close}

@@ -7,6 +7,8 @@ import {
   SignatureSettingsModal,
   AccountSettingsModal,
 } from './components/ui';
+import { useDriveBinding } from "./lib/useDriveBinding";
+import { bindingBlocked, verifyDriveFolder } from "./lib/driveBinding";
 import {
   HeaderNavigation,
   WorkPanel,
@@ -469,6 +471,10 @@ const App = () => {
   const [isCloudStateReady, setIsCloudStateReady] = React.useState(!isSupabaseEnabled);
   const [authReady, setAuthReady] = React.useState(!isSupabaseEnabled);
   const [currentUser, setCurrentUser] = React.useState(null);
+  const driveBinding = useDriveBinding(currentUser?.id, isSupabaseEnabled);
+  const [driveFolderAccess, setDriveFolderAccess] = React.useState({ key: "", status: "", error: "" });
+  const [driveFolderSaving, setDriveFolderSaving] = React.useState(false);
+  const [driveFolderCheck, setDriveFolderCheck] = React.useState(0);
   const [authForm, setAuthForm] = React.useState({ email: "", password: "" });
   const [authScreen, setAuthScreen] = React.useState("login");
   const [isAuthSubmitting, setIsAuthSubmitting] = React.useState(false);
@@ -492,14 +498,17 @@ const App = () => {
   });
 
   
-  const [selectedDriveFolder, setSelectedDriveFolder] = React.useState(() => {
+  const [localDriveFolder, setSelectedDriveFolder] = React.useState(() => {
     try {
       return JSON.parse(localStorage.getItem('gdrive_selected_folder') || 'null');
     } catch (_error) {
       return null;
     }
   });
+  const selectedDriveFolder = isSupabaseEnabled ? driveBinding.folder : localDriveFolder;
   const [driveAccount, setDriveAccount] = React.useState(() => getStoredDriveAccount());
+  const driveFolderAccessKey = `${currentUser?.id || "local"}:${selectedDriveFolder?.id || ""}:${driveAccount?.email || ""}`;
+  const driveFolderReady = !isSupabaseEnabled || (driveBinding.ready && driveFolderAccess.key === driveFolderAccessKey && driveFolderAccess.status === "ready");
   const [driveOpsQueue, setDriveOpsQueue] = React.useState(() => {
     try {
       const raw = JSON.parse(localStorage.getItem(DRIVE_OPS_QUEUE_STORAGE_KEY) || "[]");
@@ -988,7 +997,7 @@ const App = () => {
 
   
   React.useEffect(() => {
-    if (selectedDriveFolder) {
+    if (!isSupabaseEnabled && selectedDriveFolder) {
       localStorage.setItem('gdrive_selected_folder', JSON.stringify(selectedDriveFolder));
     }
   }, [selectedDriveFolder]);
@@ -1824,10 +1833,9 @@ const App = () => {
   };
   const clearGoogleDriveSession = React.useCallback(({ notify = false } = {}) => {
     localStorage.removeItem('gdrive_tokens');
-    localStorage.removeItem('gdrive_selected_folder');
     localStorage.removeItem('gdrive_account');
     setDriveConnected(false);
-    setSelectedDriveFolder(null);
+    setDriveFolderAccess({ key: "", status: "", error: "" });
     setDriveAccount(null);
     if (notify) {
       setDriveHint(RU.appMessages.driveSyncDisabled);
@@ -1892,12 +1900,25 @@ const App = () => {
   );
 
   const runDriveOpWithWakeRetry = React.useMemo(
-    () =>
-      createDriveOpRunner({
+    () => {
+      const runner = createDriveOpRunner({
         ensureBackendAwake,
         isDrivePermissionError,
-      }),
-    [ensureBackendAwake],
+      });
+      return async (operation) => {
+        if (isSupabaseEnabled) {
+          try {
+            await driveBinding.assertCurrent(selectedDriveFolder?.id);
+            await verifyDriveFolder(selectedDriveFolder.id, await ensureAccessToken());
+          } catch (error) {
+            setDriveFolderAccess({ key: driveFolderAccessKey, status: "blocked", error: error.message });
+            throw bindingBlocked(error.message);
+          }
+        }
+        return runner(operation);
+      };
+    },
+    [ensureBackendAwake, driveBinding.assertCurrent, selectedDriveFolder?.id, driveFolderAccessKey],
   );
   const escapeDriveQueryValue = (value) =>
     String(value || "")
@@ -1910,6 +1931,8 @@ const App = () => {
       const existingIndex = prev.findIndex((item) => item.opKey === opKey);
       const now = Date.now();
       const nextItem = {
+        bindingFolderId: selectedDriveFolder?.id || null,
+        crmUserId: currentUser?.id || null,
         id: existingIndex >= 0 ? prev[existingIndex].id : `drive-op-${now}-${Math.random().toString(36).slice(2, 8)}`,
         opKey,
         type,
@@ -1926,7 +1949,7 @@ const App = () => {
       }
       return [...prev, nextItem];
     });
-  }, []);
+  }, [selectedDriveFolder?.id, currentUser?.id]);
 
   const removeDriveOpByKey = React.useCallback((type, payload) => {
     const opKey = createDriveOpKey(type, payload);
@@ -1962,12 +1985,26 @@ const App = () => {
     }
     throw new Error('Drive authorization is required');
   };
+  React.useEffect(() => {
+    if (!isSupabaseEnabled || !driveConnected || !driveBinding.ready || !selectedDriveFolder?.id) return undefined;
+    let cancelled = false;
+    setDriveFolderAccess({ key: driveFolderAccessKey, status: "checking", error: "" });
+    void (async () => {
+      await verifyDriveFolder(selectedDriveFolder.id, await ensureAccessToken());
+      if (!cancelled) setDriveFolderAccess({ key: driveFolderAccessKey, status: "ready", error: "" });
+    })().catch((error) => {
+      if (!cancelled) setDriveFolderAccess({ key: driveFolderAccessKey, status: "blocked", error: error.message });
+    });
+    return () => { cancelled = true; };
+  }, [driveConnected, driveBinding.ready, selectedDriveFolder?.id, driveFolderAccessKey, driveFolderCheck]);
+
   const driveRequest = async (url, { method = 'GET', body = null, retries = 2, allow404 = false } = {}) => {
     let forceRefresh = false;
 
     for (let attempt = 0; attempt <= retries; attempt += 1) {
       try {
         const accessToken = await ensureAccessToken({ forceRefresh });
+        if (isSupabaseEnabled && method !== 'GET') await driveBinding.assertCurrent(selectedDriveFolder?.id);
         const response = await fetch(url, {
           method,
           headers: {
@@ -2323,7 +2360,7 @@ const App = () => {
   };
 
   const processDriveOpsQueue = React.useCallback(async () => {
-    if (!driveConnected || driveOpsProcessingRef.current) return;
+    if (!driveConnected || driveOpsProcessingRef.current || (isSupabaseEnabled && (!driveFolderReady || !isCloudStateReady))) return;
     driveOpsProcessingRef.current = true;
 
     try {
@@ -2332,6 +2369,11 @@ const App = () => {
         const now = Date.now();
         const dueOp = queue.find((item) => Number(item?.nextRunAt || 0) <= now);
         if (!dueOp) break;
+        if (isSupabaseEnabled && ((dueOp.crmUserId && dueOp.crmUserId !== currentUser?.id) ||
+          (dueOp.bindingFolderId && dueOp.bindingFolderId !== selectedDriveFolder?.id))) {
+          setDriveHint("В очереди есть операции другой папки или аккаунта. Они приостановлены; проверьте очередь перед продолжением.");
+          break;
+        }
 
         try {
           console.info("[drive.queue] processing", {
@@ -2393,6 +2435,10 @@ const App = () => {
           });
           setDriveOpsQueue((prev) => prev.filter((item) => item.id !== dueOp.id));
         } catch (error) {
+          if (error.driveBindingBlocked) {
+            setDriveHint(error.message);
+            break;
+          }
           if (isDrivePermissionError(error)) {
             console.warn("[drive.queue] permission_error", {
               id: dueOp.id,
@@ -2435,7 +2481,7 @@ const App = () => {
     } finally {
       driveOpsProcessingRef.current = false;
     }
-  }, [driveConnected, orders, selectedDriveFolder?.id, trips]);
+  }, [driveConnected, orders, selectedDriveFolder?.id, trips, driveFolderReady, isCloudStateReady, currentUser?.id, driveBinding.assertCurrent]);
 
   React.useEffect(() => {
     if (!driveConnected || driveOpsQueue.length === 0) return undefined;
@@ -2464,6 +2510,16 @@ const App = () => {
       setDriveHint(RU.appMessages.connectDriveFirst);
       return;
     }
+    if (isSupabaseEnabled && !driveBinding.ready) {
+      setDriveHint("Дождитесь загрузки общей привязки папки или нажмите «Проверить доступ».");
+      return;
+    }
+    if (driveOpsProcessingRef.current || isOrderCloudSaving || isTripSaving || (selectedDriveFolder && driveOpsQueue.length > 0)) {
+      setDriveHint("Перед сменой папки завершите текущие операции и очередь Drive.");
+      return;
+    }
+    if (selectedDriveFolder && !window.confirm("Изменить рабочую папку для всех компьютеров этого аккаунта CRM? Существующие папки заказов и рейсов автоматически перенесены не будут.")) return;
+    const expectedBinding = driveBinding.row;
 
     try {
       const accessToken = await ensureAccessToken();
@@ -2499,9 +2555,13 @@ const App = () => {
               name: folderData.name,
               url: `https://drive.google.com/drive/folders/${folderData.id}`,
             };
-            setSelectedDriveFolder(folderObj);
-            setDriveHint(`${RU.appMessages.folderSelectedPrefix} ${folderObj.name}`);
-            console.log('Выбрана папка:', folderObj);
+            setDriveFolderSaving(true);
+            void (async () => {
+              const checked = await verifyDriveFolder(folderObj.id, await ensureAccessToken());
+              if (isSupabaseEnabled) await driveBinding.save(checked, expectedBinding);
+              else setSelectedDriveFolder(checked);
+              setDriveHint(`${RU.appMessages.folderSelectedPrefix} ${checked.name}`);
+            })().catch((error) => setDriveHint(error.message)).finally(() => setDriveFolderSaving(false));
           } else if (data.action === google.picker.Action.CANCEL) {
             setDriveHint(RU.appMessages.folderCanceled);
           }
@@ -2516,15 +2576,16 @@ const App = () => {
   };
 
   React.useEffect(() => {
-    if (!shouldAutoOpenDrivePicker || !driveConnected || !showDriveSettingsModal) return undefined;
+    if (!shouldAutoOpenDrivePicker || !driveConnected || !showDriveSettingsModal || !driveBinding.ready) return undefined;
 
     setShouldAutoOpenDrivePicker(false);
+    if (selectedDriveFolder) return undefined;
     const timeoutId = window.setTimeout(() => {
       void selectDriveFolder();
     }, 250);
 
     return () => window.clearTimeout(timeoutId);
-  }, [shouldAutoOpenDrivePicker, driveConnected, showDriveSettingsModal]);
+  }, [shouldAutoOpenDrivePicker, driveConnected, showDriveSettingsModal, driveBinding.ready, selectedDriveFolder?.id]);
 
   const handleDisconnectGoogleDrive = () => {
     clearGoogleDriveSession({ notify: true });
@@ -3399,6 +3460,13 @@ const App = () => {
         isOpen={showDriveSettingsModal}
         driveConnected={driveConnected}
         selectedDriveFolder={selectedDriveFolder}
+        bindingBusy={driveFolderSaving || (isSupabaseEnabled && !driveBinding.ready && !driveBinding.error)}
+        bindingStatus={isSupabaseEnabled ? (driveBinding.error || (!driveBinding.ready ? "Загружаем рабочую папку…" :
+          !selectedDriveFolder ? "Рабочая папка ещё не закреплена. Выберите её один раз для этого аккаунта CRM." :
+          !driveConnected ? "Рабочая папка сохранена. Подключите Google-аккаунт для проверки доступа." :
+          driveFolderAccess.key !== driveFolderAccessKey || driveFolderAccess.status === "checking" ? "Проверяем доступ к рабочей папке…" :
+          driveFolderAccess.error || "Рабочая папка доступна. Она используется на всех компьютерах этого аккаунта CRM.")) : ""}
+        onCheckFolder={() => { void driveBinding.refresh().catch(() => {}); setDriveFolderCheck((n) => n + 1); }}
         driveHint={driveHint}
         onConnectGoogleDrive={connectGoogleDrive}
         onSelectDriveFolder={selectDriveFolder}
