@@ -8,6 +8,7 @@ import {
   AccountSettingsModal,
 } from './components/ui';
 import { useDriveBinding } from "./lib/useDriveBinding";
+import { loadGooglePickerApi } from "./lib/googlePicker";
 import { bindingBlocked, verifyDriveFolder } from "./lib/driveBinding";
 import {
   HeaderNavigation,
@@ -118,33 +119,6 @@ const resolveCargoApiUrl = (pathOrUrl) => {
     return `${CARGO_API_BASE_URL}${value}`;
   }
   return `${CARGO_API_BASE_URL}/${value}`;
-};
-
-let pickerApiLoadPromise = null;
-
-const loadGooglePickerApi = () => {
-  if (typeof window === 'undefined') {
-    return Promise.reject(new Error('window is not available'));
-  }
-
-  if (window.google && window.google.picker) {
-    return Promise.resolve();
-  }
-
-  if (!window.gapi || typeof window.gapi.load !== 'function') {
-    return Promise.reject(new Error('Google API script is not loaded'));
-  }
-
-  if (!pickerApiLoadPromise) {
-    pickerApiLoadPromise = new Promise((resolve, reject) => {
-      window.gapi.load('picker', {
-        callback: resolve,
-        onerror: () => reject(new Error('Failed to load Google Picker API')),
-      });
-    });
-  }
-
-  return pickerApiLoadPromise;
 };
 
 // Helpers to store tokens
@@ -474,6 +448,8 @@ const App = () => {
   const driveBinding = useDriveBinding(currentUser?.id, isSupabaseEnabled);
   const [driveFolderAccess, setDriveFolderAccess] = React.useState({ key: "", status: "", error: "" });
   const [driveFolderSaving, setDriveFolderSaving] = React.useState(false);
+  const [drivePickerLoading, setDrivePickerLoading] = React.useState(false);
+  const drivePickerLoadingRef = React.useRef(false);
   const [driveFolderCheck, setDriveFolderCheck] = React.useState(0);
   const [authForm, setAuthForm] = React.useState({ email: "", password: "" });
   const [authScreen, setAuthScreen] = React.useState("login");
@@ -2506,6 +2482,7 @@ const App = () => {
   }, [driveConnected, driveOpsQueue, processDriveOpsQueue]);
 
   const selectDriveFolder = async () => {
+    if (drivePickerLoadingRef.current) return;
     if (!driveConnected) {
       setDriveHint(RU.appMessages.connectDriveFirst);
       return;
@@ -2521,6 +2498,8 @@ const App = () => {
     if (selectedDriveFolder && !window.confirm("Изменить рабочую папку для всех компьютеров этого аккаунта CRM? Существующие папки заказов и рейсов автоматически перенесены не будут.")) return;
     const expectedBinding = driveBinding.row;
 
+    drivePickerLoadingRef.current = true;
+    setDrivePickerLoading(true);
     try {
       const accessToken = await ensureAccessToken();
       await loadGooglePickerApi();
@@ -2571,7 +2550,10 @@ const App = () => {
       picker.setVisible(true);
     } catch (err) {
       console.error(err);
-      setDriveHint(RU.appMessages.folderOpenFailed);
+      setDriveHint(err.code === "GOOGLE_PICKER_LOAD_FAILED" ? err.message : RU.appMessages.folderOpenFailed);
+    } finally {
+      drivePickerLoadingRef.current = false;
+      setDrivePickerLoading(false);
     }
   };
 
@@ -3460,7 +3442,7 @@ const App = () => {
         isOpen={showDriveSettingsModal}
         driveConnected={driveConnected}
         selectedDriveFolder={selectedDriveFolder}
-        bindingBusy={driveFolderSaving || (isSupabaseEnabled && !driveBinding.ready && !driveBinding.error)}
+        bindingBusy={drivePickerLoading || driveFolderSaving || (isSupabaseEnabled && !driveBinding.ready && !driveBinding.error)}
         bindingStatus={isSupabaseEnabled ? (driveBinding.error || (!driveBinding.ready ? "Загружаем рабочую папку…" :
           !selectedDriveFolder ? "Рабочая папка ещё не закреплена. Выберите её один раз для этого аккаунта CRM." :
           !driveConnected ? "Рабочая папка сохранена. Подключите Google-аккаунт для проверки доступа." :

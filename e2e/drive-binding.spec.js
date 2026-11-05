@@ -87,3 +87,36 @@ test("folder change requires confirmation and uses versioned update", async ({ p
   await expect(page.getByRole("link", { name: "Рабочая папка" })).toBeVisible();
   expect(writes).toHaveLength(1);
 });
+
+test("Google script failure recovers on the next click without reloading CRM", async ({ page }) => {
+  await setup(page);
+  await page.addInitScript(() => { delete window.google; delete window.gapi; });
+  let requests = 0;
+  await page.route("https://apis.google.com/js/api.js", async (route) => {
+    requests += 1;
+    if (requests <= 2) return route.abort("connectionreset");
+    await route.fulfill({ contentType: "application/javascript", body: `
+      window.gapi = { load: function(name, options) {
+        window.google = { picker: {
+          Action: { PICKED: 'picked', CANCEL: 'cancel' }, ViewId: { FOLDERS: 'folders' },
+          DocsView: class { setIncludeFolders() { return this; } setSelectFolderEnabled() { return this; } },
+          PickerBuilder: class {
+            addView() { return this; } setDeveloperKey() { return this; } setOAuthToken() { return this; }
+            setCallback() { return this; } build() { return this; }
+            setVisible() { window.pickerOpened = true; }
+          }
+        } };
+        options.callback();
+      } };
+    ` });
+  });
+  await openDrive(page);
+  page.on("dialog", (dialog) => dialog.accept());
+  await page.getByTestId("drive-select-folder").click();
+  await expect(page.getByTestId("drive-hint")).toContainText("обновлять страницу не нужно");
+  expect(requests).toBe(2);
+  await expect(page.getByTestId("drive-select-folder")).toBeEnabled();
+  await page.getByTestId("drive-select-folder").click();
+  await page.waitForFunction(() => window.pickerOpened === true);
+  expect(requests).toBe(3);
+});
