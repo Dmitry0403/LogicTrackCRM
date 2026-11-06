@@ -450,7 +450,6 @@ const App = () => {
   const [driveFolderSaving, setDriveFolderSaving] = React.useState(false);
   const [drivePickerLoading, setDrivePickerLoading] = React.useState(false);
   const drivePickerLoadingRef = React.useRef(false);
-  const [driveFolderCheck, setDriveFolderCheck] = React.useState(0);
   const [authForm, setAuthForm] = React.useState({ email: "", password: "" });
   const [authScreen, setAuthScreen] = React.useState("login");
   const [isAuthSubmitting, setIsAuthSubmitting] = React.useState(false);
@@ -1964,15 +1963,23 @@ const App = () => {
   React.useEffect(() => {
     if (!isSupabaseEnabled || !driveConnected || !driveBinding.ready || !selectedDriveFolder?.id) return undefined;
     let cancelled = false;
+    let checking = false;
     setDriveFolderAccess({ key: driveFolderAccessKey, status: "checking", error: "" });
-    void (async () => {
-      await verifyDriveFolder(selectedDriveFolder.id, await ensureAccessToken());
-      if (!cancelled) setDriveFolderAccess({ key: driveFolderAccessKey, status: "ready", error: "" });
-    })().catch((error) => {
-      if (!cancelled) setDriveFolderAccess({ key: driveFolderAccessKey, status: "blocked", error: error.message });
-    });
-    return () => { cancelled = true; };
-  }, [driveConnected, driveBinding.ready, selectedDriveFolder?.id, driveFolderAccessKey, driveFolderCheck]);
+    const check = async () => {
+      if (checking || cancelled) return;
+      checking = true;
+      try {
+        await verifyDriveFolder(selectedDriveFolder.id, await ensureAccessToken());
+        if (!cancelled) setDriveFolderAccess({ key: driveFolderAccessKey, status: "ready", error: "" });
+      } catch (error) {
+        if (!cancelled) setDriveFolderAccess({ key: driveFolderAccessKey, status: "blocked", error: error.message });
+      } finally { checking = false; }
+    };
+    void check();
+    const interval = window.setInterval(check, 30000);
+    window.addEventListener("focus", check);
+    return () => { cancelled = true; clearInterval(interval); window.removeEventListener("focus", check); };
+  }, [driveConnected, driveBinding.ready, selectedDriveFolder?.id, driveFolderAccessKey]);
 
   const driveRequest = async (url, { method = 'GET', body = null, retries = 2, allow404 = false } = {}) => {
     let forceRefresh = false;
@@ -3443,12 +3450,11 @@ const App = () => {
         driveConnected={driveConnected}
         selectedDriveFolder={selectedDriveFolder}
         bindingBusy={drivePickerLoading || driveFolderSaving || (isSupabaseEnabled && !driveBinding.ready && !driveBinding.error)}
-        bindingStatus={isSupabaseEnabled ? (driveBinding.error || (!driveBinding.ready ? "Загружаем рабочую папку…" :
-          !selectedDriveFolder ? "Рабочая папка ещё не закреплена. Выберите её один раз для этого аккаунта CRM." :
-          !driveConnected ? "Рабочая папка сохранена. Подключите Google-аккаунт для проверки доступа." :
+        bindingStatus={isSupabaseEnabled && driveConnected ? (driveBinding.error ? "Рабочая папка недоступна" :
+          !driveBinding.ready ? "Загружаем рабочую папку…" :
+          !selectedDriveFolder ? "Рабочая папка не выбрана" :
           driveFolderAccess.key !== driveFolderAccessKey || driveFolderAccess.status === "checking" ? "Проверяем доступ к рабочей папке…" :
-          driveFolderAccess.error || "Рабочая папка доступна. Она используется на всех компьютерах этого аккаунта CRM.")) : ""}
-        onCheckFolder={() => { void driveBinding.refresh().catch(() => {}); setDriveFolderCheck((n) => n + 1); }}
+          driveFolderAccess.status === "ready" ? "Рабочая папка доступна" : "Рабочая папка недоступна") : ""}
         driveHint={driveHint}
         onConnectGoogleDrive={connectGoogleDrive}
         onSelectDriveFolder={selectDriveFolder}

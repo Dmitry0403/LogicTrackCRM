@@ -637,7 +637,6 @@ export function DriveSettingsModal({
   selectedDriveFolder,
   bindingBusy = false,
   bindingStatus = "",
-  onCheckFolder,
   driveHint,
   onConnectGoogleDrive,
   onSelectDriveFolder,
@@ -672,11 +671,9 @@ export function DriveSettingsModal({
             <strong>{RU.driveModal.selectedFolder}:</strong> <a href={selectedDriveFolder.url} target="_blank" rel="noopener noreferrer">{selectedDriveFolder.name}</a>
           </div>
         )}
-        <div className="drive-hint" data-testid="drive-hint">{driveHint}</div>
-        {bindingStatus && <div role="status" data-testid="drive-binding-status">
-          <p>{bindingStatus}</p>
-          <button type="button" disabled={bindingBusy} onClick={onCheckFolder}>Проверить доступ</button>
-        </div>}
+        <div className="drive-hint" data-testid="drive-hint" role="status">
+          {driveHint}{bindingStatus && <> · <span data-testid="drive-binding-status">{bindingStatus}</span></>}
+        </div>
         <div className="settings-dialog-footer">
           <button type="button" onClick={onClose} style={{ backgroundColor: "#999", color: "#fff", padding: "0.5rem 1rem", border: "none", borderRadius: "3px", cursor: "pointer" }} data-testid="drive-settings-close">
             {RU.common.close}

@@ -59,18 +59,20 @@ test("another computer uses the cloud folder, not its local selection; disconnec
   const writes = await setup(page);
   await openDrive(page);
   await expect(page.getByTestId("drive-binding-status")).toContainText("Рабочая папка доступна");
+  await expect(page.getByTestId("drive-hint")).toContainText("Google Drive подключен.");
+  await expect(page.getByRole("button", { name: "Проверить доступ" })).toHaveCount(0);
   const link = page.getByRole("link", { name: "Рабочая папка" });
   await expect(link).toHaveAttribute("href", "https://drive.google.com/drive/folders/company-root");
   await page.getByTestId("drive-disconnect").click();
   await expect(link).toBeVisible();
-  await expect(page.getByTestId("drive-binding-status")).toContainText("Рабочая папка сохранена");
+  await expect(page.getByTestId("drive-binding-status")).toHaveCount(0);
   expect(writes).toEqual([]);
 });
 
 test("missing access keeps the saved folder and reports the required Google access", async ({ page }) => {
   const writes = await setup(page, { denied: true });
   await openDrive(page);
-  await expect(page.getByTestId("drive-binding-status")).toContainText("Нет доступа к рабочей папке");
+  await expect(page.getByTestId("drive-binding-status")).toHaveText("Рабочая папка недоступна");
   await expect(page.getByRole("link", { name: "Рабочая папка" })).toBeVisible();
   expect(writes).toEqual([]);
 });
