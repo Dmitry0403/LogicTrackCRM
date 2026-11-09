@@ -59,7 +59,7 @@ test("another computer uses the cloud folder, not its local selection; disconnec
   const writes = await setup(page);
   await openDrive(page);
   await expect(page.getByTestId("drive-binding-status")).toContainText("Рабочая папка доступна");
-  await expect(page.getByTestId("drive-hint")).toContainText("Google Drive подключен.");
+  await expect(page.getByTestId("drive-hint")).toContainText("Google Drive подключен");
   await expect(page.getByRole("button", { name: "Проверить доступ" })).toHaveCount(0);
   const link = page.getByRole("link", { name: "Рабочая папка" });
   await expect(link).toHaveAttribute("href", "https://drive.google.com/drive/folders/company-root");
